@@ -102,6 +102,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.refreshing = true;
     try {
       this.postState(await this.readState());
+      void this.maybeAutoFetch();
     } finally {
       this.refreshing = false;
       if (this.refreshQueued) {
