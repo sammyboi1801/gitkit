@@ -6,7 +6,8 @@ const repo = (status: Partial<StatusInfo> = {}, remotes = ["origin"]): RepoState
   root: "/repo",
   status: { branch: "main", oid: "abc", upstream: "origin/main", ahead: 0, behind: 0, files: [], ...status },
   remotes,
-  stashCount: 0,
+  stashes: [],
+  history: [],
   graph: { commits: [], lanes: [], placement: [], edges: [], rows: 0 },
   unpushed: [],
   incoming: [],
@@ -165,5 +166,66 @@ describe("continue and abort", () => {
     const result = planAction({ type: "abortOperation" }, { ...repo(), operation: "cherry-pick" });
     expect(result.ok && result.plan.confirm).toBeTruthy();
     expect(steps(result)).toEqual([["cherry-pick", "--abort"]]);
+  });
+});
+
+describe("undo and fix-ups", () => {
+  const history = (...entries: Partial<RepoState["history"][number]>[]) =>
+    entries.map((e, i) => ({
+      hash: `h${i}`,
+      before: `h${i + 1}`,
+      time: 0,
+      kind: "commit" as const,
+      summary: `step ${i}`,
+      ...e,
+    }));
+  const commit = (hash: string, parents: string[]) => ({ hash, parents, author: "", time: 0, subject: hash, refs: [] });
+  const withHead = (unpushed: boolean, extra: Partial<RepoState> = {}): RepoState => ({
+    ...repo({ oid: "h0" }),
+    unpushed: unpushed ? ["h0"] : [],
+    graph: { commits: [commit("h0", ["h1"]), commit("h1", [])], lanes: [], placement: [], edges: [], rows: 0 },
+    ...extra,
+  });
+
+  it("goes back with reset --keep, which never throws away uncommitted work", () => {
+    const r = { ...withHead(true), history: history({}, {}) };
+    const result = planAction({ type: "undoTo", index: 1 }, r);
+    expect(steps(result)).toEqual([["reset", "--keep", "h2"]]);
+    expect(result.ok && result.plan.confirm).toContain("1 newer step");
+  });
+
+  it("undoes a checkout by switching back, and refuses steps from another branch", () => {
+    const r = {
+      ...withHead(true),
+      history: history({}, { kind: "checkout", from: "main", to: "feat" }, { summary: "on main" }),
+    };
+    expect(steps(planAction({ type: "undoTo", index: 1 }, r))).toEqual([["switch", "main"]]);
+    expect(planAction({ type: "undoTo", index: 2 }, r).ok).toBe(false);
+  });
+
+  it("only undoes or amends the last commit while it's unpushed", () => {
+    expect(steps(planAction({ type: "undoLastCommit" }, withHead(true)))).toEqual([["reset", "--soft", "HEAD~1"]]);
+    expect(planAction({ type: "undoLastCommit" }, withHead(false)).ok).toBe(false);
+    expect(steps(planAction({ type: "amendMessage", message: "better" }, withHead(true)))).toEqual([
+      ["commit", "--amend", "--only", "-m", "better"],
+    ]);
+    expect(planAction({ type: "amendMessage", message: "better" }, withHead(false)).ok).toBe(false);
+  });
+
+  it("moves commits to a new branch: branch, step back, switch", () => {
+    const result = planAction(
+      { type: "moveToNewBranch", name: "feat/right", keepAt: "abc1234", count: 2 },
+      withHead(true),
+    );
+    expect(steps(result)).toEqual([
+      ["branch", "feat/right"],
+      ["reset", "--keep", "abc1234"],
+      ["switch", "feat/right"],
+    ]);
+  });
+
+  it("won't delete the branch you're on", () => {
+    expect(planAction({ type: "deleteBranches", names: ["main"] }, repo()).ok).toBe(false);
+    expect(steps(planAction({ type: "deleteBranches", names: ["old"] }, repo()))).toEqual([["branch", "-D", "old"]]);
   });
 });

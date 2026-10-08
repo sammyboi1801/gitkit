@@ -1,4 +1,5 @@
 import type { RepoState } from "../shared/types";
+import { undoableCount } from "./history";
 
 // Pure: the webview uses this to preview commands, the host uses it again to run them.
 
@@ -17,7 +18,20 @@ export type ActionRequest =
   | { type: "cherryPick"; hash: string }
   | { type: "updateFromBase" }
   | { type: "continueOperation" }
-  | { type: "abortOperation" };
+  | { type: "abortOperation" }
+  | { type: "undoTo"; index: number }
+  | { type: "undoLastCommit" }
+  | { type: "amendMessage"; message: string }
+  | { type: "amendAdd" }
+  | { type: "moveToNewBranch"; name: string; keepAt: string; count: number }
+  | { type: "recoverBranch"; name: string; hash: string }
+  | { type: "stashApply"; ref: string }
+  | { type: "stashPop"; ref: string }
+  | { type: "stashDrop"; ref: string }
+  | { type: "unstageAll" }
+  | { type: "discardAll" }
+  | { type: "untrack"; path: string }
+  | { type: "deleteBranches"; names: string[] };
 
 export interface Plan {
   label: string;
@@ -129,6 +143,105 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
       return ok("Continue", [["-c", "core.editor=true", op, "--continue"]]);
     }
 
+    case "undoTo":
+      return planUndo(request.index, repo);
+
+    case "undoLastCommit": {
+      if (!status.oid) return fail("There's no commit to undo yet.");
+      if (!headIsUnpushed(repo))
+        return fail("The last commit is already pushed. Revert it instead, so nobody's history breaks.");
+      const head = repo.graph.commits.find((c) => c.hash === status.oid);
+      if (!head?.parents.length) return fail("This is the first commit; there's nothing before it.");
+      return ok(
+        "Undo commit",
+        [["reset", "--soft", "HEAD~1"]],
+        `Undo "${head.subject}"? The commit goes away but all its changes stay staged, ready to commit again.`,
+      );
+    }
+
+    case "amendMessage": {
+      const message = request.message.trim();
+      if (!message) return fail("Write the new message first.");
+      if (!headIsUnpushed(repo))
+        return fail("The last commit is already pushed; changing it would rewrite shared history.");
+      // --only with no paths changes just the message, even if other changes are staged.
+      return ok("Reword", [["commit", "--amend", "--only", "-m", message]]);
+    }
+
+    case "amendAdd":
+      if (!headIsUnpushed(repo))
+        return fail("The last commit is already pushed; changing it would rewrite shared history.");
+      if (status.files.length === 0) return fail("There are no changes to add.");
+      return ok("Add to last commit", [
+        ["add", "-A"],
+        ["commit", "--amend", "--no-edit"],
+      ]);
+
+    case "moveToNewBranch": {
+      const name = request.name.trim();
+      if (!status.branch) return fail("HEAD is detached. Check out a branch first.");
+      if (!isValidBranchName(name)) return fail(`"${name}" isn't a valid branch name.`);
+      const n = `${request.count} commit${request.count === 1 ? "" : "s"}`;
+      return ok(
+        "Move commits",
+        [
+          ["branch", name],
+          ["reset", "--keep", request.keepAt],
+          ["switch", name],
+        ],
+        `Move your last ${n} from ${status.branch} to a new branch "${name}"? ${status.branch} goes back to ${request.keepAt.slice(0, 7)}; uncommitted changes come with you.`,
+      );
+    }
+
+    case "recoverBranch":
+      if (!isValidBranchName(request.name)) return fail(`"${request.name}" isn't a valid branch name.`);
+      return ok("Recover branch", [["branch", request.name, request.hash]]);
+
+    case "stashApply":
+      return ok("Restore", [["stash", "apply", request.ref]]);
+
+    case "stashPop":
+      return ok("Restore and remove", [["stash", "pop", request.ref]]);
+
+    case "stashDrop":
+      return ok(
+        "Delete stash",
+        [["stash", "drop", request.ref]],
+        `Delete ${request.ref} for good? Unlike discards, this can't be undone from GitKit.`,
+      );
+
+    case "unstageAll":
+      if (!status.files.some((f) => f.index)) return fail("Nothing is staged.");
+      return status.oid
+        ? ok("Unstage all", [["restore", "--staged", "."]])
+        : ok("Unstage all", [["rm", "--cached", "-r", "-q", "."]]);
+
+    case "discardAll":
+      if (status.files.length === 0) return fail("There are no changes to discard.");
+      return ok(
+        "Discard all",
+        [["stash", "push", "--include-untracked", "-m", "GitKit discard: all changes"]],
+        `Throw away all ${status.files.length} changed files? GitKit saves them as a stash, so you can get them back.`,
+      );
+
+    case "untrack":
+      return ok(
+        "Stop tracking",
+        [["rm", "--cached", "-q", "--", request.path]],
+        `Stop tracking ${request.path}? The file stays on your disk; the next commit removes it from the repo.`,
+      );
+
+    case "deleteBranches": {
+      if (request.names.length === 0) return fail("Pick at least one branch.");
+      if (status.branch && request.names.includes(status.branch)) return fail("You can't delete the branch you're on.");
+      // -D: these were already checked as merged, gone or squash-merged; plain -d misses squash merges.
+      return ok(
+        "Delete branches",
+        [["branch", "-D", ...request.names]],
+        `Delete ${request.names.length} local branch${request.names.length === 1 ? "" : "es"}: ${request.names.join(", ")}? Recover them later from Oops → Recover a deleted branch.`,
+      );
+    }
+
     case "abortOperation": {
       const op = repo.operation;
       if (!op) return fail("Nothing is in progress.");
@@ -139,6 +252,34 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
       );
     }
   }
+}
+
+function headIsUnpushed(repo: RepoState): boolean {
+  // With no remote at all, nothing is shared, so everything counts as unpushed.
+  return repo.remotes.length === 0 || (!!repo.status.oid && repo.unpushed.includes(repo.status.oid));
+}
+
+/** Goes back to just before history entry `index`, which also undoes every newer entry. */
+function planUndo(index: number, repo: RepoState): PlanResult {
+  const entry = repo.history[index];
+  if (!entry) return fail("That step isn't in the history any more.");
+  if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
+  if (index >= undoableCount(repo.history)) return fail("That happened on another branch. Switch to it first.");
+
+  if (entry.kind === "checkout") {
+    if (!entry.from) return fail("Couldn't tell which branch this switched from.");
+    const newer = index > 0 ? ` Commits made on ${entry.to} since then stay there.` : "";
+    return ok("Switch back", [["switch", entry.from]], `Switch back to ${entry.from}?${newer}`);
+  }
+
+  if (!entry.before) return fail("There's nothing before this step.");
+  const alsoNewer = index > 0 ? ` This also undoes the ${index} newer step${index === 1 ? "" : "s"} above it.` : "";
+  const pushed = headIsUnpushed(repo) ? "" : " Some of this is already pushed, so you'd need to force-push afterwards.";
+  return ok(
+    "Undo",
+    [["reset", "--keep", entry.before]],
+    `Go back to before: ${entry.summary}? The branch moves to ${entry.before.slice(0, 7)}.${alsoNewer}${pushed} Uncommitted changes are kept, and you can redo this from the same list.`,
+  );
 }
 
 function planUpdateFromBase(repo: RepoState): PlanResult {
