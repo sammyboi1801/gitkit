@@ -119,24 +119,24 @@
 {/snippet}
 
 <section class="section">
-  <div class="commit-box">
-    <textarea
-      rows="2"
-      placeholder={unstaged.length && !staged.length ? "Message (commits all changes)" : "Message"}
-      bind:value={message}
-      onkeydown={onKeydown}></textarea>
-    <button class="primary wide" disabled={!canCommit} onclick={submit} title="Ctrl+Enter">
-      <span class="codicon codicon-check"></span>{commit.label || "Commit"}
-    </button>
-    {#if message.trim()}
-      <code class="command">{commit.text}</code>
-    {:else if files.length}
-      <span class="hint">Ctrl+Enter to commit</span>
-    {/if}
-  </div>
-
   {#if files.length === 0}
-    <p class="muted empty">No changes. Working tree is clean.</p>
+    <p class="clean-line"><span class="codicon codicon-pass"></span>Working tree clean</p>
+  {:else}
+    <div class="commit-box">
+      <textarea
+        rows="2"
+        placeholder={unstaged.length && !staged.length ? "Message (commits all changes)" : "Message"}
+        bind:value={message}
+        onkeydown={onKeydown}></textarea>
+      <button class="primary wide" disabled={!canCommit} onclick={submit} title="Ctrl+Enter">
+        <span class="codicon codicon-check"></span>{commit.label || "Commit"}
+      </button>
+      {#if message.trim()}
+        <code class="command">{commit.text}</code>
+      {:else}
+        <span class="hint">Ctrl+Enter to commit</span>
+      {/if}
+    </div>
   {/if}
 
   {#if conflicts.length}

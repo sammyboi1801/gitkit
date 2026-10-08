@@ -1117,3 +1117,15 @@ button.primary .count-pill {
 .repo-badges .codicon {
   font-size: 12px;
 }
+
+.clean-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 12px;
+  color: var(--gk-muted);
+}
+
+.clean-line .codicon {
+  color: var(--vscode-charts-green);
+}
