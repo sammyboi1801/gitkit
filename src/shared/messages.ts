@@ -40,4 +40,6 @@ export type WebviewToHost =
   | { type: "openBranchMap" }
   | { type: "conflictDetails"; path: string }
   | { type: "resolveConflict"; path: string; block: number | "all"; choice: Resolution }
-  | { type: "openMergeEditor"; path: string };
+  | { type: "openMergeEditor"; path: string }
+  | { type: "oops" }
+  | { type: "cleanupBranches" };

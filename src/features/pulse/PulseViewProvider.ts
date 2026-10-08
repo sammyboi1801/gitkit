@@ -8,6 +8,7 @@ import { GitError, formatCommand, runGit } from "../../git/runner";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, RepoState } from "../../shared/types";
 import { openMergeEditor } from "../conflicts/mergeEditor";
+import { pickCleanup, pickOops } from "../oops/oops";
 import { renderWebviewHtml } from "../webviewHtml";
 
 const REFRESH_DELAY_MS = 400;
@@ -235,6 +236,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return this.openFile(message.path);
       case "action":
         return this.runAction(message.request);
+      case "oops":
+        return this.oops();
+      case "cleanupBranches":
+        return this.cleanupBranches();
       case "pickBranch":
         return this.pickBranch();
       case "branchFrom": {
@@ -299,6 +304,24 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       await document.save();
     }
     await this.postConflicts(relative);
+  }
+
+  /** The Oops menu: plain-English fixes for common mistakes. */
+  async oops(): Promise<void> {
+    if (!this.repo || this.busy) return;
+    const request = await pickOops(this.repo);
+    if (request) await this.runAction(request);
+  }
+
+  async cleanupBranches(): Promise<void> {
+    const repo = this.repo;
+    if (!repo || this.busy) return;
+    if (!repo.base) {
+      void vscode.window.showInformationMessage("GitKit couldn't find a main branch to compare with.");
+      return;
+    }
+    const request = await pickCleanup(repo, repo.base.ref, repo.base.name);
+    if (request) await this.runAction(request);
   }
 
   private async openFile(relative: string): Promise<void> {

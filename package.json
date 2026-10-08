@@ -49,10 +49,26 @@
         "title": "Open Branch Map",
         "category": "GitKit",
         "icon": "$(screen-full)"
+      },
+      {
+        "command": "gitkit.oops",
+        "title": "Oops: Fix a Mistake…",
+        "category": "GitKit",
+        "icon": "$(lightbulb-sparkle)"
+      },
+      {
+        "command": "gitkit.cleanupBranches",
+        "title": "Clean Up Merged Branches…",
+        "category": "GitKit"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "gitkit.oops",
+          "when": "view == gitkit.pulse",
+          "group": "navigation"
+        },
         {
           "command": "gitkit.openBranchMap",
           "when": "view == gitkit.pulse",

@@ -12,6 +12,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(PulseViewProvider.viewId, pulse),
     vscode.commands.registerCommand("gitkit.refresh", () => pulse.reload()),
     vscode.commands.registerCommand("gitkit.openBranchMap", () => BranchMapPanel.show(context.extensionUri, pulse)),
+    vscode.commands.registerCommand("gitkit.oops", () => pulse.oops()),
+    vscode.commands.registerCommand("gitkit.cleanupBranches", () => pulse.cleanupBranches()),
   );
 }
 
