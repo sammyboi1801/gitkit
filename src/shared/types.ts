@@ -76,20 +76,33 @@ export interface Commit {
   refs: Ref[];
 }
 
-/** One segment of the graph drawn inside a row. y: 0 = row top, 1 = node centre, 2 = row bottom. */
-export interface GraphLine {
-  x1: number;
-  y1: 0 | 1;
-  x2: number;
-  y2: 1 | 2;
-  /** Lane index, used to pick the colour. */
-  lane: number;
+/** A branch's lane in the branch graph. */
+export interface Lane {
+  name: string;
+  /** base: the main branch. merged: a branch known only from its merge commit. other: detached or tag-only. */
+  kind: "base" | "branch" | "merged" | "other";
+  /** Visual row (horizontal map) or column (sidebar); lanes that never overlap in time share one. */
+  row: number;
+  /** Palette index; 0 is reserved for the main branch. */
+  color: number;
 }
 
-export interface GraphRow {
-  commit: Commit;
-  lane: number;
-  lines: GraphLine[];
+export interface GraphEdge {
+  /** Indexes into BranchGraph.commits. */
+  child: number;
+  parent: number;
+  /** line: along one lane. fork: a lane's first commit, off its parent lane. merge: a merge's extra parent. */
+  kind: "line" | "fork" | "merge";
+}
+
+export interface BranchGraph {
+  /** Newest first (topological). */
+  commits: Commit[];
+  lanes: Lane[];
+  /** Per commit: its lane and its time column (0 = oldest). */
+  placement: { lane: number; column: number }[];
+  edges: GraphEdge[];
+  rows: number;
 }
 
 export interface RepoState {
@@ -97,8 +110,7 @@ export interface RepoState {
   status: StatusInfo;
   remotes: string[];
   stashCount: number;
-  rows: GraphRow[];
-  lanes: number;
+  graph: BranchGraph;
   /** Commits on HEAD that aren't on any remote yet. */
   unpushed: string[];
   /** Commits on the upstream that HEAD doesn't have yet. */
@@ -115,6 +127,20 @@ export interface RepoState {
 }
 
 export type Operation = "merge" | "rebase" | "cherry-pick" | "revert";
+
+/** One conflicted region of a file, between git's <<<<<<< and >>>>>>> markers. */
+export interface ConflictBlock {
+  index: number;
+  /** 1-based line of the <<<<<<< marker. */
+  line: number;
+  /** Text after the markers, e.g. "HEAD" and "feat/label". */
+  oursLabel: string;
+  theirsLabel: string;
+  ours: string[];
+  /** The common ancestor's version, present only with diff3-style markers. */
+  base: string[] | null;
+  theirs: string[];
+}
 
 /** The cheap per-repo overview shown in the repository list when a workspace has several repos. */
 export interface RepoSummary {

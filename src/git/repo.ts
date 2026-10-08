@@ -12,7 +12,7 @@ import type {
 } from "../shared/types";
 import { BRANCH_FORMAT, parseBranches } from "./branches";
 import { pathKey } from "./discover";
-import { layoutGraph } from "./graph";
+import { layoutBranches } from "./lanes";
 import { LOG_FORMAT, parseLog } from "./log";
 import { parseNumstat, toStatsMap } from "./numstat";
 import { activityKind, parseMergeTree, parseReflog, pickBaseRef } from "./remote";
@@ -114,14 +114,16 @@ export async function readRepo(root: string): Promise<RepoState> {
     readActivity(root, refLines),
   ]);
 
-  const { rows, lanes } = layoutGraph(commits);
   return {
     root,
     status,
     remotes,
     stashCount: lines(stashOut.stdout).length,
-    rows,
-    lanes,
+    // Without a known main branch (e.g. a local-only repo), main/master by name still leads.
+    graph: layoutBranches(commits, {
+      base: base?.name ?? (refNames.includes("main") ? "main" : refNames.includes("master") ? "master" : null),
+      head: status.branch,
+    }),
     unpushed,
     incoming,
     base,

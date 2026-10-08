@@ -63,11 +63,12 @@ describe("readRepo against a real repo", () => {
     expect(byPath["c.txt"].worktreeStats).toEqual({ added: 2, removed: 0, binary: false });
     expect(byPath["new file.txt"].untracked).toBe(true);
 
-    const subject = (hash: string) => repo.rows.find((r) => r.commit.hash === hash)?.commit.subject;
+    const subject = (hash: string) => repo.graph.commits.find((c) => c.hash === hash)?.subject;
     expect(repo.unpushed.map(subject)).toEqual(["local only"]);
     expect(repo.incoming.map(subject)).toEqual(["remote only"]);
-    expect(repo.rows).toHaveLength(4);
-    expect(repo.lanes).toBe(2);
+    expect(repo.graph.commits).toHaveLength(4);
+    // One lane: the remote-only commit sits on main, in line with the local ones.
+    expect(repo.graph.lanes.map((l) => l.name)).toEqual(["main"]);
 
     // On main itself, main is "current" rather than something to update from.
     expect(repo.base).toMatchObject({ ref: "origin/main", isCurrent: true });
