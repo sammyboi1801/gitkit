@@ -48,4 +48,15 @@ describe("layoutGraph", () => {
     const { rows } = layoutGraph([commit("x", "a"), commit("y", "a"), commit("a")]);
     expect(rows.map((r) => r.lane)).toEqual([0, 1, 0]);
   });
+
+  it("draws no line into a branch tip from above", () => {
+    const { rows } = layoutGraph([commit("x", "a"), commit("y", "a"), commit("a")]);
+    // x: only its line down to the parent.
+    expect(rows[0].lines).toEqual([{ x1: 0, y1: 1, x2: 0, y2: 2, lane: 0 }]);
+    // y: lane 0 passes through, plus y's own line down; nothing enters y from the top.
+    expect(rows[1].lines).toEqual([
+      { x1: 0, y1: 0, x2: 0, y2: 2, lane: 0 },
+      { x1: 1, y1: 1, x2: 1, y2: 2, lane: 1 },
+    ]);
+  });
 });

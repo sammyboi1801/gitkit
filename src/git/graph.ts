@@ -11,6 +11,8 @@ export function layoutGraph(commits: readonly Commit[]): { rows: GraphRow[]; lan
   let maxLanes = 0;
 
   for (const commit of commits) {
+    // Snapshot before placing a tip, so a tip gets no line coming in from above.
+    const before = lanes.slice();
     let lane = lanes.indexOf(commit.hash);
     if (lane === -1) {
       // Nothing points here yet: a branch tip.
@@ -18,7 +20,6 @@ export function layoutGraph(commits: readonly Commit[]): { rows: GraphRow[]; lan
       lanes[lane] = commit.hash;
     }
 
-    const before = lanes.slice();
     const after = before.map((hash) => (hash === commit.hash ? null : hash));
 
     const parentLanes = commit.parents.map((parent, i) => {
@@ -46,7 +47,7 @@ export function layoutGraph(commits: readonly Commit[]): { rows: GraphRow[]; lan
     }
 
     while (after.length > 0 && after[after.length - 1] === null) after.pop();
-    maxLanes = Math.max(maxLanes, before.length, after.length);
+    maxLanes = Math.max(maxLanes, before.length, after.length, lane + 1);
     rows.push({ commit, lane, lines });
     lanes = after;
   }
