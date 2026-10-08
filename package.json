@@ -1,0 +1,82 @@
+{
+  "name": "gitkit",
+  "displayName": "GitKit",
+  "description": "Everyday git and GitHub, made visual and safe.",
+  "version": "0.0.1",
+  "publisher": "sammyboi1801",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sammyboi1801/gitkit.git"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Visualization"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitkit",
+          "title": "GitKit",
+          "icon": "media/gitkit.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitkit": [
+        {
+          "type": "webview",
+          "id": "gitkit.pulse",
+          "name": "Pulse"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "gitkit.refresh",
+        "title": "Refresh",
+        "category": "GitKit",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitkit.refresh",
+          "when": "view == gitkit.pulse",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test && prettier --check \"src/**\" \"webview/**\" \"test/**\"",
+    "format": "prettier --write \"src/**\" \"webview/**\" \"test/**\"",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "@types/vscode": "^1.95.0",
+    "esbuild": "^0.28.2",
+    "esbuild-svelte": "^0.9.5",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.9",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "^5.57.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^5.0.3"
+  }
+}

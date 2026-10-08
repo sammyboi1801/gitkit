@@ -1,0 +1,50 @@
+:root {
+  --gk-accent: var(--vscode-focusBorder);
+  --gk-radius: 6px;
+}
+
+body {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--vscode-foreground);
+  background: transparent;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+p {
+  margin: 4px 0;
+}
+
+.muted {
+  color: var(--vscode-descriptionForeground);
+}
+
+.error {
+  color: var(--vscode-errorForeground);
+}
+
+.card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: var(--gk-radius);
+}
+
+.branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.glyph {
+  color: var(--gk-accent);
+}
+
+.command {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
