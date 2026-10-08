@@ -1,15 +1,23 @@
-// Builds a throwaway repo for the F5 dev host, so GitKit is never pointed at a real repo while developing.
+// Builds a throwaway repo (plus a local bare "remote") for the F5 dev host, so GitKit is never
+// pointed at a real repo while developing. Pass --reset to rebuild it from scratch.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const dir = join(import.meta.dirname, "..", ".vscode-test", "sandbox");
+const VERSION = "2";
+const root = join(import.meta.dirname, "..", ".vscode-test");
+const dir = join(root, "sandbox");
+const remote = join(root, "sandbox-remote.git");
+const marker = join(dir, ".git", "gitkit-sandbox");
 
-if (existsSync(join(dir, ".git"))) {
+const current = existsSync(marker) ? readFileSync(marker, "utf8").trim() : null;
+if (current === VERSION && !process.argv.includes("--reset")) {
   console.log(`sandbox ready: ${dir}`);
   process.exit(0);
 }
 
+rmSync(dir, { recursive: true, force: true });
+rmSync(remote, { recursive: true, force: true });
 mkdirSync(dir, { recursive: true });
 
 // Identity is passed per command so the sandbox never touches anyone's git config.
@@ -19,23 +27,46 @@ const git = (...args) =>
     stdio: "pipe",
   });
 const write = (file, text) => writeFileSync(join(dir, file), text);
+const commit = (message, files) => {
+  for (const [file, text] of Object.entries(files)) write(file, text);
+  git("add", ".");
+  git("commit", "-m", message);
+};
 
+execFileSync("git", ["init", "--bare", "-b", "main", remote], { stdio: "pipe" });
 git("init", "-b", "main");
-write("README.md", "# Sandbox\n\nA playground repo for GitKit.\n");
-git("add", ".");
-git("commit", "-m", "chore: initial commit");
+git("remote", "add", "origin", remote);
 
-write("app.py", "def greet(name):\n    return f'hello {name}'\n");
-git("add", ".");
-git("commit", "-m", "feat: add greet");
+commit("chore: initial commit", { "README.md": "# Sandbox\n\nA playground repo for GitKit.\n" });
+commit("feat: add greet", { "app.py": "def greet(name):\n    return f'hello {name}'\n" });
 
+// A merged feature branch, so the graph has a fork and a merge.
+git("checkout", "-b", "feat/ui");
+commit("style: friendlier greeting", { "app.py": "def greet(name):\n    return f'hello, {name}!'\n" });
+commit("feat: add banner", { "banner.txt": "*** Sandbox ***\n" });
+git("checkout", "main");
+commit("docs: usage notes", { "USAGE.md": "Run app.py\n" });
+git("merge", "--no-ff", "feat/ui", "-m", "Merge branch 'feat/ui'");
+git("tag", "v0.1.0");
+git("push", "-u", "origin", "main", "--tags");
+git("branch", "-D", "feat/ui");
+
+// main gets a commit on the remote that the local copy doesn't have yet: "1 new commit on the remote".
+commit("fix: handle empty name", { "app.py": "def greet(name):\n    return f'hello, {name or \"friend\"}!'\n" });
+git("push");
+git("reset", "--hard", "HEAD~1");
+
+// A published feature branch with one unpushed commit: "1 commit ready to push".
 git("checkout", "-b", "feat/login");
-write("login.py", "def login(user):\n    return True\n");
-git("add", ".");
-git("commit", "-m", "feat: add login stub");
+commit("feat: add login stub", { "login.py": "def login(user):\n    return True\n" });
+git("push", "-u", "origin", "feat/login");
+commit("feat: check password length", { "login.py": "def login(user, password):\n    return len(password) >= 8\n" });
 
-// Leave some uncommitted work so the panels have something to show.
-write("app.py", "def greet(name):\n    return f'hello, {name}!'\n");
+// Uncommitted work so the changes list has something in every group.
+write("app.py", "def greet(name):\n    return f'hello, {name}!!'\n\n\ndef bye(name):\n    return f'bye {name}'\n");
 write("notes.txt", "todo: real auth\n");
+write("login.py", "def login(user, password):\n    # TODO: hash\n    return len(password) >= 8\n");
+git("add", "login.py");
 
+writeFileSync(marker, VERSION);
 console.log(`sandbox created: ${dir}`);
