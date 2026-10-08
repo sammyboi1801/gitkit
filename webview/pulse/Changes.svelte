@@ -1,10 +1,32 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { FileChange, LineStats, RepoState } from "../../src/shared/types";
+  import type { ConflictBlock, FileChange, LineStats, RepoState } from "../../src/shared/types";
   import { badge, preview, splitPath, totals } from "./util";
+  import ConflictView from "./ConflictView.svelte";
   import { loadDraft, saveDraft, send } from "./vscode";
 
-  let { repo, busy }: { repo: RepoState; busy: string | null } = $props();
+  let {
+    repo,
+    busy,
+    conflictBlocks,
+  }: { repo: RepoState; busy: string | null; conflictBlocks: Record<string, ConflictBlock[]> } = $props();
+
+  // Conflicted files open their conflict viewer in place; the first one opens by itself.
+  let openConflicts: Set<string> = $state(new Set());
+  let autoOpened = false;
+  $effect(() => {
+    const first = repo.status.files.find((f) => f.conflicted)?.path;
+    if (first && !autoOpened) {
+      autoOpened = true;
+      openConflicts = new Set([first]);
+    }
+  });
+  function toggleConflict(path: string) {
+    const next = new Set(openConflicts);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    openConflicts = next;
+  }
 
   // The parent remounts this per repo, so the root is fixed for this instance's lifetime.
   const root = untrack(() => repo.root);
@@ -70,7 +92,7 @@
     <button
       class="file-name"
       title={file.origPath ? `${file.origPath} → ${file.path}` : file.path}
-      onclick={() => send({ type: "openFile", path: file.path })}
+      onclick={() => (side === "conflict" ? toggleConflict(file.path) : send({ type: "openFile", path: file.path }))}
     >
       <span class="name tone-{mark.tone}">{name}</span>
       {#if dir}<span class="dir">{dir}</span>{/if}
@@ -142,7 +164,12 @@
   {#if conflicts.length}
     <div class="group-header"><span>Conflicts</span><span class="count">{conflicts.length}</span></div>
     <ul class="files">
-      {#each conflicts as file (file.path)}{@render fileRow(file, "conflict")}{/each}
+      {#each conflicts as file (file.path)}
+        {@render fileRow(file, "conflict")}
+        {#if openConflicts.has(file.path)}
+          <li><ConflictView {repo} path={file.path} blocks={conflictBlocks[file.path]} {busy} /></li>
+        {/if}
+      {/each}
     </ul>
   {/if}
 

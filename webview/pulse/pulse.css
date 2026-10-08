@@ -1129,3 +1129,176 @@ button.primary .count-pill {
 .clean-line .codicon {
   color: var(--vscode-charts-green);
 }
+
+/* Branch lanes (sidebar): one SVG behind the commit list */
+
+.lanes {
+  position: relative;
+}
+
+.lane-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.lane-svg .node.hollow {
+  fill: var(--vscode-sideBar-background, var(--vscode-editor-background)) !important;
+}
+
+.lanes .commit {
+  padding-left: calc(var(--graph-width) + 4px);
+}
+
+.commit.selected {
+  background: var(--vscode-list-inactiveSelectionBackground);
+}
+
+.ref-local {
+  background: color-mix(in srgb, var(--chip, var(--vscode-badge-background)) 30%, transparent);
+  color: var(--vscode-foreground);
+  border-color: color-mix(in srgb, var(--chip, var(--vscode-badge-background)) 70%, transparent);
+}
+
+.ref-local.ref-head {
+  background: var(--chip, var(--vscode-button-background));
+  color: var(--vscode-editor-background);
+  font-weight: 600;
+}
+
+.ref-remote {
+  border-color: color-mix(in srgb, var(--chip, var(--gk-border)) 60%, transparent);
+}
+
+.ref-lane {
+  border: 1px dashed var(--chip);
+  color: var(--chip);
+}
+
+/* Commit details, docked at the bottom of the graph */
+
+.commit-panel {
+  position: sticky;
+  bottom: 0;
+  margin-top: 6px;
+  padding: 8px 12px 10px;
+  display: grid;
+  gap: 6px;
+  font-size: 0.92em;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-top: 2px solid var(--gk-accent);
+  box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.18);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-subject {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commit-panel .meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.commit-panel .body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.commit-panel .detail-files {
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* Conflict viewer */
+
+.conflict-view {
+  margin: 2px 12px 8px 20px;
+  display: grid;
+  gap: 8px;
+  font-size: 0.92em;
+}
+
+.conflict-block {
+  display: grid;
+  gap: 4px;
+}
+
+.conflict-title {
+  font-weight: 600;
+}
+
+.side {
+  border-left: 3px solid;
+  border-radius: 0 var(--gk-radius) var(--gk-radius) 0;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+}
+
+/* VS Code's own merge colours: current (yours) and incoming. */
+.side-ours {
+  border-color: var(--vscode-merge-currentHeaderBackground, var(--vscode-charts-green));
+}
+
+.side-theirs {
+  border-color: var(--vscode-merge-incomingHeaderBackground, var(--vscode-charts-blue));
+}
+
+.side-label {
+  padding: 3px 8px 0;
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.side pre {
+  margin: 0;
+  padding: 2px 8px 6px;
+  font-family: var(--gk-mono);
+  font-size: 0.95em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.conflict-actions button {
+  padding: 2px 8px;
+}
+
+.conflict-done {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.link-button {
+  justify-self: start;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--vscode-textLink-foreground);
+}
+
+.link-button:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}

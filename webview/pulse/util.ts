@@ -50,7 +50,7 @@ export function totals(stats: ({ added: number; removed: number } | undefined)[]
 
 /** Hashes reachable from HEAD within the loaded graph, to decide between revert and cherry-pick. */
 export function headAncestors(repo: RepoState): Set<string> {
-  const parents = new Map(repo.rows.map((r) => [r.commit.hash, r.commit.parents]));
+  const parents = new Map(repo.graph.commits.map((c) => [c.hash, c.parents]));
   const seen = new Set<string>();
   const stack = repo.status.oid ? [repo.status.oid] : [];
   while (stack.length) {

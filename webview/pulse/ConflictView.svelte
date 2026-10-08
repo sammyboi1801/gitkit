@@ -1,0 +1,92 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import type { Resolution } from "../../src/git/conflicts";
+  import type { ConflictBlock, RepoState } from "../../src/shared/types";
+  import { preview } from "./util";
+  import { send } from "./vscode";
+
+  let {
+    repo,
+    path,
+    blocks,
+    busy,
+  }: { repo: RepoState; path: string; blocks: ConflictBlock[] | undefined; busy: string | null } = $props();
+
+  onMount(() => send({ type: "conflictDetails", path }));
+
+  // Plain names for git's "ours" and "theirs", which mean different things per operation.
+  // During a rebase, "ours" is the branch being rebased onto and "theirs" is your own commit.
+  const names = $derived.by(() => {
+    switch (repo.operation) {
+      case "rebase":
+        return { ours: "Upstream", theirs: "Your commit" };
+      case "cherry-pick":
+        return { ours: "Yours", theirs: "Picked commit" };
+      case "revert":
+        return { ours: "Yours", theirs: "The revert" };
+      default:
+        return { ours: "Yours", theirs: "Incoming" };
+    }
+  });
+
+  const oursDetail = (b: ConflictBlock) =>
+    repo.operation === "rebase" ? (repo.base?.ref ?? b.oursLabel) : (repo.status.branch ?? b.oursLabel);
+
+  const resolve = (block: number | "all", choice: Resolution) => send({ type: "resolveConflict", path, block, choice });
+  const markResolved = $derived(preview({ type: "stage", paths: [path] }, repo));
+</script>
+
+<div class="conflict-view">
+  {#if blocks === undefined}
+    <p class="muted">Reading conflicts…</p>
+  {:else if blocks.length === 0}
+    <div class="conflict-done">
+      <span class="ok"><span class="codicon codicon-pass"></span>No conflict markers left in this file.</span>
+      <button
+        class="primary"
+        disabled={!!busy}
+        title={markResolved.text}
+        onclick={() => send({ type: "action", request: { type: "stage", paths: [path] } })}
+      >
+        <span class="codicon codicon-check"></span>Mark resolved
+      </button>
+    </div>
+  {:else}
+    {#each blocks as block (block.index)}
+      <div class="conflict-block">
+        <div class="conflict-title">
+          Conflict {block.index + 1} of {blocks.length}
+          <span class="muted">· line {block.line}</span>
+        </div>
+        <div class="side side-ours">
+          <div class="side-label">{names.ours} <span class="muted">· {oursDetail(block)}</span></div>
+          <pre>{block.ours.join("\n") || "(nothing)"}</pre>
+        </div>
+        <div class="side side-theirs">
+          <div class="side-label">{names.theirs} <span class="muted">· {block.theirsLabel}</span></div>
+          <pre>{block.theirs.join("\n") || "(nothing)"}</pre>
+        </div>
+        <div class="conflict-actions">
+          <button disabled={!!busy} onclick={() => resolve(block.index, "ours")}>Keep {names.ours.toLowerCase()}</button
+          >
+          <button disabled={!!busy} onclick={() => resolve(block.index, "theirs")}
+            >Keep {names.theirs.toLowerCase()}</button
+          >
+          <button disabled={!!busy} title="Yours first, then theirs" onclick={() => resolve(block.index, "both")}
+            >Keep both</button
+          >
+        </div>
+      </div>
+    {/each}
+    {#if blocks.length > 1}
+      <div class="conflict-actions all">
+        <span class="muted">All {blocks.length}:</span>
+        <button disabled={!!busy} onclick={() => resolve("all", "ours")}>Keep {names.ours.toLowerCase()}</button>
+        <button disabled={!!busy} onclick={() => resolve("all", "theirs")}>Keep {names.theirs.toLowerCase()}</button>
+      </div>
+    {/if}
+  {/if}
+  <button class="link-button" onclick={() => send({ type: "openMergeEditor", path })}>
+    <span class="codicon codicon-git-merge"></span>Open in the merge editor
+  </button>
+</div>

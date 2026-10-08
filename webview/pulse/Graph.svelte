@@ -1,173 +1,152 @@
 <script lang="ts">
-  import type { CommitDetails, GraphLine, RepoState } from "../../src/shared/types";
-  import { headAncestors, preview, relativeTime, splitPath } from "./util";
+  import type { CommitDetails, GraphEdge, RepoState } from "../../src/shared/types";
+  import CommitPanel from "../shared/CommitPanel.svelte";
+  import { laneColor, laneTips, refColor } from "../shared/graph";
+  import { relativeTime } from "./util";
   import { send } from "./vscode";
 
   let { repo, busy, details }: { repo: RepoState; busy: string | null; details: CommitDetails | null } = $props();
 
-  const LANE = 14;
+  // Vertical branch lanes: each branch keeps its own column and colour; main is always the first.
   const ROW = 26;
-  const COLORS = 6;
+  const LANE = 14;
+  const PAD = 10;
   const MAX_LANES = 8;
 
-  let expanded: string | null = $state(null);
+  let selected: number | null = $state(null);
 
-  const lanes = $derived(Math.min(Math.max(repo.lanes, 1), MAX_LANES));
-  const width = $derived(lanes * LANE + 4);
+  const graph = $derived(repo.graph);
+  const columns = $derived(Math.min(Math.max(graph.rows, 1), MAX_LANES));
+  const width = $derived(PAD * 2 + (columns - 1) * LANE);
   const unpushed = $derived(new Set(repo.unpushed));
   const incoming = $derived(new Set(repo.incoming));
-  const onHead = $derived(headAncestors(repo));
+  const tips = $derived(laneTips(graph));
 
-  const x = (lane: number) => LANE / 2 + 2 + Math.min(lane, MAX_LANES - 1) * LANE;
-  const y = (level: 0 | 1 | 2) => (level * ROW) / 2;
+  const laneAt = (i: number) => graph.lanes[graph.placement[i].lane];
+  const x = (i: number) => PAD + Math.min(laneAt(i).row, MAX_LANES - 1) * LANE;
+  const y = (i: number) => i * ROW + ROW / 2;
 
-  function path(line: GraphLine): string {
-    const [x1, y1, x2, y2] = [x(line.x1), y(line.y1), x(line.x2), y(line.y2)];
-    if (x1 === x2) return `M${x1} ${y1}L${x2} ${y2}`;
-    const mid = (y1 + y2) / 2;
-    return `M${x1} ${y1}C${x1} ${mid} ${x2} ${mid} ${x2} ${y2}`;
+  function edgePath(edge: GraphEdge): string {
+    const [x1, y1, x2, y2] = [x(edge.child), y(edge.child), x(edge.parent), y(edge.parent)];
+    if (edge.kind === "line" || x1 === x2) return `M${x1} ${y1}L${x2} ${y2}`;
+    if (edge.kind === "fork") {
+      // Run down the branch's own lane, then bend into the commit it forked from.
+      const bend = Math.max(y1, y2 - ROW);
+      const mid = (bend + y2) / 2;
+      return `M${x1} ${y1}V${bend}C${x1} ${mid} ${x2} ${mid} ${x2} ${y2}`;
+    }
+    // A merge leaves the merge commit straight away, then runs down the merged lane.
+    const bend = Math.min(y2, y1 + ROW);
+    const mid = (y1 + bend) / 2;
+    return `M${x1} ${y1}C${x1} ${mid} ${x2} ${mid} ${x2} ${bend}V${y2}`;
   }
 
-  function toggle(hash: string) {
-    expanded = expanded === hash ? null : hash;
-    if (expanded) send({ type: "commitDetails", hash });
+  // Forks take the colour of the new branch, merges the colour of the branch merged in.
+  const edgeColor = (edge: GraphEdge) => laneColor(laneAt(edge.kind === "merge" ? edge.parent : edge.child).color);
+
+  function select(i: number) {
+    selected = selected === i ? null : i;
+    if (selected !== null) send({ type: "commitDetails", hash: graph.commits[selected].hash });
   }
 
-  function onKey(event: KeyboardEvent, hash: string) {
+  function onKey(event: KeyboardEvent, i: number) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      toggle(hash);
+      select(i);
     }
   }
 </script>
 
 <section class="section graph">
   <div class="group-header">
-    <span>Graph</span><span class="count">{repo.rows.length}</span>
+    <span>Graph</span><span class="count">{graph.commits.length}</span>
     <span class="legend">
       {#if repo.unpushed.length}<span title="Not pushed yet"><i class="dot hollow"></i>local</span>{/if}
       {#if repo.incoming.length}<span title="On the remote, not pulled yet"><i class="dot faded"></i>incoming</span
         >{/if}
     </span>
+    <button class="icon-button" title="Open the Branch Map" onclick={() => send({ type: "openBranchMap" })}>
+      <span class="codicon codicon-screen-full"></span>
+    </button>
   </div>
-  {#if repo.rows.length === 0}
-    <p class="muted empty">No commits yet.</p>
-  {/if}
-  <ol class="commits">
-    {#each repo.rows as row (row.commit.hash)}
-      {@const commit = row.commit}
-      {@const isHead = commit.hash === repo.status.oid}
-      {@const isLocal = unpushed.has(commit.hash)}
-      {@const isIncoming = incoming.has(commit.hash)}
-      {@const open = expanded === commit.hash}
-      <li class="commit-item" class:open>
-        <div
-          class="commit"
-          class:head={isHead}
-          class:incoming={isIncoming}
-          role="button"
-          tabindex="0"
-          aria-expanded={open}
-          title="{commit.subject}\n{commit.hash.slice(0, 7)} · {commit.author} · {new Date(
-            commit.time * 1000,
-          ).toLocaleString()}{isLocal ? '\nNot pushed yet' : ''}{isIncoming ? '\nOn the remote, not pulled yet' : ''}"
-          onclick={() => toggle(commit.hash)}
-          onkeydown={(e) => onKey(e, commit.hash)}
-        >
-          <svg {width} height={ROW} viewBox="0 0 {width} {ROW}" aria-hidden="true">
-            {#each row.lines as line, i (i)}
-              <path d={path(line)} class="edge lane-{line.lane % COLORS}" class:dashed={isIncoming} />
-            {/each}
-            {#if isHead}
-              <circle cx={x(row.lane)} cy={ROW / 2} r="7" class="halo lane-{row.lane % COLORS}" />
-            {/if}
-            <circle
-              cx={x(row.lane)}
-              cy={ROW / 2}
-              r={isHead ? 4.5 : 3.5}
-              class="node lane-{row.lane % COLORS}"
-              class:hollow={isLocal || commit.parents.length > 1}
-              class:faded={isIncoming}
-            />
-          </svg>
-          <span class="subject">{commit.subject}</span>
-          {#each commit.refs as ref (ref.kind + ref.name)}
-            <span class="ref ref-{ref.kind}" class:ref-head={ref.isHead}>
-              {#if ref.kind === "remote"}<span class="codicon codicon-cloud"></span>{/if}
-              {#if ref.kind === "tag"}<span class="codicon codicon-tag"></span>{/if}
-              {ref.name}
-            </span>
-          {/each}
-          {#if repo.base && !repo.base.isCurrent && repo.base.behind > 0 && commit.hash === repo.base.forkPoint}
-            <span class="ref ref-fork" title="Your branch split off {repo.base.name} here"
-              ><span class="codicon codicon-git-branch"></span>you branched here</span
-            >
-          {/if}
-          <span class="time">{relativeTime(commit.time)}</span>
-        </div>
 
-        {#if open}
-          <div class="details" style="--indent: {width + 12}px">
-            {#if details?.hash === commit.hash}
-              <div class="meta">
-                <span>{details.author}</span>
-                <span class="muted">{new Date(details.time * 1000).toLocaleString()}</span>
-              </div>
-              {#if details.body !== commit.subject}
-                <p class="body">{details.body}</p>
-              {/if}
-              <ul class="detail-files">
-                {#each details.files as file (file.path)}
-                  {@const { name, dir } = splitPath(file.path)}
-                  <li title={file.path}>
-                    <span class="name">{name}</span>
-                    {#if dir}<span class="dir">{dir}</span>{/if}
-                    <span class="stats">
-                      {#if file.stats.binary}<span class="muted">bin</span>{:else}
-                        {#if file.stats.added}<span class="stat-add">+{file.stats.added}</span>{/if}
-                        {#if file.stats.removed}<span class="stat-del">−{file.stats.removed}</span>{/if}
-                      {/if}
-                    </span>
-                  </li>
-                {/each}
-              </ul>
-              <div class="detail-actions">
-                <button title="Copy {commit.hash}" onclick={() => send({ type: "copyHash", hash: commit.hash })}>
-                  <span class="codicon codicon-copy"></span>{commit.hash.slice(0, 7)}
-                </button>
-                <button
-                  title="git switch -c <name> {commit.hash.slice(0, 7)}"
-                  disabled={!!busy}
-                  onclick={() => send({ type: "branchFrom", hash: commit.hash })}
+  {#if graph.commits.length === 0}
+    <p class="muted empty">No commits yet.</p>
+  {:else}
+    <div class="lanes" style="--graph-width: {width}px">
+      <svg class="lane-svg" {width} height={graph.commits.length * ROW} aria-hidden="true">
+        {#each graph.edges as edge (edge.child + ":" + edge.parent)}
+          <path
+            d={edgePath(edge)}
+            class="edge"
+            class:dashed={incoming.has(graph.commits[edge.child].hash)}
+            style="stroke: {edgeColor(edge)}"
+          />
+        {/each}
+        {#each graph.commits as commit, i (commit.hash)}
+          {@const color = laneColor(laneAt(i).color)}
+          {@const isHead = commit.hash === repo.status.oid}
+          {#if isHead}<circle cx={x(i)} cy={y(i)} r="7.5" class="halo" style="stroke: {color}" />{/if}
+          <circle
+            cx={x(i)}
+            cy={y(i)}
+            r={isHead ? 4.5 : 3.6}
+            class="node"
+            class:hollow={unpushed.has(commit.hash) || commit.parents.length > 1}
+            class:faded={incoming.has(commit.hash)}
+            style="stroke: {color}; fill: {color}"
+          />
+        {/each}
+      </svg>
+
+      <ol class="commits">
+        {#each graph.commits as commit, i (commit.hash)}
+          {@const lane = laneAt(i)}
+          {@const isHead = commit.hash === repo.status.oid}
+          {@const isIncoming = incoming.has(commit.hash)}
+          <li class="commit-item">
+            <div
+              class="commit"
+              class:head={isHead}
+              class:incoming={isIncoming}
+              class:selected={selected === i}
+              role="button"
+              tabindex="0"
+              aria-pressed={selected === i}
+              title="{commit.subject}\n{commit.hash.slice(0, 7)} · {commit.author} · on {lane.name}"
+              onclick={() => select(i)}
+              onkeydown={(e) => onKey(e, i)}
+            >
+              <span class="subject">{commit.subject}</span>
+              {#each commit.refs as ref (ref.kind + ref.name)}
+                {@const color = refColor(graph, ref)}
+                <span class="ref ref-{ref.kind}" class:ref-head={ref.isHead} style={color ? `--chip: ${color}` : ""}>
+                  {#if ref.kind === "remote"}<span class="codicon codicon-cloud"></span>{/if}
+                  {#if ref.kind === "tag"}<span class="codicon codicon-tag"></span>{/if}
+                  {ref.name}
+                </span>
+              {/each}
+              {#if (lane.kind === "merged" || lane.kind === "other") && tips.get(graph.placement[i].lane) === i}
+                <span
+                  class="ref ref-lane"
+                  style="--chip: {laneColor(lane.color)}"
+                  title={lane.kind === "merged" ? `${lane.name}: merged, branch deleted` : lane.name}
                 >
-                  <span class="codicon codicon-git-branch-create"></span>Branch
-                </button>
-                {#if onHead.has(commit.hash)}
-                  {@const revert = preview({ type: "revert", hash: commit.hash }, repo)}
-                  <button
-                    title={revert.text}
-                    disabled={!revert.ok || !!busy}
-                    onclick={() => send({ type: "action", request: { type: "revert", hash: commit.hash } })}
-                  >
-                    <span class="codicon codicon-discard"></span>Revert
-                  </button>
-                {:else}
-                  {@const pick = preview({ type: "cherryPick", hash: commit.hash }, repo)}
-                  <button
-                    title={pick.text}
-                    disabled={!pick.ok || !!busy}
-                    onclick={() => send({ type: "action", request: { type: "cherryPick", hash: commit.hash } })}
-                  >
-                    <span class="codicon codicon-git-pull-request-go-to-changes"></span>Cherry-pick
-                  </button>
-                {/if}
-              </div>
-            {:else}
-              <p class="muted">Loading…</p>
-            {/if}
-          </div>
-        {/if}
-      </li>
-    {/each}
-  </ol>
+                  {#if lane.kind === "merged"}<span class="codicon codicon-git-merge"></span>{/if}{lane.name}
+                </span>
+              {/if}
+              {#if repo.base && !repo.base.isCurrent && repo.base.behind > 0 && commit.hash === repo.base.forkPoint}
+                <span class="ref ref-fork" title="Your branch split off {repo.base.name} here">you branched here</span>
+              {/if}
+              <span class="time">{relativeTime(commit.time)}</span>
+            </div>
+          </li>
+        {/each}
+      </ol>
+    </div>
+
+    {#if selected !== null && graph.commits[selected]}
+      <CommitPanel {repo} commit={graph.commits[selected]} {details} {busy} {send} onClose={() => (selected = null)} />
+    {/if}
+  {/if}
 </section>
