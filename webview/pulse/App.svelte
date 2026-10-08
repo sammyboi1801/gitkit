@@ -5,6 +5,8 @@
   import Changes from "./Changes.svelte";
   import Graph from "./Graph.svelte";
   import Header from "./Header.svelte";
+  import History from "./History.svelte";
+  import Stashes from "./Stashes.svelte";
   import Remote from "./Remote.svelte";
   import Repos from "./Repos.svelte";
   import { applyMainColor } from "../shared/graph";
@@ -110,6 +112,8 @@
     {#key state.repo.root}
       <Remote repo={state.repo} {busy} {fetching} />
       <Changes repo={state.repo} {busy} {conflictBlocks} />
+      <Stashes repo={state.repo} {busy} />
+      <History repo={state.repo} {busy} />
       <Graph repo={state.repo} {busy} {details} />
     {/key}
   {/if}

@@ -1307,3 +1307,105 @@ button.primary .count-pill {
   display: block;
   padding: 0 12px 6px;
 }
+
+/* Oops, undo timeline, saved changes */
+
+.oops-button {
+  flex: none;
+  padding: 1px 8px;
+  font-size: 0.9em;
+  background: transparent;
+  border: 1px solid var(--gk-border);
+  color: var(--vscode-foreground);
+}
+
+.oops-button .codicon {
+  font-size: 13px;
+  color: var(--vscode-charts-yellow);
+}
+
+.section-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  justify-content: flex-start;
+  color: var(--gk-muted);
+}
+
+.section-toggle:hover:not(:disabled) {
+  background: var(--gk-hover);
+}
+
+.toggle-hint {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.step,
+.stash {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 12px 0 20px;
+}
+
+.step:hover,
+.stash:hover {
+  background: var(--gk-hover);
+}
+
+.step-icon {
+  color: var(--gk-muted);
+  flex: none;
+}
+
+.step-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step .time,
+.stash .time {
+  color: var(--gk-muted);
+  font-size: 0.85em;
+  flex: none;
+}
+
+.step-undo {
+  visibility: hidden;
+}
+
+.step:hover .step-undo,
+.step:focus-within .step-undo {
+  visibility: visible;
+}
+
+.step.elsewhere {
+  opacity: 0.5;
+}
+
+.stash:hover .time {
+  display: none;
+}
+
+.stash .dir {
+  color: var(--gk-muted);
+  font-size: 0.85em;
+  flex: none;
+}
+
+.timeline-hint {
+  display: block;
+  padding: 2px 20px 0;
+}

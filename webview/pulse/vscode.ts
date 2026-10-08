@@ -7,6 +7,8 @@ interface ViewState {
   /** Unsent commit messages, per repo root. */
   drafts?: Record<string, string>;
   reposCollapsed?: boolean;
+  /** Collapsed sections by name, e.g. "history". */
+  collapsed?: Record<string, boolean>;
 }
 
 const read = (): ViewState => api.getState<ViewState>() ?? {};
@@ -31,4 +33,12 @@ export function loadReposCollapsed(): boolean {
 
 export function saveReposCollapsed(collapsed: boolean): void {
   write({ reposCollapsed: collapsed });
+}
+
+export function loadCollapsed(section: string, fallback: boolean): boolean {
+  return read().collapsed?.[section] ?? fallback;
+}
+
+export function saveCollapsed(section: string, collapsed: boolean): void {
+  write({ collapsed: { ...read().collapsed, [section]: collapsed } });
 }

@@ -32,14 +32,22 @@
       <span class="branch">{status.branch ?? `detached @ ${status.oid?.slice(0, 7) ?? "?"}`}</span>
       <span class="codicon codicon-chevron-down chevron"></span>
     </button>
+    <button
+      class="oops-button"
+      title="Fix a mistake: undo a commit, recover a branch, get back discarded work…"
+      disabled={!!busy}
+      onclick={() => send({ type: "oops" })}
+    >
+      <span class="codicon codicon-lightbulb-sparkle"></span>Oops
+    </button>
   </div>
 
   <p class="summary tone-{summary.tone}">
     <span class="codicon codicon-{summary.icon}"></span>
     <span>{summary.text}</span>
-    {#if repo.stashCount > 0}
+    {#if repo.stashes.length > 0}
       <span class="chip" title="Saved stashes, including anything GitKit discarded"
-        ><span class="codicon codicon-archive"></span>{repo.stashCount}</span
+        ><span class="codicon codicon-archive"></span>{repo.stashes.length}</span
       >
     {/if}
   </p>
