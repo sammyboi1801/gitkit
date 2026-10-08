@@ -1,0 +1,166 @@
+/* Branch Map: an editor tab, so it uses the editor's background rather than the sidebar's. */
+
+body {
+  background: var(--vscode-editor-background);
+}
+
+.map {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--gk-border);
+  white-space: nowrap;
+}
+
+.toolbar .spacer {
+  flex: 1;
+}
+
+.toolbar .legend {
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+  min-width: 0;
+  font-size: 0.9em;
+  color: var(--gk-muted);
+}
+
+.legend-lane {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-lane i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.map .banner {
+  margin: 8px 16px 0;
+}
+
+.canvas {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+}
+
+.canvas svg {
+  display: block;
+}
+
+.guide {
+  stroke: var(--gk-border);
+  stroke-dasharray: 4 6;
+  opacity: 0.6;
+}
+
+.map-edge {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-edge.dashed {
+  stroke-dasharray: 5 5;
+  opacity: 0.55;
+}
+
+.map-node {
+  cursor: pointer;
+  outline: none;
+}
+
+.map-dot {
+  stroke-width: 3;
+}
+
+/* A ring of background colour around each dot, so lines visibly stop at commits. */
+.map-ring {
+  fill: var(--vscode-editor-background);
+}
+
+.map-dot.hollow {
+  fill: var(--vscode-editor-background) !important;
+}
+
+.map-node:hover .map-dot,
+.map-node:focus-visible .map-dot,
+.map-node.selected .map-dot {
+  stroke: var(--vscode-foreground) !important;
+}
+
+.map-node.faded {
+  opacity: 0.55;
+}
+
+.map-halo {
+  fill: none;
+  stroke-width: 2;
+  opacity: 0.5;
+}
+
+.lane-label text {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.flag rect {
+  fill: var(--chip);
+}
+
+.flag text {
+  font-size: 10.5px;
+  font-weight: 600;
+  fill: var(--vscode-editor-background);
+}
+
+.flag-remote rect {
+  fill: var(--vscode-editor-background);
+  stroke: var(--chip);
+}
+
+.flag-remote text {
+  fill: var(--chip);
+}
+
+.tooltip {
+  position: absolute;
+  transform: translateX(-50%);
+  max-width: 320px;
+  padding: 6px 8px;
+  display: grid;
+  gap: 2px;
+  pointer-events: none;
+  background: var(--vscode-editorHoverWidget-background);
+  color: var(--vscode-editorHoverWidget-foreground);
+  border: 1px solid var(--vscode-editorHoverWidget-border);
+  border-radius: var(--gk-radius);
+  font-size: 0.92em;
+  z-index: 2;
+}
+
+.map-panel {
+  border-top: 1px solid var(--gk-border);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.map-panel .commit-panel {
+  position: static;
+  box-shadow: none;
+  border-top: none;
+  background: transparent;
+  padding: 10px 16px 12px;
+}

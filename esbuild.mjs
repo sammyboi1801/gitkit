@@ -25,7 +25,7 @@ const extension = {
 /** @type {esbuild.BuildOptions} */
 const webview = {
   ...shared,
-  entryPoints: { pulse: "webview/pulse/main.ts" },
+  entryPoints: { pulse: "webview/pulse/main.ts", map: "webview/map/main.ts" },
   outdir: "dist/webview",
   format: "iife",
   platform: "browser",

@@ -1,11 +1,13 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
+import { parseConflicts, resolveConflict, type Resolution } from "../../git/conflicts";
 import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discover";
 import { findWorkspaceRepo, readBranches, readCommitDetails, readRepo, readSummary } from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, RepoState } from "../../shared/types";
+import { renderWebviewHtml } from "../webviewHtml";
 
 const REFRESH_DELAY_MS = 400;
 const FETCH_CHECK_MS = 30_000;
@@ -29,6 +31,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private lastFetchAttempt = 0;
   private readonly fetchTimer: NodeJS.Timeout;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly panels = new Set<vscode.Webview>();
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -58,6 +61,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         this.scheduleRefresh();
       }),
       vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("gitkit.mainBranchColor")) this.postConfig();
         if (!e.affectsConfiguration("gitkit.repoScanDepth")) return;
         this.roots = undefined;
         this.scheduleRefresh();
@@ -73,9 +77,9 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const distUri = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
 
     view.webview.options = { enableScripts: true, localResourceRoots: [distUri] };
-    view.webview.html = renderHtml(view.webview, distUri);
+    view.webview.html = renderWebviewHtml(view.webview, distUri, "pulse");
 
-    view.webview.onDidReceiveMessage((message: WebviewToHost) => void this.handle(message));
+    view.webview.onDidReceiveMessage((message: WebviewToHost) => void this.receive(message));
     view.onDidChangeVisibility(() => view.visible && this.scheduleRefresh());
     view.onDidDispose(() => (this.view = undefined));
   }
@@ -202,12 +206,17 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
   }
 
-  private async handle(message: WebviewToHost): Promise<void> {
+  /** Handles a message from the sidebar or the Branch Map; both speak the same protocol. */
+  async receive(message: WebviewToHost): Promise<void> {
     switch (message.type) {
       case "ready":
       case "refresh":
+        this.postConfig();
         this.lastPosted = "";
         return this.refresh();
+      case "openBranchMap":
+        await vscode.commands.executeCommand("gitkit.openBranchMap");
+        return;
       case "openFolder":
         await vscode.commands.executeCommand("vscode.openFolder");
         return;
@@ -236,6 +245,20 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         await vscode.env.clipboard.writeText(message.hash);
         void vscode.window.setStatusBarMessage(`Copied ${message.hash.slice(0, 7)}`, 2000);
         return;
+      case "conflictDetails":
+        return this.postConflicts(message.path);
+      case "resolveConflict":
+        return this.resolveConflict(message.path, message.block, message.choice);
+      case "openMergeEditor": {
+        if (!this.repo) return;
+        const uri = vscode.Uri.file(path.join(this.repo.root, message.path));
+        try {
+          await vscode.commands.executeCommand("git.openMergeEditor", uri);
+        } catch {
+          await vscode.window.showTextDocument(uri);
+        }
+        return;
+      }
       case "commitDetails": {
         if (!this.repo) return;
         try {
@@ -246,6 +269,31 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       }
     }
+  }
+
+  private async postConflicts(relative: string): Promise<void> {
+    if (!this.repo) return;
+    try {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(this.repo.root, relative)));
+      this.post({ type: "conflictDetails", path: relative, blocks: parseConflicts(document.getText()) });
+    } catch (error) {
+      this.post({ type: "error", error: { command: "", message: `Couldn't read ${relative}: ${describe(error)}` } });
+    }
+  }
+
+  /** Edits through the editor rather than the disk, so the change shows up in undo history. */
+  private async resolveConflict(relative: string, block: number | "all", choice: Resolution): Promise<void> {
+    if (!this.repo) return;
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(this.repo.root, relative)));
+    const text = document.getText();
+    const resolved = resolveConflict(text, block, choice);
+    if (resolved !== text) {
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(text.length)), resolved);
+      await vscode.workspace.applyEdit(edit);
+      await document.save();
+    }
+    await this.postConflicts(relative);
   }
 
   private async openFile(relative: string): Promise<void> {
@@ -331,6 +379,12 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
   }
 
+  /** Lets another webview (the Branch Map) receive the same live state as the sidebar. */
+  attach(webview: vscode.Webview): vscode.Disposable {
+    this.panels.add(webview);
+    return new vscode.Disposable(() => this.panels.delete(webview));
+  }
+
   private postState(state: PulseState): void {
     // Skip identical states so watcher-driven refreshes don't make the view flicker.
     const serialized = JSON.stringify(state);
@@ -339,8 +393,14 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.post({ type: "state", state });
   }
 
+  private postConfig(): void {
+    const color = vscode.workspace.getConfiguration("gitkit").get<string>("mainBranchColor", "blue");
+    this.post({ type: "config", mainBranchColor: color });
+  }
+
   private post(message: HostToWebview): void {
     void this.view?.webview.postMessage(message);
+    for (const panel of this.panels) void panel.postMessage(message);
   }
 }
 
@@ -367,35 +427,4 @@ function askBranchName(title: string): Thenable<string | undefined> {
 function describe(error: unknown): string {
   if (error instanceof GitError) return error.stderr.trim() || error.message;
   return error instanceof Error ? error.message : String(error);
-}
-
-function renderHtml(webview: vscode.Webview, distUri: vscode.Uri): string {
-  const nonce = createNonce();
-  const script = webview.asWebviewUri(vscode.Uri.joinPath(distUri, "pulse.js"));
-  const style = webview.asWebviewUri(vscode.Uri.joinPath(distUri, "pulse.css"));
-  const csp = [
-    "default-src 'none'",
-    `style-src ${webview.cspSource}`,
-    `font-src ${webview.cspSource}`,
-    `script-src 'nonce-${nonce}'`,
-  ].join("; ");
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="${csp}" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="${style}" />
-</head>
-<body>
-  <div id="app"></div>
-  <script nonce="${nonce}" src="${script}"></script>
-</body>
-</html>`;
-}
-
-function createNonce(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }

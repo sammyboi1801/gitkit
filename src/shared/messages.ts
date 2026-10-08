@@ -1,6 +1,7 @@
 // Message protocol between the extension host and the Pulse webview.
 import type { ActionRequest } from "../git/actions";
-import type { CommitDetails, RepoState, RepoSummary } from "./types";
+import type { Resolution } from "../git/conflicts";
+import type { CommitDetails, ConflictBlock, RepoState, RepoSummary } from "./types";
 
 export type PulseState =
   | { kind: "loading" }
@@ -20,7 +21,9 @@ export type HostToWebview =
   | { type: "busy"; label: string | null }
   | { type: "error"; error: ActionError }
   | { type: "commitDetails"; details: CommitDetails }
-  | { type: "fetching"; active: boolean };
+  | { type: "fetching"; active: boolean }
+  | { type: "config"; mainBranchColor: string }
+  | { type: "conflictDetails"; path: string; blocks: ConflictBlock[] };
 
 export type WebviewToHost =
   | { type: "ready" }
@@ -33,4 +36,8 @@ export type WebviewToHost =
   | { type: "branchFrom"; hash: string }
   | { type: "copyHash"; hash: string }
   | { type: "commitDetails"; hash: string }
-  | { type: "selectRepo"; root: string };
+  | { type: "selectRepo"; root: string }
+  | { type: "openBranchMap" }
+  | { type: "conflictDetails"; path: string }
+  | { type: "resolveConflict"; path: string; block: number | "all"; choice: Resolution }
+  | { type: "openMergeEditor"; path: string };

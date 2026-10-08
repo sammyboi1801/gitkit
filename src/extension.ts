@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { BranchMapPanel } from "./features/map/BranchMapPanel";
 import { PulseViewProvider } from "./features/pulse/PulseViewProvider";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -8,6 +9,7 @@ export function activate(context: vscode.ExtensionContext): void {
     pulse,
     vscode.window.registerWebviewViewProvider(PulseViewProvider.viewId, pulse),
     vscode.commands.registerCommand("gitkit.refresh", () => pulse.reload()),
+    vscode.commands.registerCommand("gitkit.openBranchMap", () => BranchMapPanel.show(context.extensionUri, pulse)),
   );
 }
 

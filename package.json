@@ -43,10 +43,21 @@
         "title": "Refresh",
         "category": "GitKit",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "gitkit.openBranchMap",
+        "title": "Open Branch Map",
+        "category": "GitKit",
+        "icon": "$(screen-full)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "gitkit.openBranchMap",
+          "when": "view == gitkit.pulse",
+          "group": "navigation"
+        },
         {
           "command": "gitkit.refresh",
           "when": "view == gitkit.pulse",
@@ -74,6 +85,20 @@
           "type": "boolean",
           "default": true,
           "description": "When the workspace has several repositories, switch to the one containing the file you're editing."
+        },
+        "gitkit.mainBranchColor": {
+          "type": "string",
+          "default": "blue",
+          "description": "Colour of the main branch (main/master) in the graph and Branch Map. One of blue, green, purple, orange, red, yellow, or any CSS colour such as #e5534b.",
+          "examples": [
+            "blue",
+            "green",
+            "purple",
+            "orange",
+            "red",
+            "yellow",
+            "#e5534b"
+          ]
         }
       }
     }
