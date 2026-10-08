@@ -7,6 +7,17 @@
       "group": "build",
       "problemMatcher": [],
       "presentation": { "reveal": "silent" }
+    },
+    {
+      "type": "npm",
+      "script": "sandbox",
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "prepare dev host",
+      "dependsOn": ["npm: build", "npm: sandbox"],
+      "problemMatcher": []
     }
   ]
 }

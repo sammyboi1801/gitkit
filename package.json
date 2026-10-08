@@ -63,7 +63,8 @@
     "lint": "eslint src test && prettier --check \"src/**\" \"webview/**\" \"test/**\"",
     "format": "prettier --write \"src/**\" \"webview/**\" \"test/**\"",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "sandbox": "node scripts/sandbox.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
