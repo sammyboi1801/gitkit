@@ -116,3 +116,15 @@ describe("activity feed", () => {
     expect(repo.activity.every((item) => item.ref.startsWith("origin/"))).toBe(true);
   });
 });
+
+describe("findWorkspaceRepo", () => {
+  it("ignores a parent repo that ignores the opened folder", async () => {
+    const { mkdirSync } = await import("node:fs");
+    const { findWorkspaceRepo } = await import("../../src/git/repo");
+    writeFileSync(join(work, ".gitignore"), "ignored-dir/\n");
+    mkdirSync(join(work, "ignored-dir"), { recursive: true });
+    mkdirSync(join(work, "tracked-dir"), { recursive: true });
+    expect(await findWorkspaceRepo(join(work, "ignored-dir"))).toBeNull();
+    expect(await findWorkspaceRepo(join(work, "tracked-dir"))).not.toBeNull();
+  });
+});

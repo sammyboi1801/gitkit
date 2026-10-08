@@ -116,6 +116,20 @@ export interface RepoState {
 
 export type Operation = "merge" | "rebase" | "cherry-pick" | "revert";
 
+/** The cheap per-repo overview shown in the repository list when a workspace has several repos. */
+export interface RepoSummary {
+  root: string;
+  label: string;
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  changes: number;
+  conflicts: number;
+  /** Set when the repo couldn't be read, e.g. a broken .git. */
+  error?: string;
+}
+
 export interface BaseInfo {
   /** e.g. "origin/main". */
   ref: string;

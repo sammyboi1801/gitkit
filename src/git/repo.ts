@@ -1,7 +1,17 @@
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import type { ActivityItem, BaseInfo, Branch, CommitDetails, Operation, RepoState, StatusInfo } from "../shared/types";
+import type {
+  ActivityItem,
+  BaseInfo,
+  Branch,
+  CommitDetails,
+  Operation,
+  RepoState,
+  RepoSummary,
+  StatusInfo,
+} from "../shared/types";
 import { BRANCH_FORMAT, parseBranches } from "./branches";
+import { pathKey } from "./discover";
 import { layoutGraph } from "./graph";
 import { LOG_FORMAT, parseLog } from "./log";
 import { parseNumstat, toStatsMap } from "./numstat";
@@ -19,6 +29,21 @@ export async function findRepoRoot(folder: string): Promise<string | null> {
   } catch (error) {
     if (error instanceof GitError && /not a git repository/i.test(error.stderr)) return null;
     throw error;
+  }
+}
+
+/**
+ * The repo a workspace folder belongs to. A parent repo that ignores the folder doesn't count:
+ * e.g. ~/projects inside a dotfiles repo is not part of that repo in any useful sense.
+ */
+export async function findWorkspaceRepo(folder: string): Promise<string | null> {
+  const root = await findRepoRoot(folder);
+  if (!root || pathKey(root) === pathKey(folder)) return root;
+  try {
+    await runGit(["check-ignore", "-q", "--", folder], root);
+    return null; // Exit 0: the folder is ignored by the parent repo.
+  } catch {
+    return root; // Exit 1: not ignored.
   }
 }
 
@@ -234,6 +259,27 @@ async function readActivity(root: string, refLines: string[]): Promise<ActivityI
 
   activityCache.set(root, { key, items });
   return items;
+}
+
+/** Just enough for one row in the repository list: one `git status`, no graph or remote work. */
+export async function readSummary(root: string, label: string): Promise<RepoSummary> {
+  try {
+    const { stdout } = await read(["status", "--porcelain=v2", "--branch", "-z"], root);
+    const status = parseStatus(stdout);
+    return {
+      root,
+      label,
+      branch: status.branch,
+      upstream: status.upstream,
+      ahead: status.ahead,
+      behind: status.behind,
+      changes: status.files.length,
+      conflicts: status.files.filter((f) => f.conflicted).length,
+    };
+  } catch (error) {
+    const message = error instanceof GitError ? error.stderr.trim() : String(error);
+    return { root, label, branch: null, upstream: null, ahead: 0, behind: 0, changes: 0, conflicts: 0, error: message };
+  }
 }
 
 export async function readBranches(root: string): Promise<Branch[]> {
