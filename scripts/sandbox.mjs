@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const VERSION = "2";
+const VERSION = "3";
 const root = join(import.meta.dirname, "..", ".vscode-test");
 const dir = join(root, "sandbox");
 const remote = join(root, "sandbox-remote.git");
@@ -51,19 +51,36 @@ git("tag", "v0.1.0");
 git("push", "-u", "origin", "main", "--tags");
 git("branch", "-D", "feat/ui");
 
-// main gets a commit on the remote that the local copy doesn't have yet: "1 new commit on the remote".
-commit("fix: handle empty name", { "app.py": "def greet(name):\n    return f'hello, {name or \"friend\"}!'\n" });
-git("push");
-git("reset", "--hard", "HEAD~1");
-
 // A published feature branch with one unpushed commit: "1 commit ready to push".
 git("checkout", "-b", "feat/login");
 commit("feat: add login stub", { "login.py": "def login(user):\n    return True\n" });
 git("push", "-u", "origin", "feat/login");
-commit("feat: check password length", { "login.py": "def login(user, password):\n    return len(password) >= 8\n" });
+// Also edits the greeting line, which a teammate changes on main below: a predicted conflict.
+commit("feat: check password length", {
+  "login.py": "def login(user, password):\n    return len(password) >= 8\n",
+  "app.py": "def greet(name):\n    return f'welcome back, {name}!'\n",
+});
+
+// A teammate pushes to main from their own clone; fetching it shows up in the activity feed.
+const teammate = join(root, "sandbox-teammate");
+rmSync(teammate, { recursive: true, force: true });
+execFileSync("git", ["clone", "-q", remote, teammate], { stdio: "pipe" });
+const asAlex = (...args) =>
+  execFileSync("git", ["-c", "user.name=Alex Chen", "-c", "user.email=alex@gitkit.local", ...args], {
+    cwd: teammate,
+    stdio: "pipe",
+  });
+writeFileSync(join(teammate, "app.py"), "def greet(name):\n    return f'hello, {name or \"friend\"}!'\n");
+asAlex("commit", "-qam", "fix: handle empty name");
+writeFileSync(join(teammate, "CHANGELOG.md"), "## 0.1.1\n- Greets nameless users\n");
+asAlex("add", ".");
+asAlex("commit", "-qm", "docs: changelog for 0.1.1");
+asAlex("push", "-q");
+rmSync(teammate, { recursive: true, force: true });
+git("fetch", "origin");
 
 // Uncommitted work so the changes list has something in every group.
-write("app.py", "def greet(name):\n    return f'hello, {name}!!'\n\n\ndef bye(name):\n    return f'bye {name}'\n");
+write("app.py", "def greet(name):\n    return f'welcome back, {name}!!'\n\n\ndef bye(name):\n    return f'bye {name}'\n");
 write("notes.txt", "todo: real auth\n");
 write("login.py", "def login(user, password):\n    # TODO: hash\n    return len(password) >= 8\n");
 git("add", "login.py");
