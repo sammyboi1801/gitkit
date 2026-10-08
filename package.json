@@ -1,20 +1,42 @@
 {
   "name": "gitkit",
   "displayName": "GitKit",
-  "description": "Everyday git and GitHub, made visual and safe.",
-  "version": "0.0.1",
+  "description": "Everyday git and GitHub, made visual and safe: status at a glance, branch lanes, conflict forecasts, undo, and a visual GitHub Actions builder.",
+  "version": "0.1.0",
   "publisher": "sammyboi1801",
   "license": "MIT",
+  "icon": "media/icon.png",
+  "preview": true,
+  "galleryBanner": {
+    "color": "#0f1626",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/sammyboi1801/gitkit.git"
   },
+  "bugs": {
+    "url": "https://github.com/sammyboi1801/gitkit/issues"
+  },
+  "homepage": "https://github.com/sammyboi1801/gitkit#readme",
+  "keywords": [
+    "git",
+    "github",
+    "branch",
+    "graph",
+    "conflict",
+    "undo",
+    "github actions",
+    "workflow",
+    "scm"
+  ],
   "engines": {
     "vscode": "^1.95.0"
   },
   "categories": [
     "SCM Providers",
-    "Visualization"
+    "Visualization",
+    "Other"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [],
@@ -184,13 +206,18 @@
     "format": "prettier --write \"src/**\" \"webview/**\" \"test/**\"",
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
-    "sandbox": "node scripts/sandbox.mjs"
+    "sandbox": "node scripts/sandbox.mjs",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.5",
     "@types/vscode": "^1.95.0",
     "@vscode/codicons": "^0.0.46-24",
+    "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.2",
     "esbuild-svelte": "^0.9.5",
     "eslint": "^10.12.0",
@@ -201,8 +228,5 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3"
-  },
-  "dependencies": {
-    "yaml": "^2.9.1"
   }
 }

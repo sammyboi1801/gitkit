@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import * as esbuild from "esbuild";
 import sveltePlugin from "esbuild-svelte";
 
@@ -40,6 +41,9 @@ const webview = {
   loader: { ".ttf": "file" },
   plugins: [sveltePlugin({ compilerOptions: { css: "external", dev: !production } })],
 };
+
+// A release build starts clean, so stale development source maps never end up in the package.
+if (production) rmSync("dist", { recursive: true, force: true });
 
 if (watch) {
   const contexts = await Promise.all([esbuild.context(extension), esbuild.context(webview)]);

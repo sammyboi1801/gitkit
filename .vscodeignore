@@ -1,7 +1,9 @@
 **
 !dist/**
-!media/**
+dist/**/*.map
+!media/gitkit.svg
+!media/icon.png
 !package.json
 !README.md
+!CHANGELOG.md
 !LICENSE
-dist/**/*.map
