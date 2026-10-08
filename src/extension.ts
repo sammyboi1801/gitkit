@@ -5,6 +5,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const pulse = new PulseViewProvider(context.extensionUri);
 
   context.subscriptions.push(
+    pulse,
     vscode.window.registerWebviewViewProvider(PulseViewProvider.viewId, pulse),
     vscode.commands.registerCommand("gitkit.refresh", () => pulse.refresh()),
   );

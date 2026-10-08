@@ -32,6 +32,8 @@ const webview = {
   target: "es2022",
   mainFields: ["svelte", "browser", "module", "main"],
   conditions: ["svelte", "browser", production ? "production" : "development"],
+  // Codicons ships its icon font as a .ttf referenced from its CSS.
+  loader: { ".ttf": "file" },
   plugins: [sveltePlugin({ compilerOptions: { css: "external", dev: !production } })],
 };
 
