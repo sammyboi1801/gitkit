@@ -14,7 +14,10 @@ export type ActionRequest =
   | { type: "switch"; branch: string }
   | { type: "createBranch"; name: string; from?: string }
   | { type: "revert"; hash: string }
-  | { type: "cherryPick"; hash: string };
+  | { type: "cherryPick"; hash: string }
+  | { type: "updateFromBase" }
+  | { type: "continueOperation" }
+  | { type: "abortOperation" };
 
 export interface Plan {
   label: string;
@@ -111,7 +114,61 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
         `Copy commit ${request.hash.slice(0, 7)} onto ${status.branch}?`,
       );
     }
+
+    case "updateFromBase":
+      return planUpdateFromBase(repo);
+
+    case "continueOperation": {
+      const op = repo.operation;
+      if (!op) return fail("Nothing is in progress.");
+      const unresolved = status.files.filter((f) => f.conflicted).length;
+      if (unresolved)
+        return fail(`Resolve and stage ${unresolved} conflicted file${unresolved === 1 ? "" : "s"} first.`);
+      // core.editor=true accepts git's prepared message instead of opening an editor nobody can see.
+      if (op === "merge") return ok("Continue", [["commit", "--no-edit"]]);
+      return ok("Continue", [["-c", "core.editor=true", op, "--continue"]]);
+    }
+
+    case "abortOperation": {
+      const op = repo.operation;
+      if (!op) return fail("Nothing is in progress.");
+      return ok(
+        "Abort",
+        [[op, "--abort"]],
+        `Abort the ${op}? Your branch goes back to exactly how it was before it started.`,
+      );
+    }
   }
+}
+
+function planUpdateFromBase(repo: RepoState): PlanResult {
+  const { status, base } = repo;
+  if (!base) return fail("No main branch found to update from.");
+  if (base.isCurrent) return planAction({ type: "pull" }, repo);
+  if (!status.branch || !status.oid) return fail("Check out a branch first.");
+  if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
+  if (base.behind === 0) return fail(`Already up to date with ${base.name}.`);
+
+  const backup = ["update-ref", `refs/gitkit/backup/${status.branch}`, "HEAD"];
+  const n = `${base.behind} new commit${base.behind === 1 ? "" : "s"}`;
+  const conflictNote = base.conflicts?.length
+    ? ` Expect conflicts in ${base.conflicts.join(", ")}: you'll resolve them here, or abort to undo.`
+    : "";
+  const backupNote = ` A backup of ${status.branch} is saved first.`;
+
+  // Rebasing rewrites commits, which is only safe while nobody else has them. Once published, merge.
+  if (status.upstream) {
+    return ok(
+      `Merge ${base.name}`,
+      [backup, ["merge", "--autostash", "--no-edit", base.ref]],
+      `Bring ${n} from ${base.name} into ${status.branch}? Your branch is published, so GitKit merges instead of rewriting its history.${conflictNote}${backupNote}`,
+    );
+  }
+  return ok(
+    `Rebase on ${base.name}`,
+    [backup, ["rebase", "--autostash", base.ref]],
+    `Replay your ${base.ahead} commit${base.ahead === 1 ? "" : "s"} on top of ${n} from ${base.name}? Your branch isn't published yet, so this keeps history linear.${conflictNote}${backupNote}`,
+  );
 }
 
 // A practical subset of git check-ref-format: enough to catch typos before git does.
