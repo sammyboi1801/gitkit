@@ -68,6 +68,11 @@ describe("readRepo against a real repo", () => {
     expect(repo.incoming.map(subject)).toEqual(["remote only"]);
     expect(repo.rows).toHaveLength(4);
     expect(repo.lanes).toBe(2);
+
+    // On main itself, main is "current" rather than something to update from.
+    expect(repo.base).toMatchObject({ ref: "origin/main", isCurrent: true });
+    expect(repo.operation).toBeNull();
+    expect(repo.activity[0]).toMatchObject({ ref: "origin/main", kind: "push", commits: 1, authors: ["Test"] });
   });
 
   it("lists branches with tracking info", async () => {
@@ -80,5 +85,34 @@ describe("readRepo against a real repo", () => {
     const details = await readCommitDetails(work, head);
     expect(details).toMatchObject({ hash: head, author: "Test", body: "local only" });
     expect(details.files).toEqual([{ path: "c.txt", stats: { added: 1, removed: 0, binary: false } }]);
+  });
+});
+
+describe("base branch comparison", () => {
+  it("counts commits since branching and predicts conflicts without touching files", async () => {
+    // origin/main added b.txt; this branch adds a different b.txt, so a merge must conflict.
+    git(work, "switch", "-c", "feat");
+    writeFileSync(join(work, "b.txt"), "mine\n");
+    git(work, "add", "b.txt");
+    git(work, "commit", "-m", "mine", "--only", "b.txt");
+    const statusBefore = git(work, "status", "--porcelain");
+
+    const repo = await readRepo(work);
+    expect(repo.base).toMatchObject({
+      ref: "origin/main",
+      ahead: 2,
+      behind: 1,
+      isCurrent: false,
+      conflicts: ["b.txt"],
+    });
+    expect(git(work, "status", "--porcelain")).toBe(statusBefore);
+  });
+});
+
+describe("activity feed", () => {
+  it("only reports remote branches, never local ones with a slash in the name", async () => {
+    git(work, "switch", "-c", "fix/local-only");
+    const repo = await readRepo(work);
+    expect(repo.activity.every((item) => item.ref.startsWith("origin/"))).toBe(true);
   });
 });

@@ -103,4 +103,44 @@ export interface RepoState {
   unpushed: string[];
   /** Commits on the upstream that HEAD doesn't have yet. */
   incoming: string[];
+  /** The branch work usually merges into (origin/main or similar), compared with HEAD. */
+  base: BaseInfo | null;
+  /** Unix seconds of the last fetch, from FETCH_HEAD; null if never fetched. */
+  lastFetch: number | null;
+  /** Set by the extension when a background fetch fails, e.g. offline. */
+  fetchError?: string;
+  /** A merge, rebase, cherry-pick or revert that stopped part-way, usually on conflicts. */
+  operation: Operation | null;
+  activity: ActivityItem[];
+}
+
+export type Operation = "merge" | "rebase" | "cherry-pick" | "revert";
+
+export interface BaseInfo {
+  /** e.g. "origin/main". */
+  ref: string;
+  /** e.g. "main". */
+  name: string;
+  /** Commits on HEAD that the base doesn't have. */
+  ahead: number;
+  /** Commits on the base since HEAD branched off. */
+  behind: number;
+  /** Where HEAD branched off the base. */
+  forkPoint: string | null;
+  /** Files a merge would conflict in; null when not checked (nothing to merge). */
+  conflicts: string[] | null;
+  /** HEAD is the base branch itself (e.g. on main tracking origin/main). */
+  isCurrent: boolean;
+}
+
+export interface ActivityItem {
+  /** e.g. "origin/main". */
+  ref: string;
+  /** Unix seconds when the update arrived locally (fetch) or was sent (push). */
+  time: number;
+  kind: "push" | "fetch" | "forced" | "created";
+  /** The update came from this machine pushing, not from someone else via fetch. */
+  byYou: boolean;
+  commits: number;
+  authors: string[];
 }
