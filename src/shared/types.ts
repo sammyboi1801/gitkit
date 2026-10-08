@@ -109,7 +109,9 @@ export interface RepoState {
   root: string;
   status: StatusInfo;
   remotes: string[];
-  stashCount: number;
+  stashes: StashEntry[];
+  /** What happened to HEAD recently, newest first: the undo timeline. */
+  history: HistoryEntry[];
   graph: BranchGraph;
   /** Commits on HEAD that aren't on any remote yet. */
   unpushed: string[];
@@ -127,6 +129,31 @@ export interface RepoState {
 }
 
 export type Operation = "merge" | "rebase" | "cherry-pick" | "revert";
+
+/** One thing that happened to HEAD, from the reflog, in plain English. */
+export interface HistoryEntry {
+  /** Where HEAD pointed after this happened. */
+  hash: string;
+  /** Where HEAD pointed just before, i.e. what undoing this goes back to. */
+  before: string | null;
+  time: number;
+  kind: "commit" | "amend" | "checkout" | "merge" | "pull" | "rebase" | "reset" | "cherry-pick" | "revert" | "other";
+  summary: string;
+  /** For checkouts: the branch (or commit) left and the one entered. */
+  from?: string;
+  to?: string;
+}
+
+export interface StashEntry {
+  /** e.g. "stash@{0}". */
+  ref: string;
+  hash: string;
+  time: number;
+  branch: string | null;
+  message: string;
+  /** Saved by GitKit's discard, so it's probably something the user wants back. */
+  byGitKit: boolean;
+}
 
 /** One conflicted region of a file, between git's <<<<<<< and >>>>>>> markers. */
 export interface ConflictBlock {

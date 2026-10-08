@@ -129,3 +129,81 @@ describe("findWorkspaceRepo", () => {
     expect(await findWorkspaceRepo(join(work, "tracked-dir"))).not.toBeNull();
   });
 });
+
+describe("readCleanupCandidates", () => {
+  it("finds squash-merged and merged branches but keeps unmerged ones", async () => {
+    const { readCleanupCandidates } = await import("../../src/git/repo");
+    const cleanup = mkdtempSync(join(tmpdir(), "gitkit-cleanup-"));
+    try {
+      git(cleanup, "init", "-q", "-b", "main");
+      writeFileSync(join(cleanup, "a.txt"), "a\n");
+      git(cleanup, "add", ".");
+      git(cleanup, "commit", "-qm", "base");
+
+      // squashed: two commits on a branch, landed on main as one squash commit.
+      git(cleanup, "switch", "-qc", "squashed");
+      writeFileSync(join(cleanup, "s.txt"), "one\n");
+      git(cleanup, "add", ".");
+      git(cleanup, "commit", "-qm", "s1");
+      writeFileSync(join(cleanup, "s.txt"), "one\ntwo\n");
+      git(cleanup, "commit", "-qam", "s2");
+      git(cleanup, "switch", "-q", "main");
+      git(cleanup, "merge", "-q", "--squash", "squashed");
+      git(cleanup, "commit", "-qm", "squash merge");
+
+      // merged: a plain fast-forward-able branch already contained in main.
+      git(cleanup, "branch", "merged", "HEAD~1");
+
+      // open: real unmerged work.
+      git(cleanup, "switch", "-qc", "open");
+      writeFileSync(join(cleanup, "o.txt"), "wip\n");
+      git(cleanup, "add", ".");
+      git(cleanup, "commit", "-qm", "wip");
+      git(cleanup, "switch", "-q", "main");
+
+      const names = (await readCleanupCandidates(cleanup, "main", "main")).map((c) => c.branch.name).sort();
+      expect(names).toEqual(["merged", "squashed"]);
+    } finally {
+      rmSync(cleanup, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("undo, end to end", () => {
+  it("undoes a commit while keeping uncommitted work, and the undo itself can be undone", async () => {
+    const { planAction } = await import("../../src/git/actions");
+    const { runGit } = await import("../../src/git/runner");
+    const dir = mkdtempSync(join(tmpdir(), "gitkit-undo-"));
+    const run = async (request: Parameters<typeof planAction>[0]) => {
+      const result = planAction(request, await readRepo(dir));
+      if (!result.ok) throw new Error(result.reason);
+      for (const args of result.plan.steps) await runGit(args, dir);
+    };
+    const head = () => git(dir, "rev-parse", "HEAD").trim();
+    try {
+      git(dir, "init", "-q", "-b", "main");
+      writeFileSync(join(dir, "a.txt"), "a\n");
+      git(dir, "add", ".");
+      git(dir, "commit", "-qm", "first");
+      const first = head();
+      writeFileSync(join(dir, "b.txt"), "b\n");
+      git(dir, "add", ".");
+      git(dir, "commit", "-qm", "second");
+      const second = head();
+      writeFileSync(join(dir, "notes.txt"), "uncommitted\n");
+
+      const before = await readRepo(dir);
+      expect(before.history[0]).toMatchObject({ kind: "commit", summary: 'Committed "second"' });
+
+      await run({ type: "undoTo", index: 0 });
+      expect(head()).toBe(first);
+      expect(git(dir, "status", "--porcelain")).toContain("notes.txt");
+
+      // The reset is itself in the history, so undoing it brings "second" back.
+      await run({ type: "undoTo", index: 0 });
+      expect(head()).toBe(second);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

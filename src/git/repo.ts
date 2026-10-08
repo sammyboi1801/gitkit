@@ -14,12 +14,14 @@ import { BRANCH_FORMAT, parseBranches } from "./branches";
 import { pathKey } from "./discover";
 import { layoutBranches } from "./lanes";
 import { LOG_FORMAT, parseLog } from "./log";
+import { REFLOG_FORMAT, STASH_FORMAT, parseHistory, parseStashes } from "./history";
 import { parseNumstat, toStatsMap } from "./numstat";
 import { activityKind, parseMergeTree, parseReflog, pickBaseRef } from "./remote";
 import { GitError, runGit } from "./runner";
 import { parseStatus } from "./status";
 
 const GRAPH_LIMIT = 200;
+const HISTORY_LIMIT = 40;
 
 /** Returns the repo root for a folder, or null if the folder isn't inside a git repo. */
 export async function findRepoRoot(folder: string): Promise<string | null> {
@@ -55,7 +57,7 @@ export async function readRepo(root: string): Promise<RepoState> {
   const [statusOut, remotesOut, stashOut, unstagedOut, stagedOut] = await Promise.all([
     read(["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"], root),
     read(["remote"], root),
-    read(["stash", "list", "--format=%H"], root),
+    read(["stash", "list", `--format=${STASH_FORMAT}`], root),
     read(["diff", "--numstat", "-z", "--no-renames"], root),
     read(["diff", "--cached", "--numstat", "-z", "--no-renames"], root).catch(() => ({ stdout: "" })),
   ]);
@@ -97,6 +99,17 @@ export async function readRepo(root: string): Promise<RepoState> {
     incoming = lines(incomingOut.stdout);
   }
 
+  const history = status.oid
+    ? parseHistory(
+        (
+          await read(
+            ["reflog", "show", "--date=unix", `--format=${REFLOG_FORMAT}`, `-n${HISTORY_LIMIT}`, "HEAD"],
+            root,
+          ).catch(() => ({ stdout: "" }))
+        ).stdout,
+      )
+    : [];
+
   const remotes = lines(remotesOut.stdout);
   const [paths, refsOut] = await Promise.all([
     read(["rev-parse", ...GIT_PATHS.flatMap((name) => ["--git-path", name])], root),
@@ -118,7 +131,8 @@ export async function readRepo(root: string): Promise<RepoState> {
     root,
     status,
     remotes,
-    stashCount: lines(stashOut.stdout).length,
+    stashes: parseStashes(stashOut.stdout),
+    history,
     // Without a known main branch (e.g. a local-only repo), main/master by name still leads.
     graph: layoutBranches(commits, {
       base: base?.name ?? (refNames.includes("main") ? "main" : refNames.includes("master") ? "master" : null),
@@ -282,6 +296,47 @@ export async function readSummary(root: string, label: string): Promise<RepoSumm
     const message = error instanceof GitError ? error.stderr.trim() : String(error);
     return { root, label, branch: null, upstream: null, ahead: 0, behind: 0, changes: 0, conflicts: 0, error: message };
   }
+}
+
+export interface CleanupCandidate {
+  branch: Branch;
+  reason: string;
+}
+
+/**
+ * Local branches that are safe to delete: their remote branch is gone (usually a merged PR), or
+ * merging them into the base would change nothing. The second check uses merge-tree in memory,
+ * so it also catches squash-merged branches, which `git branch --merged` misses.
+ */
+export async function readCleanupCandidates(
+  root: string,
+  baseRef: string,
+  baseName: string,
+): Promise<CleanupCandidate[]> {
+  const [branches, baseTree] = await Promise.all([
+    readBranches(root),
+    read(["rev-parse", `${baseRef}^{tree}`], root).then((r) => r.stdout.trim()),
+  ]);
+  const candidates = await Promise.all(
+    branches
+      .filter((b) => !b.current && b.name !== baseName)
+      .map(async (branch): Promise<CleanupCandidate | null> => {
+        if (branch.gone) return { branch, reason: "remote branch deleted" };
+        try {
+          const { stdout } = await read(["merge-tree", "--write-tree", baseRef, branch.name], root);
+          return stdout.split("\n")[0] === baseTree ? { branch, reason: `already in ${baseName}` } : null;
+        } catch {
+          return null; // Conflicts or unrelated history: definitely not merged.
+        }
+      }),
+  );
+  return candidates.filter((c): c is CleanupCandidate => c !== null);
+}
+
+/** Tracked files, for picking one to stop tracking. */
+export async function readTrackedFiles(root: string): Promise<string[]> {
+  const { stdout } = await read(["ls-files", "-z"], root);
+  return stdout.split("\0").filter(Boolean);
 }
 
 export async function readBranches(root: string): Promise<Branch[]> {
