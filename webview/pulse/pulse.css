@@ -537,6 +537,10 @@ textarea::placeholder {
   background: var(--vscode-toolbar-hoverBackground);
 }
 
+.branch-button .branch {
+  text-align: left;
+}
+
 .branch-button .chevron {
   font-size: 12px;
   color: var(--gk-muted);
