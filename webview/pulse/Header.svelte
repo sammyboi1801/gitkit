@@ -10,7 +10,6 @@
   const pull = $derived(preview({ type: "pull" }, repo));
   const push = $derived(preview({ type: "push" }, repo));
   const sync = $derived(preview({ type: "sync" }, repo));
-  const fetch = $derived(preview({ type: "fetch" }, repo));
   const summary = $derived(summarize(repo));
 
   // Highlight the one action that makes sense right now.
@@ -43,14 +42,6 @@
         >
       </span>
     {/if}
-    <button
-      class="icon-button"
-      title={fetch.ok ? `Check the remote for new commits\n${fetch.text}` : fetch.text}
-      disabled={!fetch.ok || !!busy}
-      onclick={() => run({ type: "fetch" })}
-    >
-      <span class="codicon codicon-refresh" class:spin={busy === "Fetch"}></span>
-    </button>
   </div>
 
   <p class="summary tone-{summary.tone}">

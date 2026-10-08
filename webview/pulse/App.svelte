@@ -5,12 +5,15 @@
   import Changes from "./Changes.svelte";
   import Graph from "./Graph.svelte";
   import Header from "./Header.svelte";
+  import Remote from "./Remote.svelte";
+  import { preview } from "./util";
   import { send } from "./vscode";
 
   let state: PulseState = $state({ kind: "loading" });
   let busy: string | null = $state(null);
   let error: ActionError | null = $state(null);
   let details: CommitDetails | null = $state(null);
+  let fetching = $state(false);
 
   onMount(() => {
     const onMessage = (event: MessageEvent<HostToWebview>) => {
@@ -21,6 +24,7 @@
         if (busy) error = null;
       } else if (message.type === "error") error = message.error;
       else if (message.type === "commitDetails") details = message.details;
+      else if (message.type === "fetching") fetching = message.active;
     };
     window.addEventListener("message", onMessage);
     send({ type: "ready" });
@@ -61,6 +65,39 @@
         </button>
       </div>
     {/if}
+    {#if state.repo.operation}
+      {@const repo = state.repo}
+      {@const next = preview({ type: "continueOperation" }, repo)}
+      {@const abort = preview({ type: "abortOperation" }, repo)}
+      <div class="operation" role="status">
+        <div class="operation-text">
+          <span class="codicon codicon-debug-pause"></span>
+          <span
+            ><b>{repo.operation}</b> paused{repo.status.files.some((f) => f.conflicted)
+              ? ": fix the conflicted files, then press ✓ on each to mark it resolved"
+              : ": all resolved"}</span
+          >
+        </div>
+        <div class="operation-actions">
+          <button
+            class="primary"
+            disabled={!next.ok || !!busy}
+            title={next.text}
+            onclick={() => send({ type: "action", request: { type: "continueOperation" } })}
+          >
+            <span class="codicon codicon-debug-continue"></span>Continue
+          </button>
+          <button
+            disabled={!abort.ok || !!busy}
+            title={abort.text}
+            onclick={() => send({ type: "action", request: { type: "abortOperation" } })}
+          >
+            <span class="codicon codicon-debug-stop"></span>Abort
+          </button>
+        </div>
+      </div>
+    {/if}
+    <Remote repo={state.repo} {busy} {fetching} />
     <Changes repo={state.repo} {busy} />
     <Graph repo={state.repo} {busy} {details} />
   {/if}

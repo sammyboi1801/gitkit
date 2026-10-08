@@ -98,6 +98,11 @@
               {ref.name}
             </span>
           {/each}
+          {#if repo.base && !repo.base.isCurrent && repo.base.behind > 0 && commit.hash === repo.base.forkPoint}
+            <span class="ref ref-fork" title="Your branch split off {repo.base.name} here"
+              ><span class="codicon codicon-git-branch"></span>you branched here</span
+            >
+          {/if}
           <span class="time">{relativeTime(commit.time)}</span>
         </div>
 

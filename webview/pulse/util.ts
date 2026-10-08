@@ -15,6 +15,13 @@ export function summarize(repo: RepoState): { text: string; icon: string; tone: 
   const conflicts = status.files.filter((f) => f.conflicted).length;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+  if (repo.operation) {
+    const what =
+      repo.operation === "cherry-pick" ? "Cherry-pick" : repo.operation[0].toUpperCase() + repo.operation.slice(1);
+    return conflicts
+      ? { text: `${what} paused: ${plural(conflicts, "conflict")} to resolve`, icon: "warning", tone: "conflict" }
+      : { text: `${what} in progress: continue when ready`, icon: "debug-pause", tone: "warn" };
+  }
   if (conflicts) return { text: `${plural(conflicts, "conflict")} to resolve`, icon: "warning", tone: "conflict" };
   if (!status.branch) return { text: "Detached HEAD: create a branch to keep work", icon: "warning", tone: "warn" };
   if (repo.remotes.length === 0) return { text: "No remote configured", icon: "circle-slash", tone: "muted" };
@@ -58,6 +65,12 @@ export function headAncestors(repo: RepoState): Set<string> {
 export function splitPath(path: string): { name: string; dir: string } {
   const slash = path.lastIndexOf("/");
   return slash === -1 ? { name: path, dir: "" } : { name: path.slice(slash + 1), dir: path.slice(0, slash) };
+}
+
+/** "3m ago", "just now". */
+export function ago(unixSeconds: number, now = Date.now()): string {
+  const t = relativeTime(unixSeconds, now);
+  return t === "now" ? "just now" : `${t} ago`;
 }
 
 export function relativeTime(unixSeconds: number, now = Date.now()): string {

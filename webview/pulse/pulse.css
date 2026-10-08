@@ -745,3 +745,248 @@ button.primary .count-pill {
   font-size: 0.92em;
   padding: 2px 6px;
 }
+
+/* Remote card */
+
+.remote {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+}
+
+.remote .group-header .icon-button {
+  margin-left: 0;
+}
+
+.fetched {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.fetched.warn {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.remote-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  min-height: 22px;
+}
+
+.row-icon {
+  color: var(--gk-muted);
+}
+
+.row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--gk-mono);
+  font-size: 0.9em;
+}
+
+.row-status {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+  font-size: 0.9em;
+}
+
+.ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--vscode-charts-green);
+}
+
+.warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.pill {
+  padding: 0 6px;
+  border-radius: 8px;
+  line-height: 16px;
+  font-size: 0.9em;
+  border: 1px solid currentColor;
+}
+
+.pill.out {
+  color: var(--vscode-charts-blue);
+}
+
+.pill.in {
+  color: var(--vscode-charts-orange);
+}
+
+.divergence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 12px 0 30px;
+}
+
+.divergence svg {
+  flex: none;
+}
+
+.track {
+  fill: none;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.track.mine,
+.dot-mine {
+  stroke: var(--vscode-charts-blue);
+}
+
+.track.theirs,
+.dot-theirs {
+  stroke: var(--vscode-charts-orange);
+}
+
+.dot-mine {
+  fill: var(--vscode-charts-blue);
+}
+
+.dot-theirs {
+  fill: var(--vscode-charts-orange);
+}
+
+.fork {
+  fill: var(--gk-muted);
+}
+
+.divergence-labels {
+  display: grid;
+  gap: 2px;
+  font-size: 0.85em;
+  color: var(--gk-muted);
+  line-height: 14px;
+}
+
+.divergence-labels b {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.merge-forecast {
+  padding: 0 12px 0 30px;
+  font-size: 0.9em;
+}
+
+.remote > button.wide {
+  margin: 4px 12px 0;
+  width: calc(100% - 24px);
+}
+
+.activity {
+  margin-top: 4px;
+  padding: 0 12px;
+  display: grid;
+  gap: 2px;
+}
+
+.activity li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.88em;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.activity .who {
+  font-weight: 600;
+  flex: none;
+}
+
+.activity .what {
+  color: var(--gk-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.activity .what b {
+  font-weight: 400;
+  color: var(--vscode-foreground);
+  font-family: var(--gk-mono);
+}
+
+.activity .time {
+  margin-left: auto;
+  color: var(--gk-muted);
+  flex: none;
+}
+
+.kind-push {
+  color: var(--vscode-charts-blue);
+}
+.kind-fetch {
+  color: var(--vscode-charts-orange);
+}
+.kind-forced {
+  color: var(--vscode-editorWarning-foreground);
+}
+.kind-created {
+  color: var(--vscode-charts-green);
+}
+
+/* Operation in progress */
+
+.operation {
+  margin: 0 12px 8px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  border-radius: var(--gk-radius);
+  border: 1px solid var(--vscode-editorWarning-foreground);
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 10%, transparent);
+}
+
+.operation-text {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.operation-text .codicon {
+  color: var(--vscode-editorWarning-foreground);
+  margin-top: 2px;
+}
+
+.operation-text b {
+  text-transform: capitalize;
+}
+
+.operation-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+/* Small bits */
+
+.hint {
+  font-size: 0.85em;
+  color: var(--gk-muted);
+}
+
+.ref-fork {
+  border: 1px dashed var(--vscode-charts-orange);
+  color: var(--vscode-charts-orange);
+}

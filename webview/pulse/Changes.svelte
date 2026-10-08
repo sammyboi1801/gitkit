@@ -36,7 +36,8 @@
 {#snippet groupTotal(total: { added: number; removed: number })}
   {#if total.added || total.removed}
     <span class="group-stats"
-      ><span class="stat-add">+{total.added}</span> <span class="stat-del">−{total.removed}</span></span
+      >{#if total.added}<span class="stat-add">+{total.added}</span>{/if}
+      {#if total.removed}<span class="stat-del">−{total.removed}</span>{/if}</span
     >
   {/if}
 {/snippet}
@@ -72,7 +73,16 @@
       {#if dir}<span class="dir">{dir}</span>{/if}
     </button>
     <span class="file-actions">
-      {#if side === "staged"}
+      {#if side === "conflict"}
+        <button
+          class="icon-button"
+          title={`Mark resolved: ${preview({ type: "stage", paths: [file.path] }, repo).text}`}
+          disabled={!!busy}
+          onclick={() => stage([file.path])}
+        >
+          <span class="codicon codicon-check"></span>
+        </button>
+      {:else if side === "staged"}
         <button
           class="icon-button"
           title={preview({ type: "unstage", paths: [file.path] }, repo).text}
@@ -115,7 +125,11 @@
     <button class="primary wide" disabled={!canCommit} onclick={submit} title="Ctrl+Enter">
       <span class="codicon codicon-check"></span>{commit.label || "Commit"}
     </button>
-    <code class="command">{commit.text}</code>
+    {#if message.trim()}
+      <code class="command">{commit.text}</code>
+    {:else if files.length}
+      <span class="hint">Ctrl+Enter to commit</span>
+    {/if}
   </div>
 
   {#if files.length === 0}
