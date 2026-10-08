@@ -32,16 +32,6 @@
       <span class="branch">{status.branch ?? `detached @ ${status.oid?.slice(0, 7) ?? "?"}`}</span>
       <span class="codicon codicon-chevron-down chevron"></span>
     </button>
-    {#if status.upstream}
-      <span class="sync-counts" title="Compared with {status.upstream}">
-        <span class:dim={!status.ahead} title="{status.ahead} to push"
-          ><span class="codicon codicon-arrow-up"></span>{status.ahead}</span
-        >
-        <span class:dim={!status.behind} title="{status.behind} to pull"
-          ><span class="codicon codicon-arrow-down"></span>{status.behind}</span
-        >
-      </span>
-    {/if}
   </div>
 
   <p class="summary tone-{summary.tone}">
