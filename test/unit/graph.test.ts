@@ -59,4 +59,20 @@ describe("layoutGraph", () => {
       { x1: 1, y1: 1, x2: 1, y2: 2, lane: 1 },
     ]);
   });
+
+  it("doesn't hand a lane that just merged in to a merge's other parent", () => {
+    // x (lane 0) and t (lane 1) are both tips on top of the merge m. At m, t's lane ends;
+    // m's second parent f must get a fresh lane, or it would look like t's continuation.
+    const { rows } = layoutGraph([
+      commit("x", "m"),
+      commit("t", "m"),
+      commit("m", "b", "f"),
+      commit("f", "a"),
+      commit("b", "a"),
+      commit("a"),
+    ]);
+    const lane = (hash: string) => rows.find((r) => r.commit.hash === hash)!.lane;
+    expect(lane("t")).toBe(1);
+    expect(lane("f")).not.toBe(1);
+  });
 });

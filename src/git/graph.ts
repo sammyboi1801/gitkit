@@ -13,6 +13,7 @@ export function layoutGraph(commits: readonly Commit[]): { rows: GraphRow[]; lan
   for (const commit of commits) {
     // Snapshot before placing a tip, so a tip gets no line coming in from above.
     const before = lanes.slice();
+    const freedHere = new Set<number>();
     let lane = lanes.indexOf(commit.hash);
     if (lane === -1) {
       // Nothing points here yet: a branch tip.
@@ -20,7 +21,11 @@ export function layoutGraph(commits: readonly Commit[]): { rows: GraphRow[]; lan
       lanes[lane] = commit.hash;
     }
 
-    const after = before.map((hash) => (hash === commit.hash ? null : hash));
+    const after = before.map((hash, i) => {
+      if (hash !== commit.hash) return hash;
+      if (i !== lane) freedHere.add(i);
+      return null;
+    });
 
     const parentLanes = commit.parents.map((parent, i) => {
       // The first parent always continues straight down, so a branch keeps its lane even when
@@ -31,7 +36,8 @@ export function layoutGraph(commits: readonly Commit[]): { rows: GraphRow[]; lan
       }
       const existing = after.indexOf(parent);
       if (existing !== -1) return existing;
-      const target = firstFree(after);
+      // Don't reuse a lane that merged into this commit: the new branch would look like its continuation.
+      const target = firstFree(after, freedHere);
       after[target] = parent;
       return target;
     });
@@ -55,7 +61,9 @@ export function layoutGraph(commits: readonly Commit[]): { rows: GraphRow[]; lan
   return { rows, lanes: maxLanes };
 }
 
-function firstFree(lanes: readonly (string | null)[]): number {
-  const free = lanes.indexOf(null);
-  return free === -1 ? lanes.length : free;
+function firstFree(lanes: readonly (string | null)[], exclude: ReadonlySet<number> = new Set()): number {
+  for (let i = 0; i < lanes.length; i++) {
+    if (lanes[i] === null && !exclude.has(i)) return i;
+  }
+  return lanes.length;
 }
