@@ -1,12 +1,13 @@
 // Message protocol between the extension host and the Pulse webview.
 import type { ActionRequest } from "../git/actions";
-import type { CommitDetails, RepoState } from "./types";
+import type { CommitDetails, RepoState, RepoSummary } from "./types";
 
 export type PulseState =
   | { kind: "loading" }
   | { kind: "no-folder" }
   | { kind: "no-repo"; folder: string }
-  | { kind: "repo"; repo: RepoState }
+  /** repos lists every repo in the workspace when there's more than one; empty otherwise. */
+  | { kind: "repo"; repo: RepoState; repos: RepoSummary[] }
   | { kind: "error"; message: string };
 
 export interface ActionError {
@@ -31,4 +32,5 @@ export type WebviewToHost =
   | { type: "pickBranch" }
   | { type: "branchFrom"; hash: string }
   | { type: "copyHash"; hash: string }
-  | { type: "commitDetails"; hash: string };
+  | { type: "commitDetails"; hash: string }
+  | { type: "selectRepo"; root: string };

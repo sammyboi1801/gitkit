@@ -1,19 +1,24 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
-import { findRepoRoot, readBranches, readCommitDetails, readRepo } from "../../git/repo";
+import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discover";
+import { findWorkspaceRepo, readBranches, readCommitDetails, readRepo, readSummary } from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, RepoState } from "../../shared/types";
 
 const REFRESH_DELAY_MS = 400;
 const FETCH_CHECK_MS = 30_000;
+const SELECTED_KEY = "gitkit.selectedRepo";
 
 export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   static readonly viewId = "gitkit.pulse";
 
   private view?: vscode.WebviewView;
   private repo?: RepoState;
+  /** All repos found in the workspace; undefined until the first scan. */
+  private roots?: string[];
+  private selected?: string;
   private lastPosted = "";
   private refreshTimer?: NodeJS.Timeout;
   private refreshing = false;
@@ -25,11 +30,18 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private readonly fetchTimer: NodeJS.Timeout;
   private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly extensionUri: vscode.Uri) {
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly state: vscode.Memento,
+  ) {
     const watcher = vscode.workspace.createFileSystemWatcher("**/*");
     const onChange = (uri: vscode.Uri) => {
       // Git writes lock files during its own operations; the final rename triggers another event anyway.
-      if (!uri.fsPath.endsWith(".lock")) this.scheduleRefresh();
+      if (uri.fsPath.endsWith(".lock")) return;
+      // A new repo (git init, clone) appeared somewhere: look for repos again.
+      if (path.basename(uri.fsPath) === ".git" || uri.fsPath.endsWith(path.join(".git", "HEAD")))
+        this.roots = undefined;
+      this.scheduleRefresh();
     };
     this.disposables.push(
       watcher,
@@ -41,7 +53,16 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         this.scheduleRefresh();
         void this.maybeAutoFetch();
       }),
-      vscode.workspace.onDidChangeWorkspaceFolders(() => this.scheduleRefresh()),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        this.roots = undefined;
+        this.scheduleRefresh();
+      }),
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (!e.affectsConfiguration("gitkit.repoScanDepth")) return;
+        this.roots = undefined;
+        this.scheduleRefresh();
+      }),
+      vscode.window.onDidChangeActiveTextEditor((editor) => this.followEditor(editor)),
     );
     this.fetchTimer = setInterval(() => void this.maybeAutoFetch(), FETCH_CHECK_MS);
   }
@@ -63,6 +84,13 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     clearTimeout(this.refreshTimer);
     clearInterval(this.fetchTimer);
     this.disposables.forEach((d) => d.dispose());
+  }
+
+  /** A full reload: rescans the workspace for repos, then reads everything again. */
+  reload(): Promise<void> {
+    this.roots = undefined;
+    this.lastPosted = "";
+    return this.refresh();
   }
 
   async refresh(): Promise<void> {
@@ -90,19 +118,58 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private async readState(): Promise<PulseState> {
-    const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!folder) return { kind: "no-folder" };
+    const folders = workspaceFolders();
+    if (folders.length === 0) return { kind: "no-folder" };
     try {
-      const root = await findRepoRoot(folder);
-      if (!root) {
+      if (!this.roots) await this.discover();
+      const roots = this.roots ?? [];
+      if (roots.length === 0) {
         this.repo = undefined;
-        return { kind: "no-repo", folder };
+        return { kind: "no-repo", folder: folders[0] };
       }
-      this.repo = { ...(await readRepo(root)), fetchError: this.fetchError };
-      return { kind: "repo", repo: this.repo };
+      const selected = this.pickSelected(roots);
+      // Every other repo only gets a cheap status for its row; the full read is for the selected one.
+      const [repo, repos] = await Promise.all([
+        readRepo(selected),
+        roots.length > 1 ? Promise.all(roots.map((r) => readSummary(r, repoLabel(r, folders)))) : [],
+      ]);
+      this.repo = { ...repo, fetchError: this.fetchError };
+      return { kind: "repo", repo: this.repo, repos };
     } catch (error) {
       return { kind: "error", message: describe(error) };
     }
+  }
+
+  private async discover(): Promise<void> {
+    const depth = vscode.workspace.getConfiguration("gitkit").get<number>("repoScanDepth", 2);
+    this.roots = await discoverRepos(workspaceFolders(), depth, findWorkspaceRepo);
+  }
+
+  /** Remembered choice if still valid, else the repo of the open file, else the first one found. */
+  private pickSelected(roots: string[]): string {
+    const has = (root: string | undefined) => !!root && roots.some((r) => pathKey(r) === pathKey(root));
+    if (!has(this.selected)) {
+      const remembered = this.state.get<string>(SELECTED_KEY);
+      const editorFile = vscode.window.activeTextEditor?.document.uri;
+      const fromEditor = editorFile?.scheme === "file" ? repoForPath(editorFile.fsPath, roots) : undefined;
+      this.selected = has(remembered) ? remembered : (fromEditor ?? roots[0]);
+    }
+    return this.selected!;
+  }
+
+  private select(root: string): void {
+    if (this.selected && pathKey(this.selected) === pathKey(root)) return;
+    this.selected = root;
+    void this.state.update(SELECTED_KEY, root);
+    this.lastPosted = "";
+    void this.refresh();
+  }
+
+  private followEditor(editor: vscode.TextEditor | undefined): void {
+    if (!editor || editor.document.uri.scheme !== "file" || !this.roots || this.roots.length < 2) return;
+    if (!vscode.workspace.getConfiguration("gitkit").get<boolean>("followActiveEditor", true)) return;
+    const root = repoForPath(editor.document.uri.fsPath, this.roots);
+    if (root) this.select(root);
   }
 
   /**
@@ -144,10 +211,15 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         await vscode.commands.executeCommand("vscode.openFolder");
         return;
       case "initRepo": {
-        const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (folder) await this.run("Initialize", [["init"]], folder);
+        const folder = workspaceFolders()[0];
+        if (!folder) return;
+        this.roots = undefined;
+        await this.run("Initialize", [["init"]], folder);
         return;
       }
+      case "selectRepo":
+        this.select(message.root);
+        return;
       case "openFile":
         return this.openFile(message.path);
       case "action":
@@ -269,6 +341,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private post(message: HostToWebview): void {
     void this.view?.webview.postMessage(message);
   }
+}
+
+function workspaceFolders(): string[] {
+  return (vscode.workspace.workspaceFolders ?? []).filter((f) => f.uri.scheme === "file").map((f) => f.uri.fsPath);
 }
 
 function describeTracking(branch: Branch): string {
