@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const VERSION = "3";
+const VERSION = "4";
 const root = join(import.meta.dirname, "..", ".vscode-test");
 const dir = join(root, "sandbox");
 const remote = join(root, "sandbox-remote.git");
@@ -85,5 +85,64 @@ write("notes.txt", "todo: real auth\n");
 write("login.py", "def login(user, password):\n    # TODO: hash\n    return len(password) >= 8\n");
 git("add", "login.py");
 
+buildMultiRepoWorkspace(join(root, "multi"));
+
 writeFileSync(marker, VERSION);
 console.log(`sandbox created: ${dir}`);
+
+/**
+ * A folder holding several repos, like opening a parent "projects" folder:
+ *   api/          clean, but its remote has 2 new commits
+ *   web/          uncommitted work, never published
+ *   packages/ui/  nested two levels down, stopped mid-merge with a conflict
+ *   notes/        a plain folder, not a repo (must not show up)
+ */
+function buildMultiRepoWorkspace(base) {
+  rmSync(base, { recursive: true, force: true });
+  mkdirSync(join(base, "notes"), { recursive: true });
+  writeFileSync(join(base, "notes", "ideas.md"), "Not a repo.\n");
+
+  const repo = (path) => {
+    const cwd = join(base, path);
+    mkdirSync(cwd, { recursive: true });
+    const run = (...args) =>
+      execFileSync("git", ["-c", "user.name=GitKit Sandbox", "-c", "user.email=sandbox@gitkit.local", ...args], {
+        cwd,
+        stdio: "pipe",
+      });
+    const save = (message, files) => {
+      for (const [file, text] of Object.entries(files)) writeFileSync(join(cwd, file), text);
+      run("add", ".");
+      run("commit", "-qm", message);
+    };
+    run("init", "-q", "-b", "main");
+    return { cwd, run, save };
+  };
+
+  const api = repo("api");
+  const apiRemote = join(base, ".remotes", "api.git");
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", apiRemote], { stdio: "pipe" });
+  api.run("remote", "add", "origin", apiRemote);
+  api.save("feat: health endpoint", { "server.py": "def health():\n    return 'ok'\n" });
+  api.save("feat: version endpoint", { "version.py": "VERSION = '1.0'\n" });
+  api.save("fix: bump version", { "version.py": "VERSION = '1.1'\n" });
+  api.run("push", "-q", "-u", "origin", "main");
+  api.run("reset", "-q", "--hard", "HEAD~2");
+
+  const web = repo("web");
+  web.save("chore: scaffold", { "index.html": "<h1>Hello</h1>\n" });
+  writeFileSync(join(web.cwd, "index.html"), "<h1>Hello, GitKit</h1>\n");
+  writeFileSync(join(web.cwd, "style.css"), "h1 { color: teal; }\n");
+
+  const ui = repo(join("packages", "ui"));
+  ui.save("feat: button", { "button.ts": "export const label = 'Click';\n" });
+  ui.run("checkout", "-q", "-b", "feat/label");
+  ui.save("feat: clearer label", { "button.ts": "export const label = 'Click me';\n" });
+  ui.run("checkout", "-q", "main");
+  ui.save("feat: shorter label", { "button.ts": "export const label = 'Go';\n" });
+  try {
+    ui.run("merge", "feat/label");
+  } catch {
+    // Expected: the merge stops on the conflict, which is the state we want to show.
+  }
+}

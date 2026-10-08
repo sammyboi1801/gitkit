@@ -8,6 +8,14 @@
       "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/.vscode-test/sandbox"],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "prepare dev host"
+    },
+    {
+      "name": "Run GitKit (multi-repo folder)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${workspaceFolder}/.vscode-test/multi"],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "preLaunchTask": "prepare dev host"
     }
   ]
 }
