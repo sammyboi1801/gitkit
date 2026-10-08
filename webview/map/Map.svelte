@@ -13,7 +13,7 @@
   const LEFT = 36;
   const R = 9;
 
-  let state: PulseState = $state({ kind: "loading" });
+  let view = $state<PulseState>({ kind: "loading" });
   let busy: string | null = $state(null);
   let error: ActionError | null = $state(null);
   let details: CommitDetails | null = $state(null);
@@ -23,7 +23,7 @@
   let scroller: HTMLDivElement | undefined = $state();
   let scrolledOnce = false;
 
-  const repo = $derived(state.kind === "repo" ? state.repo : null);
+  const repo = $derived(view.kind === "repo" ? view.repo : null);
   const graph = $derived(repo?.graph ?? null);
   const col = $derived(46 * zoom);
   const width = $derived(graph ? LEFT * 2 + Math.max(graph.commits.length - 1, 0) * col + 120 : 0);
@@ -75,7 +75,7 @@
       const message = event.data;
       if (message.type === "state") {
         const firstGraph = !graph;
-        state = message.state;
+        view = message.state;
         if (firstGraph) void scrollToNewest();
       } else if (message.type === "busy") {
         busy = message.label;
@@ -93,7 +93,7 @@
 <main class="map">
   {#if !repo || !graph}
     <p class="muted pad">
-      {state.kind === "loading" ? "Reading repository…" : "Open a git repository to see its branches."}
+      {view.kind === "loading" ? "Reading repository…" : "Open a git repository to see its branches."}
     </p>
   {:else}
     <header class="toolbar">

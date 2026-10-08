@@ -1,6 +1,8 @@
 // Message protocol between the extension host and the Pulse webview.
 import type { ActionRequest } from "../git/actions";
 import type { Resolution } from "../git/conflicts";
+import type { WorkflowModel } from "../workflow/model";
+import type { Explanation } from "../workflow/yaml";
 import type { CommitDetails, ConflictBlock, RepoState, RepoSummary } from "./types";
 
 export type PulseState =
@@ -43,3 +45,24 @@ export type WebviewToHost =
   | { type: "openMergeEditor"; path: string }
   | { type: "oops" }
   | { type: "cleanupBranches" };
+
+// --- Workflow Studio ------------------------------------------------------------------------
+
+export interface WorkflowFile {
+  file: string;
+  /** Written by Workflow Studio, so it can be edited visually again. */
+  byGitKit: boolean;
+}
+
+export type StudioToHost =
+  | { type: "ready" }
+  | { type: "new" }
+  | { type: "open"; file: string }
+  | { type: "openFile"; file: string }
+  | { type: "save"; model: WorkflowModel };
+
+export type HostToStudio =
+  | { type: "init"; repoName: string; suggestion: WorkflowModel; files: WorkflowFile[] }
+  | { type: "opened"; file: string; model: WorkflowModel | null; editedByHand: boolean; explanation: Explanation }
+  | { type: "saved"; file: string; files: WorkflowFile[] }
+  | { type: "error"; message: string };

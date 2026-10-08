@@ -307,6 +307,11 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     await this.postConflicts(relative);
   }
 
+  /** The repo the panel is showing, for features that open their own tabs. */
+  get currentRepo(): RepoState | undefined {
+    return this.repo;
+  }
+
   /** The Oops menu: plain-English fixes for common mistakes. */
   async oops(): Promise<void> {
     if (!this.repo || this.busy) return;

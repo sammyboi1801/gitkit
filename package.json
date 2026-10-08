@@ -60,6 +60,12 @@
         "command": "gitkit.cleanupBranches",
         "title": "Clean Up Merged Branches…",
         "category": "GitKit"
+      },
+      {
+        "command": "gitkit.openWorkflowStudio",
+        "title": "Open Workflow Studio",
+        "category": "GitKit",
+        "icon": "$(github-action)"
       }
     ],
     "menus": {
@@ -71,6 +77,11 @@
         },
         {
           "command": "gitkit.openBranchMap",
+          "when": "view == gitkit.pulse",
+          "group": "navigation"
+        },
+        {
+          "command": "gitkit.openWorkflowStudio",
           "when": "view == gitkit.pulse",
           "group": "navigation"
         },
@@ -163,7 +174,7 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "vscode:prepublish": "node esbuild.mjs --production",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings --output human",
     "lint": "eslint src test && prettier --check \"src/**\" \"webview/**\" \"test/**\"",
     "format": "prettier --write \"src/**\" \"webview/**\" \"test/**\"",
     "test": "vitest run",
@@ -181,8 +192,12 @@
     "prettier": "^3.9.9",
     "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.57.2",
+    "svelte-check": "^4.7.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
   }
 }

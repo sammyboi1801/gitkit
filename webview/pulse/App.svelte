@@ -13,7 +13,7 @@
   import { preview } from "./util";
   import { send } from "./vscode";
 
-  let state: PulseState = $state({ kind: "loading" });
+  let view = $state<PulseState>({ kind: "loading" });
   let busy: string | null = $state(null);
   let error: ActionError | null = $state(null);
   let details: CommitDetails | null = $state(null);
@@ -23,7 +23,7 @@
   onMount(() => {
     const onMessage = (event: MessageEvent<HostToWebview>) => {
       const message = event.data;
-      if (message.type === "state") state = message.state;
+      if (message.type === "state") view = message.state;
       else if (message.type === "busy") {
         busy = message.label;
         if (busy) error = null;
@@ -41,26 +41,26 @@
 </script>
 
 <main>
-  {#if state.kind === "loading"}
+  {#if view.kind === "loading"}
     <p class="muted pad">Reading repository…</p>
-  {:else if state.kind === "no-folder"}
+  {:else if view.kind === "no-folder"}
     <div class="empty-state">
       <p class="muted">Open a folder to see its git state.</p>
       <button class="primary" onclick={() => send({ type: "openFolder" })}>Open Folder</button>
     </div>
-  {:else if state.kind === "no-repo"}
+  {:else if view.kind === "no-repo"}
     <div class="empty-state">
       <p class="muted">This folder isn't a git repository yet.</p>
       <button class="primary" onclick={() => send({ type: "initRepo" })}>Initialize Repository</button>
       <code class="command">git init</code>
     </div>
-  {:else if state.kind === "error"}
-    <p class="error pad">{state.message}</p>
+  {:else if view.kind === "error"}
+    <p class="error pad">{view.message}</p>
   {:else}
-    {#if state.repos.length > 1}
-      <Repos repos={state.repos} selected={state.repo.root} {busy} />
+    {#if view.repos.length > 1}
+      <Repos repos={view.repos} selected={view.repo.root} {busy} />
     {/if}
-    <Header repo={state.repo} {busy} />
+    <Header repo={view.repo} {busy} />
     {#if busy}
       <div class="progress" aria-label="{busy} in progress"></div>
     {/if}
@@ -76,8 +76,8 @@
         </button>
       </div>
     {/if}
-    {#if state.repo.operation}
-      {@const repo = state.repo}
+    {#if view.repo.operation}
+      {@const repo = view.repo}
       {@const next = preview({ type: "continueOperation" }, repo)}
       {@const abort = preview({ type: "abortOperation" }, repo)}
       <div class="operation" role="status">
@@ -109,12 +109,12 @@
       </div>
     {/if}
     <!-- Keyed by repo, so drafts, expanded commits and scroll don't leak between repos. -->
-    {#key state.repo.root}
-      <Remote repo={state.repo} {busy} {fetching} />
-      <Changes repo={state.repo} {busy} {conflictBlocks} />
-      <Stashes repo={state.repo} {busy} />
-      <History repo={state.repo} {busy} />
-      <Graph repo={state.repo} {busy} {details} />
+    {#key view.repo.root}
+      <Remote repo={view.repo} {busy} {fetching} />
+      <Changes repo={view.repo} {busy} {conflictBlocks} />
+      <Stashes repo={view.repo} {busy} />
+      <History repo={view.repo} {busy} />
+      <Graph repo={view.repo} {busy} {details} />
     {/key}
   {/if}
 </main>
