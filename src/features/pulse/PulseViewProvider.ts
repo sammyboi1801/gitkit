@@ -8,6 +8,7 @@ import { GitError, formatCommand, runGit } from "../../git/runner";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, RepoState } from "../../shared/types";
 import { openMergeEditor } from "../conflicts/mergeEditor";
+import { guardCommit } from "../guards/commitGuard";
 import { pickCleanup, pickOops } from "../oops/oops";
 import { renderWebviewHtml } from "../webviewHtml";
 
@@ -382,7 +383,13 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       const choice = await vscode.window.showWarningMessage(plan.confirm, { modal: true, detail }, plan.label);
       if (choice !== plan.label) return;
     }
-    await this.run(plan.label, plan.steps, this.repo.root);
+    let steps = plan.steps;
+    if (request.type === "commit") {
+      const guarded = await guardCommit(this.repo, plan);
+      if (!guarded) return;
+      steps = guarded;
+    }
+    await this.run(plan.label, steps, this.repo.root);
   }
 
   private async run(label: string, steps: string[][], cwd: string): Promise<void> {

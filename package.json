@@ -115,6 +115,46 @@
             "yellow",
             "#e5534b"
           ]
+        },
+        "gitkit.commitGuard.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Before committing, warn about likely secrets, .env and key files, and very large files."
+        },
+        "gitkit.commitGuard.maxFileSizeMB": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Files bigger than this (in MB) get a warning before they're committed."
+        },
+        "gitkit.identities": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Which email to commit with, by repo. Before committing, GitKit warns if the repo's email doesn't match the first rule that applies. Example: `[{ \"remote\": \"github.com/my-university-org/**\", \"email\": \"me@university.edu\" }, { \"folder\": \"D:/Work\", \"email\": \"me@company.com\" }]`",
+          "items": {
+            "type": "object",
+            "properties": {
+              "remote": {
+                "type": "string",
+                "description": "Glob on the remote, like github.com/my-org/** (ssh and https URLs both work)."
+              },
+              "folder": {
+                "type": "string",
+                "description": "Folder; repos inside it match."
+              },
+              "email": {
+                "type": "string",
+                "description": "The email commits should use."
+              },
+              "name": {
+                "type": "string",
+                "description": "Optional name to set along with the email."
+              }
+            },
+            "required": [
+              "email"
+            ]
+          }
         }
       }
     }
