@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Marketplace icon: the activity-bar "K" graph, in lane colours on a dark tile. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f2a44"/>
+      <stop offset="1" stop-color="#0f1626"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#tile)"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="14">
+    <path d="M84 40V216" stroke="#4c9df3"/>
+    <path d="M98 118L166 74" stroke="#b083f0"/>
+    <path d="M98 138L166 184" stroke="#3fb950"/>
+  </g>
+  <circle cx="84" cy="128" r="17" fill="#4c9df3" stroke="#0f1626" stroke-width="7"/>
+  <circle cx="182" cy="60" r="22" fill="#0f1626" stroke="#b083f0" stroke-width="12"/>
+  <circle cx="182" cy="198" r="22" fill="#0f1626" stroke="#3fb950" stroke-width="12"/>
+</svg>
