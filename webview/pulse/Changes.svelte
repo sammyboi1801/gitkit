@@ -1,12 +1,15 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { FileChange, LineStats, RepoState } from "../../src/shared/types";
   import { badge, preview, splitPath, totals } from "./util";
   import { loadDraft, saveDraft, send } from "./vscode";
 
   let { repo, busy }: { repo: RepoState; busy: string | null } = $props();
 
-  let message = $state(loadDraft());
-  $effect(() => saveDraft(message));
+  // The parent remounts this per repo, so the root is fixed for this instance's lifetime.
+  const root = untrack(() => repo.root);
+  let message = $state(loadDraft(root));
+  $effect(() => saveDraft(root, message));
 
   const files = $derived(repo.status.files);
   const conflicts = $derived(files.filter((f) => f.conflicted));

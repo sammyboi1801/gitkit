@@ -6,6 +6,7 @@
   import Graph from "./Graph.svelte";
   import Header from "./Header.svelte";
   import Remote from "./Remote.svelte";
+  import Repos from "./Repos.svelte";
   import { preview } from "./util";
   import { send } from "./vscode";
 
@@ -49,6 +50,9 @@
   {:else if state.kind === "error"}
     <p class="error pad">{state.message}</p>
   {:else}
+    {#if state.repos.length > 1}
+      <Repos repos={state.repos} selected={state.repo.root} {busy} />
+    {/if}
     <Header repo={state.repo} {busy} />
     {#if busy}
       <div class="progress" aria-label="{busy} in progress"></div>
@@ -97,8 +101,11 @@
         </div>
       </div>
     {/if}
-    <Remote repo={state.repo} {busy} {fetching} />
-    <Changes repo={state.repo} {busy} />
-    <Graph repo={state.repo} {busy} {details} />
+    <!-- Keyed by repo, so drafts, expanded commits and scroll don't leak between repos. -->
+    {#key state.repo.root}
+      <Remote repo={state.repo} {busy} {fetching} />
+      <Changes repo={state.repo} {busy} />
+      <Graph repo={state.repo} {busy} {details} />
+    {/key}
   {/if}
 </main>

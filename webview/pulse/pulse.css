@@ -990,3 +990,130 @@ button.primary .count-pill {
   border: 1px dashed var(--vscode-charts-orange);
   color: var(--vscode-charts-orange);
 }
+
+/* Repository list (multi-repo workspaces) */
+
+.repos {
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--gk-border);
+}
+
+.repos-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  justify-content: flex-start;
+  color: var(--gk-muted);
+}
+
+.repos-toggle:hover:not(:disabled) {
+  background: var(--gk-hover);
+}
+
+.repos-current {
+  margin-left: auto;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--vscode-foreground);
+}
+
+.repos-attention {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--vscode-charts-orange);
+  font-weight: 400;
+}
+
+.repos-attention .codicon {
+  font-size: 8px;
+}
+
+.repo-list {
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.repo-row {
+  width: 100%;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 10px;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  color: inherit;
+  justify-content: flex-start;
+}
+
+.repo-row:hover:not(:disabled) {
+  background: var(--gk-hover);
+}
+
+.repo-row.selected {
+  border-left-color: var(--gk-accent);
+  background: var(--vscode-list-inactiveSelectionBackground);
+}
+
+.repo-row .codicon-repo {
+  color: var(--gk-muted);
+}
+
+.repo-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.repo-branch {
+  color: var(--gk-muted);
+  font-size: 0.9em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+
+.repo-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.repo-badges .out {
+  color: var(--vscode-charts-blue);
+}
+
+.repo-badges .in {
+  color: var(--vscode-charts-orange);
+}
+
+.repo-badges .changes {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  line-height: 15px;
+  text-align: center;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.repo-badges .clean {
+  color: var(--vscode-charts-green);
+}
+
+.repo-badges .codicon {
+  font-size: 12px;
+}
