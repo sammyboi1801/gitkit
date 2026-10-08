@@ -18,7 +18,8 @@ export type HostToWebview =
   | { type: "state"; state: PulseState }
   | { type: "busy"; label: string | null }
   | { type: "error"; error: ActionError }
-  | { type: "commitDetails"; details: CommitDetails };
+  | { type: "commitDetails"; details: CommitDetails }
+  | { type: "fetching"; active: boolean };
 
 export type WebviewToHost =
   | { type: "ready" }

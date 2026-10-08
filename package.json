@@ -53,6 +53,17 @@
           "group": "navigation"
         }
       ]
+    },
+    "configuration": {
+      "title": "GitKit",
+      "properties": {
+        "gitkit.autoFetchMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "description": "How often GitKit checks the remote for new commits while VS Code is focused, in minutes. 0 turns it off."
+        }
+      }
     }
   },
   "scripts": {

@@ -7,6 +7,7 @@ import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/mess
 import type { Branch, RepoState } from "../../shared/types";
 
 const REFRESH_DELAY_MS = 400;
+const FETCH_CHECK_MS = 30_000;
 
 export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   static readonly viewId = "gitkit.pulse";
@@ -18,6 +19,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private refreshing = false;
   private refreshQueued = false;
   private busy = false;
+  private fetching = false;
+  private fetchError?: string;
+  private lastFetchAttempt = 0;
+  private readonly fetchTimer: NodeJS.Timeout;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(private readonly extensionUri: vscode.Uri) {
@@ -31,9 +36,14 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       watcher.onDidChange(onChange),
       watcher.onDidCreate(onChange),
       watcher.onDidDelete(onChange),
-      vscode.window.onDidChangeWindowState((state) => state.focused && this.scheduleRefresh()),
+      vscode.window.onDidChangeWindowState((state) => {
+        if (!state.focused) return;
+        this.scheduleRefresh();
+        void this.maybeAutoFetch();
+      }),
       vscode.workspace.onDidChangeWorkspaceFolders(() => this.scheduleRefresh()),
     );
+    this.fetchTimer = setInterval(() => void this.maybeAutoFetch(), FETCH_CHECK_MS);
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -51,6 +61,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   dispose(): void {
     clearTimeout(this.refreshTimer);
+    clearInterval(this.fetchTimer);
     this.disposables.forEach((d) => d.dispose());
   }
 
@@ -87,10 +98,39 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         this.repo = undefined;
         return { kind: "no-repo", folder };
       }
-      this.repo = await readRepo(root);
+      this.repo = { ...(await readRepo(root)), fetchError: this.fetchError };
       return { kind: "repo", repo: this.repo };
     } catch (error) {
       return { kind: "error", message: describe(error) };
+    }
+  }
+
+  /**
+   * Keeps remote info fresh without being wasteful: only while the window is focused and the
+   * view visible, at most once per interval, and never prompting for credentials.
+   */
+  private async maybeAutoFetch(): Promise<void> {
+    const minutes = vscode.workspace.getConfiguration("gitkit").get<number>("autoFetchMinutes", 5);
+    const repo = this.repo;
+    if (minutes <= 0 || !repo || repo.remotes.length === 0) return;
+    if (!vscode.window.state.focused || !this.view?.visible || this.busy || this.fetching) return;
+
+    const now = Date.now() / 1000;
+    const interval = minutes * 60;
+    if (now - (repo.lastFetch ?? 0) < interval || now - this.lastFetchAttempt < interval) return;
+
+    this.lastFetchAttempt = now;
+    this.fetching = true;
+    this.post({ type: "fetching", active: true });
+    try {
+      await runGit(["fetch", "--all", "--prune", "--quiet"], repo.root, { env: { GCM_INTERACTIVE: "never" } });
+      this.fetchError = undefined;
+    } catch (error) {
+      this.fetchError = describe(error).split("\n")[0];
+    } finally {
+      this.fetching = false;
+      this.post({ type: "fetching", active: false });
+      await this.refresh();
     }
   }
 
@@ -200,14 +240,17 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.busy = true;
     this.post({ type: "busy", label });
     try {
+      let failed = false;
       for (const args of steps) {
         try {
           await runGit(args, cwd);
         } catch (error) {
+          failed = true;
           this.post({ type: "error", error: { command: formatCommand(args), message: describe(error) } });
           break;
         }
       }
+      if (!failed && steps.some((args) => args[0] === "fetch" || args[0] === "pull")) this.fetchError = undefined;
     } finally {
       this.busy = false;
       this.post({ type: "busy", label: null });
