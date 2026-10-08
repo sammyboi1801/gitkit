@@ -10,6 +10,15 @@
   const fetch = $derived(preview({ type: "fetch" }, repo));
   const update = $derived(preview({ type: "updateFromBase" }, repo));
 
+  const ciIcon: Record<string, string> = {
+    success: "pass-filled",
+    failure: "error",
+    pending: "loading",
+    none: "circle-slash",
+    signin: "github",
+    error: "warning",
+  };
+
   const MAX_DOTS = 5;
   const dots = (n: number) => Math.min(n, MAX_DOTS);
 
@@ -136,6 +145,34 @@
           <span class="codicon codicon-git-pull-request"></span>{update.label || `Update from ${base.name}`}
         </button>
       {/if}
+    {/if}
+
+    <!-- GitHub checks for the latest pushed commit. -->
+    {#if repo.ci}
+      {@const ci = repo.ci}
+      <div class="remote-row ci-row ci-{ci.state}">
+        <span class="codicon codicon-{ciIcon[ci.state]} row-icon" class:spin={ci.state === "pending"}></span>
+        <span class="row-label">CI</span>
+        <span class="ci-summary" title={ci.failed.length ? `Failed: ${ci.failed.join(", ")}` : ci.summary}>
+          {ci.summary}{ci.failed.length ? `: ${ci.failed.join(", ")}` : ""}
+        </span>
+        <span class="row-status">
+          {#if ci.state === "signin"}
+            <button class="small-button" onclick={() => send({ type: "signInGitHub" })}>Sign in</button>
+          {:else}
+            {#if ci.state === "failure" && ci.runId}
+              <button
+                class="small-button"
+                title="Re-run only the failed jobs"
+                onclick={() => send({ type: "rerunFailed" })}>Re-run</button
+              >
+            {/if}
+            <button class="icon-button" title="Open on GitHub" onclick={() => send({ type: "openUrl", url: ci.url })}
+              ><span class="codicon codicon-link-external"></span></button
+            >
+          {/if}
+        </span>
+      </div>
     {/if}
 
     {#if repo.activity.length}

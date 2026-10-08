@@ -1409,3 +1409,33 @@ button.primary .count-pill {
   display: block;
   padding: 2px 20px 0;
 }
+
+/* CI row */
+
+.ci-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+
+.ci-success .row-icon {
+  color: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+}
+
+.ci-failure .row-icon,
+.ci-failure .ci-summary {
+  color: var(--vscode-testing-iconFailed, var(--vscode-errorForeground));
+}
+
+.ci-pending .row-icon {
+  color: var(--vscode-charts-yellow);
+}
+
+.small-button {
+  padding: 0 8px;
+  font-size: 0.9em;
+  line-height: 18px;
+}

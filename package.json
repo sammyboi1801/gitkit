@@ -166,6 +166,11 @@
               "email"
             ]
           }
+        },
+        "gitkit.ciStatus": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show GitHub check results for the latest pushed commit. Public repos need no sign-in."
         }
       }
     }

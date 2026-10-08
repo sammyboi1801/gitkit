@@ -6,7 +6,8 @@ import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discov
 import { findWorkspaceRepo, readBranches, readCommitDetails, readRepo, readSummary } from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
-import type { Branch, RepoState } from "../../shared/types";
+import type { Branch, CiStatus, RepoState, RepoSummary } from "../../shared/types";
+import { readCi, rerunFailedJobs } from "../../github/client";
 import { openMergeEditor } from "../conflicts/mergeEditor";
 import { guardCommit } from "../guards/commitGuard";
 import { pickCleanup, pickOops } from "../oops/oops";
@@ -31,6 +32,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private busy = false;
   private fetching = false;
   private fetchError?: string;
+  private ci: CiStatus | null = null;
+  private lastRepos: RepoSummary[] = [];
+  private ciCheckedAt = 0;
+  private ciChecking = false;
   private lastFetchAttempt = 0;
   private readonly fetchTimer: NodeJS.Timeout;
   private readonly disposables: vscode.Disposable[] = [];
@@ -110,6 +115,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     try {
       this.postState(await this.readState());
       void this.maybeAutoFetch();
+      void this.maybeCheckCi();
     } finally {
       this.refreshing = false;
       if (this.refreshQueued) {
@@ -141,7 +147,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         readRepo(selected),
         roots.length > 1 ? Promise.all(roots.map((r) => readSummary(r, repoLabel(r, folders)))) : [],
       ]);
-      this.repo = { ...repo, fetchError: this.fetchError };
+      // CI belongs to a commit; drop it once the branch points somewhere else.
+      if (this.ci && repo.status.upstream === null) this.ci = null;
+      this.repo = { ...repo, fetchError: this.fetchError, ci: this.ci };
+      this.lastRepos = repos;
       return { kind: "repo", repo: this.repo, repos };
     } catch (error) {
       return { kind: "error", message: describe(error) };
@@ -178,6 +187,32 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (!vscode.workspace.getConfiguration("gitkit").get<boolean>("followActiveEditor", true)) return;
     const root = repoForPath(editor.document.uri.fsPath, this.roots);
     if (root) this.select(root);
+  }
+
+  /** Re-checks CI: every minute while checks run, every five minutes otherwise, only while focused. */
+  private async maybeCheckCi(force = false, prompt = false): Promise<void> {
+    const repo = this.repo;
+    if (!repo || this.ciChecking || !vscode.workspace.getConfiguration("gitkit").get<boolean>("ciStatus", true)) return;
+    if (!force && (!vscode.window.state.focused || !this.view?.visible)) return;
+    const interval = this.ci?.state === "pending" ? 60_000 : 300_000;
+    // A push or fetch moved the remote branch: the old result is for an older commit.
+    const upstreamSha = repo.graph.commits.find((c) =>
+      c.refs.some((r) => r.kind === "remote" && r.name === repo.status.upstream),
+    )?.hash;
+    const moved = !!this.ci && !!upstreamSha && this.ci.sha !== upstreamSha;
+    if (!force && !moved && Date.now() - this.ciCheckedAt < interval) return;
+
+    this.ciChecking = true;
+    try {
+      this.ci = await readCi(repo, prompt);
+    } catch {
+      this.ci = null; // Offline or GitHub unreachable: hide the row rather than nag.
+    } finally {
+      this.ciCheckedAt = Date.now();
+      this.ciChecking = false;
+    }
+    this.lastPosted = "";
+    if (this.repo) this.postState({ kind: "repo", repo: { ...this.repo, ci: this.ci }, repos: this.lastRepos });
   }
 
   /**
@@ -237,6 +272,26 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return this.openFile(message.path);
       case "action":
         return this.runAction(message.request);
+      case "signInGitHub":
+        return this.maybeCheckCi(true, true);
+      case "openUrl":
+        // Only web links: the URL comes from the webview, so never open other schemes from it.
+        if (/^https:\/\//.test(message.url)) await vscode.env.openExternal(vscode.Uri.parse(message.url));
+        return;
+      case "rerunFailed": {
+        if (!this.repo || !this.ci?.runId) return;
+        try {
+          await rerunFailedJobs(this.repo, this.ci.runId);
+          void vscode.window.setStatusBarMessage("GitKit: re-running failed jobs…", 3000);
+          this.ci = { ...this.ci, state: "pending", summary: "Re-running failed jobs" };
+          setTimeout(() => void this.maybeCheckCi(true), 10_000);
+          this.lastPosted = "";
+          await this.refresh();
+        } catch (error) {
+          this.post({ type: "error", error: { command: "", message: describe(error) } });
+        }
+        return;
+      }
       case "oops":
         return this.oops();
       case "cleanupBranches":

@@ -126,9 +126,24 @@ export interface RepoState {
   /** A merge, rebase, cherry-pick or revert that stopped part-way, usually on conflicts. */
   operation: Operation | null;
   activity: ActivityItem[];
+  /** Set by the extension: GitHub checks for the latest pushed commit; null/undefined hides the row. */
+  ci?: CiStatus | null;
 }
 
 export type Operation = "merge" | "rebase" | "cherry-pick" | "revert";
+
+/** GitHub checks for the latest pushed commit of the current branch. */
+export interface CiStatus {
+  /** signin: a private repo, or rate-limited, and the user isn't signed in. */
+  state: "success" | "failure" | "pending" | "none" | "signin" | "error";
+  sha: string;
+  summary: string;
+  /** Names of failed checks. */
+  failed: string[];
+  url: string;
+  /** The Actions run behind the first failure, for re-running failed jobs. */
+  runId: number | null;
+}
 
 /** One thing that happened to HEAD, from the reflog, in plain English. */
 export interface HistoryEntry {

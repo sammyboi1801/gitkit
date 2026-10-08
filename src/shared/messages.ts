@@ -44,6 +44,9 @@ export type WebviewToHost =
   | { type: "resolveConflict"; path: string; block: number | "all"; choice: Resolution }
   | { type: "openMergeEditor"; path: string }
   | { type: "oops" }
+  | { type: "signInGitHub" }
+  | { type: "openUrl"; url: string }
+  | { type: "rerunFailed" }
   | { type: "cleanupBranches" };
 
 // --- Workflow Studio ------------------------------------------------------------------------
