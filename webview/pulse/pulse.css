@@ -1302,3 +1302,8 @@ button.primary .count-pill {
   background: transparent;
   text-decoration: underline;
 }
+
+.operation-hint {
+  display: block;
+  padding: 0 12px 6px;
+}

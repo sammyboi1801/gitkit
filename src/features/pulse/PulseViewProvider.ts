@@ -1,12 +1,13 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
-import { parseConflicts, resolveConflict, type Resolution } from "../../git/conflicts";
+import { parseConflicts, resolveConflict, sideNames, type Resolution } from "../../git/conflicts";
 import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discover";
 import { findWorkspaceRepo, readBranches, readCommitDetails, readRepo, readSummary } from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, RepoState } from "../../shared/types";
+import { openMergeEditor } from "../conflicts/mergeEditor";
 import { renderWebviewHtml } from "../webviewHtml";
 
 const REFRESH_DELAY_MS = 400;
@@ -250,13 +251,17 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       case "resolveConflict":
         return this.resolveConflict(message.path, message.block, message.choice);
       case "openMergeEditor": {
-        if (!this.repo) return;
-        const uri = vscode.Uri.file(path.join(this.repo.root, message.path));
-        try {
-          await vscode.commands.executeCommand("git.openMergeEditor", uri);
-        } catch {
-          await vscode.window.showTextDocument(uri);
-        }
+        const repo = this.repo;
+        if (!repo) return;
+        const names = sideNames(repo.operation);
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(repo.root, message.path)));
+        const block = parseConflicts(document.getText())[0];
+        await openMergeEditor(repo.root, message.path, {
+          ours: names.ours,
+          oursDetail: repo.operation === "rebase" ? (repo.base?.ref ?? "") : (repo.status.branch ?? "HEAD"),
+          theirs: names.theirs,
+          theirsDetail: block?.theirsLabel ?? "",
+        });
         return;
       }
       case "commitDetails": {

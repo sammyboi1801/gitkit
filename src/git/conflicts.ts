@@ -1,4 +1,4 @@
-import type { ConflictBlock } from "../shared/types";
+import type { ConflictBlock, Operation } from "../shared/types";
 
 // Reads and resolves git's conflict markers in a file's text:
 //   <<<<<<< ours-label
@@ -68,6 +68,23 @@ export function parseConflicts(text: string): ConflictBlock[] {
 }
 
 export type Resolution = "ours" | "theirs" | "both";
+
+/**
+ * Plain names for git's "ours" and "theirs", which mean different things per operation.
+ * During a rebase, "ours" is the branch being rebased onto and "theirs" is your own commit.
+ */
+export function sideNames(operation: Operation | null): { ours: string; theirs: string } {
+  switch (operation) {
+    case "rebase":
+      return { ours: "Upstream", theirs: "Your commit" };
+    case "cherry-pick":
+      return { ours: "Yours", theirs: "Picked commit" };
+    case "revert":
+      return { ours: "Yours", theirs: "The revert" };
+    default:
+      return { ours: "Yours", theirs: "Incoming" };
+  }
+}
 
 /** Replaces one conflict (or all, with block = "all") by the chosen side(s), keeping line endings. */
 export function resolveConflict(text: string, block: number | "all", choice: Resolution): string {

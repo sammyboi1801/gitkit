@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Resolution } from "../../src/git/conflicts";
+  import { sideNames, type Resolution } from "../../src/git/conflicts";
   import type { ConflictBlock, RepoState } from "../../src/shared/types";
   import { preview } from "./util";
   import { send } from "./vscode";
@@ -14,20 +14,7 @@
 
   onMount(() => send({ type: "conflictDetails", path }));
 
-  // Plain names for git's "ours" and "theirs", which mean different things per operation.
-  // During a rebase, "ours" is the branch being rebased onto and "theirs" is your own commit.
-  const names = $derived.by(() => {
-    switch (repo.operation) {
-      case "rebase":
-        return { ours: "Upstream", theirs: "Your commit" };
-      case "cherry-pick":
-        return { ours: "Yours", theirs: "Picked commit" };
-      case "revert":
-        return { ours: "Yours", theirs: "The revert" };
-      default:
-        return { ours: "Yours", theirs: "Incoming" };
-    }
-  });
+  const names = $derived(sideNames(repo.operation));
 
   const oursDetail = (b: ConflictBlock) =>
     repo.operation === "rebase" ? (repo.base?.ref ?? b.oursLabel) : (repo.status.branch ?? b.oursLabel);
