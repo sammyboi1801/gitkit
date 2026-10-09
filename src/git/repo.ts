@@ -57,7 +57,8 @@ export async function findWorkspaceRepo(folder: string): Promise<string | null> 
 const read = (args: string[], root: string) => runGit(["--no-optional-locks", ...args], root);
 const lines = (text: string) => text.split("\n").filter(Boolean);
 
-export async function readRepo(root: string): Promise<RepoState> {
+/** worktreeMaxAgeMs: how old a reading of the other worktrees may be reused (0 always reads them). */
+export async function readRepo(root: string, options: { worktreeMaxAgeMs?: number } = {}): Promise<RepoState> {
   const [statusOut, remotesOut, stashOut, unstagedOut, stagedOut] = await Promise.all([
     read(["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"], root),
     read(["remote"], root),
@@ -132,7 +133,9 @@ export async function readRepo(root: string): Promise<RepoState> {
   ]);
   // Compared with the main branch on the remote when known, so "ahead" means not merged yet.
   const [worktrees, checkpointState] = await Promise.all([
-    readWorktreeInfo(root, base?.ref ?? (refNames.includes("main") ? "main" : null)),
+    readWorktreeInfo(root, base?.ref ?? (refNames.includes("main") ? "main" : null), {
+      maxAgeMs: options.worktreeMaxAgeMs,
+    }),
     readCheckpointState(root),
   ]);
   const worktreeOverlaps = await readOverlaps(root, worktrees);

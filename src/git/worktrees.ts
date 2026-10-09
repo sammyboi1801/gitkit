@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Worktree, WorktreeInfo } from "../shared/types";
-import { samePath } from "./paths";
+import { pathKey, samePath } from "./paths";
 import { runGit } from "./runner";
 
 // Worktrees: every checkout of a repo, as git lists them (including ones made by the CLI or by
@@ -154,9 +154,14 @@ export function parseStatusPaths(out: string): string[] {
  * last changed (newest of its last commit and its changed files, so an agent that hasn't committed
  * yet still shows as active). Empty when the repo has only its own checkout.
  */
-export async function readWorktreeInfo(root: string, base: string | null): Promise<WorktreeInfo[]> {
+export async function readWorktreeInfo(
+  root: string,
+  base: string | null,
+  options: { maxAgeMs?: number } = {},
+): Promise<WorktreeInfo[]> {
   const list = await readWorktrees(root).catch(() => [] as Worktree[]);
   if (list.length < 2) return [];
+  const maxAge = options.maxAgeMs ?? OTHERS_MAX_AGE_MS;
   return Promise.all(
     list.map(async (w, i): Promise<WorktreeInfo> => {
       const info: WorktreeInfo = {
@@ -170,36 +175,56 @@ export async function readWorktreeInfo(root: string, base: string | null): Promi
       };
       if (w.bare || w.prunable !== null || !w.head || i >= MAX_DETAILED) return info;
 
-      const tip = w.branch ? `refs/heads/${w.branch}` : w.head;
-      const [status, time, counts, committed] = await Promise.all([
-        read(["status", "--porcelain", "-z", "--untracked-files=all"], w.path).catch(() => null),
-        read(["log", "-1", "--format=%ct", w.head], root).catch(() => null),
-        base ? read(["rev-list", "--left-right", "--count", `${base}...${tip}`], root).catch(() => null) : null,
-        // Three dots: what the branch changed since it left main, not what main did since.
-        base ? read(["diff", "--name-only", "-z", `${base}...${tip}`], root).catch(() => null) : null,
-      ]);
-      let paths: string[] = [];
-      if (status) {
-        paths = parseStatusPaths(status.stdout);
-        info.changes = paths.length;
-        const times = paths.slice(0, MAX_STATTED).map((p) => {
-          try {
-            return Math.floor(statSync(resolve(w.path, p)).mtimeMs / 1000);
-          } catch {
-            return 0; // Deleted files have no time of their own.
-          }
-        });
-        info.lastActivity = Math.max(Number(time?.stdout.trim()) || 0, ...times) || null;
+      // Other worktrees don't change because this one did, which is what triggers most refreshes;
+      // a recent reading of them is reused unless their branch or commit moved.
+      const key = `${w.head}|${w.branch}|${base}`;
+      const cached = details.get(pathKey(w.path));
+      if (!info.current && cached && cached.key === key && Date.now() - cached.at < maxAge) {
+        return { ...info, ...cached.details };
       }
-      const [behind, ahead] = (counts?.stdout.trim().split(/\s+/) ?? []).map(Number);
-      if (Number.isFinite(behind) && Number.isFinite(ahead)) Object.assign(info, { ahead, behind });
-      if (status) {
-        const files = new Set([...(committed?.stdout.split("\0").filter(Boolean) ?? []), ...paths]);
-        info.touched = [...files].sort().slice(0, MAX_TOUCHED);
-      }
-      return info;
+      const read = await readDetails(w, root, base);
+      details.set(pathKey(w.path), { key, at: Date.now(), details: read });
+      return { ...info, ...read };
     }),
   );
+}
+
+/** How long another worktree's details are reused between refreshes. */
+const OTHERS_MAX_AGE_MS = 10_000;
+
+type Details = Pick<WorktreeInfo, "changes" | "ahead" | "behind" | "lastActivity" | "touched">;
+const details = new Map<string, { key: string; at: number; details: Details }>();
+
+async function readDetails(w: Worktree, root: string, base: string | null): Promise<Details> {
+  const info: Details = { changes: null, ahead: null, behind: null, lastActivity: null, touched: null };
+  const tip = w.branch ? `refs/heads/${w.branch}` : w.head!;
+  const [status, time, counts, committed] = await Promise.all([
+    read(["status", "--porcelain", "-z", "--untracked-files=all"], w.path).catch(() => null),
+    read(["log", "-1", "--format=%ct", w.head!], root).catch(() => null),
+    base ? read(["rev-list", "--left-right", "--count", `${base}...${tip}`], root).catch(() => null) : null,
+    // Three dots: what the branch changed since it left main, not what main did since.
+    base ? read(["diff", "--name-only", "-z", `${base}...${tip}`], root).catch(() => null) : null,
+  ]);
+  let paths: string[] = [];
+  if (status) {
+    paths = parseStatusPaths(status.stdout);
+    info.changes = paths.length;
+    const times = paths.slice(0, MAX_STATTED).map((p) => {
+      try {
+        return Math.floor(statSync(resolve(w.path, p)).mtimeMs / 1000);
+      } catch {
+        return 0; // Deleted files have no time of their own.
+      }
+    });
+    info.lastActivity = Math.max(Number(time?.stdout.trim()) || 0, ...times) || null;
+  }
+  const [behind, ahead] = (counts?.stdout.trim().split(/\s+/) ?? []).map(Number);
+  if (Number.isFinite(behind) && Number.isFinite(ahead)) Object.assign(info, { ahead, behind });
+  if (status) {
+    const files = new Set([...(committed?.stdout.split("\0").filter(Boolean) ?? []), ...paths]);
+    info.touched = [...files].sort().slice(0, MAX_TOUCHED);
+  }
+  return info;
 }
 
 /**

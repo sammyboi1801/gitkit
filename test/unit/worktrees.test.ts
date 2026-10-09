@@ -91,6 +91,19 @@ describe("parseWorktreeList", () => {
 });
 
 describe("readWorktreeInfo", () => {
+  it("reuses a recent reading of other worktrees, unless their commit moved", async () => {
+    const { app, feature } = repoWithWorktrees();
+    const changes = async (maxAgeMs?: number) =>
+      (await readWorktreeInfo(app, "main", { maxAgeMs })).find((w) => w.branch === "feature/login")!.changes;
+    expect(await changes()).toBe(0);
+    write(feature, "agent.txt", "new\n");
+    expect(await changes()).toBe(0); // From the reading a moment ago.
+    expect(await changes(0)).toBe(1); // Asked for a fresh one.
+    write(feature, "agent2.txt", "new\n");
+    commit(feature, "agent commits");
+    expect(await changes()).toBe(0); // Its commit moved: read again (both files are committed now).
+  });
+
   it("says what's going on in each worktree: uncommitted work, distance from main, last activity", async () => {
     const { app, trees, feature } = repoWithWorktrees();
     commit(feature, "feat: login form", { "login.txt": "form\n" });
@@ -142,6 +155,8 @@ describe("readWorktreeInfo", () => {
 });
 
 describe("worktrees changing the same files", () => {
+  /** Re-reads other worktrees every time, instead of reusing a reading from the last 10 seconds. */
+  const fresh = { worktreeMaxAgeMs: 0 };
   /** Two agents, each in its own worktree off main. */
   function twoAgents() {
     const base = tempDir();
@@ -183,11 +198,11 @@ describe("worktrees changing the same files", () => {
     const { app, a, b } = twoAgents();
     write(a, "auth.py", "edited in a\n");
     write(b, "auth.py", "edited in b\n");
-    expect((await readRepo(app)).worktreeOverlaps).toMatchObject([{ files: ["auth.py"], conflicts: null }]);
+    expect((await readRepo(app, fresh)).worktreeOverlaps).toMatchObject([{ files: ["auth.py"], conflicts: null }]);
 
     write(b, "auth.py", "def login():\n    return 1\n"); // Back to how it was.
     write(b, "api.py", "x = 3\n");
-    expect((await readRepo(app)).worktreeOverlaps).toEqual([]);
+    expect((await readRepo(app, fresh)).worktreeOverlaps).toEqual([]);
   });
 
   it("pairs every worktree with every other, once", () => {
