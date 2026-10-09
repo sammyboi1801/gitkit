@@ -41,6 +41,8 @@ export function repoState(
     operation: null,
     activity: [],
     worktrees: [],
+    checkpoints: [],
+    removedCheckpoints: [],
     ...rest,
   };
 }

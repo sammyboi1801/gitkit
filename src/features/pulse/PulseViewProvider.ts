@@ -14,6 +14,7 @@ import {
 } from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
 import { filesToCopy, newWorktreePath, withWorktreesExcluded, type WorktreeLocation } from "../../git/worktrees";
+import { agentCommand, createCheckpoint, type CheckpointOptions, type CheckpointResult } from "../../git/checkpoints";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, CiStatus, PrState, RepoState, RepoSummary } from "../../shared/types";
 import { COMMIT_LOG_FORMAT, parseCommitLog, prDraft } from "../../github/pr";
@@ -25,6 +26,10 @@ import { renderWebviewHtml } from "../webviewHtml";
 
 const REFRESH_DELAY_MS = 400;
 const FETCH_CHECK_MS = 30_000;
+/** An agent started twice within this gets one automatic checkpoint, not one per start. */
+const AUTO_CHECKPOINT_GAP_MS = 60_000;
+/** Terminal commands that start a coding agent: gitkit.checkpoints.agentCommands overrides them. */
+export const DEFAULT_AGENTS = ["claude", "codex", "aider", "gemini", "opencode", "cursor-agent", "amp", "goose"];
 const SELECTED_KEY = "gitkit.selectedRepo";
 
 export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -87,6 +92,16 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         this.scheduleRefresh();
       }),
       vscode.window.onDidChangeActiveTextEditor((editor) => this.followEditor(editor)),
+      // Checkpoint a worktree when a coding agent starts in a terminal there. VS Code reports the
+      // exact command line through shell integration, so this isn't a guess.
+      vscode.window.onDidStartTerminalShellExecution((e) =>
+        this.track(
+          this.onTerminalCommand(
+            e.execution.commandLine.value,
+            e.execution.cwd?.fsPath ?? e.shellIntegration.cwd?.fsPath,
+          ),
+        ),
+      ),
     );
     this.fetchTimer = setInterval(() => void this.maybeAutoFetch(), FETCH_CHECK_MS);
   }
@@ -293,6 +308,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       case "openFolder":
         await vscode.commands.executeCommand("vscode.openFolder");
         return;
+      case "checkpoint":
+        return this.checkpoint();
       case "newWorktree":
         return this.newWorktree();
       case "openWorktree":
@@ -658,6 +675,80 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     vscode.workspace.updateWorkspaceFolders(folders.length, 0, { uri });
   }
 
+  /** Work started by events rather than requests, like an automatic checkpoint. */
+  private readonly background = new Set<Promise<unknown>>();
+
+  private track(work: Promise<unknown>): void {
+    this.background.add(work);
+    void work.finally(() => this.background.delete(work));
+  }
+
+  /** Resolves once background work (automatic checkpoints) has finished. */
+  async whenIdle(): Promise<void> {
+    await Promise.allSettled([...this.background]);
+  }
+
+  /** When each worktree last got an automatic checkpoint: an agent restarted in a loop gets one. */
+  private readonly lastAutoCheckpoint = new Map<string, number>();
+
+  private checkpointOptions(reason: string): CheckpointOptions {
+    const config = vscode.workspace.getConfiguration("gitkit");
+    return {
+      reason,
+      // The commit guard's size limit: a checkpoint shouldn't store what a commit would warn about.
+      maxFileBytes: config.get<number>("commitGuard.maxFileSizeMB", 10) * 1024 * 1024,
+      keep: Math.max(1, config.get<number>("checkpoints.keep", 20)),
+      maxAgeDays: Math.max(1, config.get<number>("checkpoints.maxAgeDays", 30)),
+    };
+  }
+
+  /** Saves a checkpoint, reporting failures; null when it couldn't be saved. */
+  private async saveCheckpoint(root: string, reason: string): Promise<CheckpointResult | null> {
+    try {
+      const result = await createCheckpoint(root, this.checkpointOptions(reason));
+      if (result.kind === "saved" && result.skipped.length) {
+        void vscode.window.showWarningMessage(
+          `Checkpoint saved without ${result.skipped.length} file${result.skipped.length === 1 ? "" : "s"} over the commit guard's size limit: ${result.skipped.join(", ")}.`,
+        );
+      }
+      return result;
+    } catch (error) {
+      this.post({ type: "error", error: { command: "", message: `Couldn't save a checkpoint: ${describe(error)}` } });
+      return null;
+    }
+  }
+
+  /** "Save checkpoint": by hand, from the Undo list or the command palette. */
+  async checkpoint(): Promise<void> {
+    if (!this.repo || this.busy) return;
+    const result = await this.saveCheckpoint(this.repo.root, "saved by hand");
+    if (!result) return;
+    void vscode.window.setStatusBarMessage(
+      result.kind === "saved" ? "GitKit: checkpoint saved" : "GitKit: nothing changed since the last commit",
+      4000,
+    );
+    await this.refresh();
+  }
+
+  private async onTerminalCommand(commandLine: string, cwd: string | undefined): Promise<void> {
+    const config = vscode.workspace.getConfiguration("gitkit");
+    if (!cwd || !config.get<boolean>("checkpoints.onAgentStart", true)) return;
+    const agent = agentCommand(commandLine, config.get<string[]>("checkpoints.agentCommands", DEFAULT_AGENTS));
+    if (!agent) return;
+    // The terminal may be in this window's repo, or in one of its worktrees opened by path.
+    const candidates = [...(this.roots ?? []), ...(this.repo?.worktrees.map((w) => w.path) ?? [])];
+    const root = repoForPath(cwd, candidates);
+    if (!root) return;
+    const key = pathKey(root);
+    if (Date.now() - (this.lastAutoCheckpoint.get(key) ?? 0) < AUTO_CHECKPOINT_GAP_MS) return;
+    this.lastAutoCheckpoint.set(key, Date.now());
+    const result = await this.saveCheckpoint(root, `before ${agent}`);
+    if (result?.kind === "saved") {
+      void vscode.window.setStatusBarMessage(`GitKit: checkpoint saved before ${agent} started`, 5000);
+      await this.refresh();
+    }
+  }
+
   /** What the extension knows about the remote besides git: fetch errors, CI and the PR. */
   private withRemoteInfo(repo: RepoState): RepoState {
     return { ...repo, fetchError: this.fetchError, ci: this.ci, pr: this.pr };
@@ -778,6 +869,14 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
     const removed =
       request.type === "removeWorktree" ? this.repo.worktrees.find((w) => w.path === request.path) : undefined;
+    // Nothing risky runs if its safety net couldn't be made.
+    if (removed?.changes && !(await this.saveCheckpoint(removed.path, "before removing the worktree"))) return;
+    if (
+      request.type === "restoreCheckpoint" &&
+      !(await this.saveCheckpoint(this.repo.root, "before restoring a checkpoint"))
+    ) {
+      return;
+    }
     const worked = await this.run(plan.label, steps, this.repo.root);
     if (worked && removed?.branch && removed.prunable === null) await this.offerBranchCleanup(removed.branch);
   }

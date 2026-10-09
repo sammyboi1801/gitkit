@@ -6,6 +6,8 @@ import { readCi, readPullRequest, rerunFailedJobs } from "../../src/github/clien
 import { readRepo } from "../../src/git/repo";
 import type { HostToStudio } from "../../src/shared/messages";
 import type { WorkflowModel } from "../../src/workflow/model";
+import { DEFAULT_AGENTS } from "../../src/features/pulse/PulseViewProvider";
+import { listCheckpoints, readCheckpointState } from "../../src/git/checkpoints";
 import { formatCommand } from "../../src/git/format";
 import { samePath } from "../../src/git/paths";
 import { commit, git, initRepo, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
@@ -41,6 +43,7 @@ describe("activation", () => {
     contexts.push(activateExtension());
     expect([...harness.views.keys()]).toEqual(["gitkit.pulse"]);
     expect([...harness.commands.keys()].sort()).toEqual([
+      "gitkit.checkpoint",
       "gitkit.cleanupBranches",
       "gitkit.newWorktree",
       "gitkit.oops",
@@ -818,6 +821,119 @@ describe("worktrees", () => {
     await panel.send({ type: "openWorktree", path: elsewhere, newWindow: true });
     await panel.send({ type: "openWorktree", path: app, newWindow: true }); // This window's own.
     expect(harness.executed.some((e) => e.command === "vscode.openFolder")).toBe(false);
+  });
+});
+
+describe("checkpoints", () => {
+  const terminal = (commandLine: string, cwd: string) =>
+    harness.shellExecutions.fire({
+      execution: { commandLine: { value: commandLine }, cwd: Uri.file(cwd) },
+      shellIntegration: {},
+    });
+
+  it("saves one by hand, and says when there's nothing to save", async () => {
+    const app = makeRepo();
+    const panel = await openPanel(app);
+    await panel.send({ type: "checkpoint" });
+    expect(harness.shown.at(-1)).toMatchObject({
+      kind: "status",
+      message: "GitKit: nothing changed since the last commit",
+    });
+
+    write(app, "new.txt", "agent output\n");
+    await panel.send({ type: "checkpoint" });
+    expect(panel.repo().checkpoints.map((c) => c.reason)).toEqual(["saved by hand"]);
+  });
+
+  it("saves one when a coding agent starts in a terminal here, once per minute", async () => {
+    const app = makeRepo();
+    write(app, "work.txt", "in progress\n");
+    const panel = await openPanel(app);
+
+    terminal("git status", app);
+    terminal("npx @anthropic-ai/claude-code --continue", app);
+    await panel.provider.whenIdle();
+    expect(panel.repo().checkpoints.map((c) => c.reason)).toEqual(["before claude"]);
+    expect(harness.shown.some((s) => s.message === "GitKit: checkpoint saved before claude started")).toBe(true);
+
+    write(app, "work.txt", "changed again\n");
+    terminal("claude", app);
+    await panel.provider.whenIdle();
+    expect(panel.repo().checkpoints).toHaveLength(1);
+  });
+
+  it("checkpoints the worktree the terminal is in, even one opened by path", async () => {
+    const app = makeRepo();
+    const tree = join(tempDir(), "agent");
+    git(app, "worktree", "add", "-q", "-b", "agent/x", tree);
+    write(tree, "agent.txt", "agent work\n");
+    const panel = await openPanel(app);
+    terminal("codex", join(tree, "src"));
+    await panel.provider.whenIdle();
+    expect((await readCheckpointState(tree)).checkpoints.map((c) => c.reason)).toEqual(["before codex"]);
+    expect((await readCheckpointState(app)).checkpoints).toEqual([]);
+  });
+
+  it("does nothing outside this window's repos, or when turned off", async () => {
+    const app = makeRepo();
+    const other = makeRepo();
+    write(app, "x.txt", "x\n");
+    write(other, "y.txt", "y\n");
+    harness.config["gitkit.checkpoints.onAgentStart"] = false;
+    const panel = await openPanel(app);
+    terminal("claude", app);
+    harness.config["gitkit.checkpoints.onAgentStart"] = true;
+    terminal("claude", other);
+    await panel.provider.whenIdle();
+    expect(panel.repo().checkpoints).toEqual([]);
+    expect(await listCheckpoints(other)).toEqual([]);
+  });
+
+  it("restores files from a checkpoint, saving how things were first", async () => {
+    const app = makeRepo();
+    write(app, "a.txt", "good version\n");
+    const panel = await openPanel(app);
+    await panel.send({ type: "checkpoint" });
+    write(app, "a.txt", "broken by an agent\n");
+    write(app, "added-later.txt", "stays\n");
+
+    harness.answers.push("Restore checkpoint");
+    await panel.send({
+      type: "action",
+      request: { type: "restoreCheckpoint", hash: panel.repo().checkpoints[0].hash },
+    });
+    expect(readFileSync(join(app, "a.txt"), "utf8")).toBe("good version\n");
+    expect(readFileSync(join(app, "added-later.txt"), "utf8")).toBe("stays\n");
+    // The broken state is a checkpoint too, so the restore can be undone.
+    const [newest] = panel.repo().checkpoints;
+    expect(newest.reason).toBe("before restoring a checkpoint");
+    expect(git(app, "show", `${newest.hash}:a.txt`)).toBe("broken by an agent\n");
+  });
+
+  it("checkpoints a worktree before removing it, so its files can be recovered as a branch", async () => {
+    const app = makeRepo();
+    const tree = join(tempDir(), "agent");
+    git(app, "worktree", "add", "-q", "-b", "agent/x", tree);
+    write(tree, "unsaved.txt", "an agent's uncommitted work\n");
+    const panel = await openPanel(app);
+    harness.answers.push("Remove worktree", undefined);
+    await panel.send({ type: "action", request: { type: "removeWorktree", path: panel.repo().worktrees[1].path } });
+    expect(existsSync(tree)).toBe(false);
+
+    const [saved] = panel.repo().removedCheckpoints;
+    expect(saved).toMatchObject({ worktree: "agent", reason: "before removing the worktree" });
+    await panel.send({
+      type: "action",
+      request: { type: "recoverBranch", name: "checkpoint/agent", hash: saved.hash },
+    });
+    expect(git(app, "show", "checkpoint/agent:unsaved.txt")).toBe("an agent's uncommitted work\n");
+  });
+
+  it("lists the same agents by default as the setting's documented default", () => {
+    const pkg = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf8"));
+    expect(pkg.contributes.configuration.properties["gitkit.checkpoints.agentCommands"].default).toEqual(
+      DEFAULT_AGENTS,
+    );
   });
 });
 

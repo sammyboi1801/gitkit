@@ -16,6 +16,8 @@ const repo = (status: Partial<StatusInfo> = {}, remotes = ["origin"]): RepoState
   operation: null,
   activity: [],
   worktrees: [],
+  checkpoints: [],
+  removedCheckpoints: [],
 });
 
 const file = (path: string, change: Partial<FileChange> = {}): FileChange => ({
@@ -390,5 +392,35 @@ describe("worktrees", () => {
       steps(planAction({ type: "unlockWorktree", path: agent.path }, withTrees({ ...agent, locked: "" }))),
     ).toEqual([["worktree", "unlock", "/repo.worktrees/agent"]]);
     expect(planAction({ type: "lockWorktree", path: "/repo" }, r).ok).toBe(false);
+  });
+});
+
+describe("restoring a checkpoint", () => {
+  const checkpoint = {
+    ref: "refs/gitkit/checkpoints/main/1",
+    hash: "c1",
+    time: 1,
+    reason: "before claude",
+    worktree: "main",
+  };
+  const withCheckpoint = (extra: Partial<RepoState> = {}): RepoState => ({
+    ...repo(),
+    checkpoints: [checkpoint],
+    ...extra,
+  });
+
+  it("puts the files back without touching the staging area or branch", () => {
+    const result = planAction({ type: "restoreCheckpoint", hash: "c1" }, withCheckpoint());
+    expect(steps(result)).toEqual([["restore", "--source", "c1", "--worktree", "--", "."]]);
+    expect(result.ok && result.plan.confirm).toMatch(
+      /^Bring this worktree's files back to the checkpoint "before claude"\?/,
+    );
+  });
+
+  it("refuses an unknown checkpoint, or in the middle of a merge", () => {
+    expect(planAction({ type: "restoreCheckpoint", hash: "nope" }, withCheckpoint()).ok).toBe(false);
+    expect(planAction({ type: "restoreCheckpoint", hash: "c1" }, withCheckpoint({ operation: "merge" })).ok).toBe(
+      false,
+    );
   });
 });

@@ -1680,3 +1680,24 @@ body {
 .worktrees-header .section-toggle {
   flex: 1;
 }
+
+.section-header-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 12px;
+}
+
+.section-header-row .section-toggle {
+  flex: 1;
+}
+
+.history .subheading {
+  margin: 6px 0 0;
+  padding: 0 12px 0 20px;
+  font-size: 0.78em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gk-muted);
+}

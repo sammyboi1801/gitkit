@@ -128,10 +128,26 @@ export interface RepoState {
   activity: ActivityItem[];
   /** Every checkout of this repo, this one included; empty when it has just the one. */
   worktrees: WorktreeInfo[];
+  /** Snapshots of this worktree's files, newest first. */
+  checkpoints: Checkpoint[];
+  /** Checkpoints of worktrees that have been removed since, newest first. */
+  removedCheckpoints: Checkpoint[];
   /** Set by the extension: GitHub checks for the latest pushed commit; null/undefined hides the row. */
   ci?: CiStatus | null;
   /** Set by the extension: the branch's pull request, or how to open one; null/undefined hides it. */
   pr?: PrState | null;
+}
+
+/** A snapshot of a worktree's files, taken before an agent or a risky action changed them. */
+export interface Checkpoint {
+  ref: string;
+  hash: string;
+  /** Unix seconds. */
+  time: number;
+  /** Why it was taken, e.g. "before claude". */
+  reason: string;
+  /** "main", or git's name for the worktree it belongs to. */
+  worktree: string;
 }
 
 /** One checkout of a repo, from `git worktree list`. */

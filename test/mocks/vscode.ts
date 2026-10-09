@@ -134,6 +134,11 @@ export const harness = {
   views: new Map<string, { resolveWebviewView(view: unknown): void }>(),
   contentProviders: new Map<string, { provideTextDocumentContent(uri: Uri): Promise<string> | string }>(),
   windowState: new Emitter<{ focused: boolean }>(),
+  /** Fires like VS Code does when a terminal command starts (shell integration). */
+  shellExecutions: new Emitter<{
+    execution: { commandLine: { value: string }; cwd?: Uri };
+    shellIntegration: { cwd?: Uri };
+  }>(),
   activeEditor: new Emitter<unknown>(),
   reset() {
     this.answers = [];
@@ -210,6 +215,9 @@ export const window = {
     const uri = target instanceof Uri ? target : target.uri;
     harness.opened.push(uri.fsPath);
     return {};
+  },
+  get onDidStartTerminalShellExecution() {
+    return harness.shellExecutions.event;
   },
   createTerminal(options: { name: string; cwd: string }) {
     const terminal = { name: options.name, cwd: options.cwd, sent: [] as string[], shown: false };

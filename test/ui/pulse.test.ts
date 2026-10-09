@@ -11,7 +11,7 @@ import Remote from "../../webview/pulse/Remote.svelte";
 import Repos from "../../webview/pulse/Repos.svelte";
 import Stashes from "../../webview/pulse/Stashes.svelte";
 import Worktrees from "../../webview/pulse/Worktrees.svelte";
-import type { CiStatus, PullRequest, RepoState, WorktreeInfo } from "../../src/shared/types";
+import type { Checkpoint, CiStatus, PullRequest, RepoState, WorktreeInfo } from "../../src/shared/types";
 import { commitOf, file, repoState } from "./state";
 import { sent } from "./setup";
 
@@ -462,6 +462,62 @@ describe("Undo timeline and saved changes", () => {
     await fireEvent.click(undo[0]);
     expect(lastSent()).toEqual({ type: "action", request: { type: "undoTo", index: 0 } });
     expect(screen.getByText('Committed "old"').closest("li")!.classList.contains("elsewhere")).toBe(true);
+  });
+
+  describe("checkpoints", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const checkpoint = (reason: string, minutesAgo: number, worktree = "main"): Checkpoint => ({
+      ref: `refs/gitkit/checkpoints/${worktree}/${(now - minutesAgo * 60) * 1000}`,
+      hash: `c${minutesAgo}`,
+      time: now - minutesAgo * 60,
+      reason,
+      worktree,
+    });
+    const open = async (repo: RepoState) => {
+      render(History, { props: { repo, busy: null } });
+      await fireEvent.click(button(/^Undo/));
+    };
+
+    it("saves one by hand from the Undo header", async () => {
+      render(History, { props: { repo: repoState({ history }), busy: null } });
+      await fireEvent.click(button("Save checkpoint"));
+      expect(lastSent()).toEqual({ type: "checkpoint" });
+    });
+
+    it("lists this worktree's checkpoints and restores one, showing the command", async () => {
+      await open(
+        repoState({ history, checkpoints: [checkpoint("before claude", 3), checkpoint("saved by hand", 40)] }),
+      );
+      const list = within(screen.getByRole("list", { name: "Checkpoints" }));
+      expect(list.getAllByRole("listitem").map((li) => li.querySelector(".step-text")?.textContent)).toEqual([
+        "before claude",
+        "saved by hand",
+      ]);
+      expect(list.getByText("3m ago")).toBeTruthy();
+      const restore = list.getByRole("button", { name: "Restore the checkpoint before claude" });
+      expect(restore.getAttribute("title")).toBe(
+        "Bring the files back to this checkpoint\ngit restore --source c3 --worktree -- .",
+      );
+      await fireEvent.click(restore);
+      expect(lastSent()).toEqual({ type: "action", request: { type: "restoreCheckpoint", hash: "c3" } });
+    });
+
+    it("shows the five newest and says how many older ones there are", async () => {
+      await open(repoState({ history, checkpoints: [1, 2, 3, 4, 5, 6, 7].map((m) => checkpoint(`edit ${m}`, m)) }));
+      expect(within(screen.getByRole("list", { name: "Checkpoints" })).getAllByRole("listitem")).toHaveLength(5);
+      expect(screen.getByText("and 2 older")).toBeTruthy();
+    });
+
+    it("recovers a removed worktree's checkpoint as a branch", async () => {
+      const removed = checkpoint("before removing the worktree", 5, "agent");
+      await open(repoState({ history: [], removedCheckpoints: [removed] }));
+      const list = within(screen.getByRole("list", { name: "Checkpoints from removed worktrees" }));
+      expect(list.getByText("agent: before removing the worktree")).toBeTruthy();
+      await fireEvent.click(list.getByRole("button", { name: "Recover agent as a branch" }));
+      const sent = lastSent() as { request: { type: string; name: string; hash: string } };
+      expect(sent.request).toMatchObject({ type: "recoverBranch", hash: "c5" });
+      expect(sent.request.name).toMatch(/^checkpoint\/agent-\d{8}-\d{4}$/);
+    });
   });
 
   it("restores, pops and deletes stashes", async () => {

@@ -90,6 +90,12 @@
         "icon": "$(folder-library)"
       },
       {
+        "command": "gitkit.checkpoint",
+        "title": "Save Checkpoint",
+        "category": "GitKit",
+        "icon": "$(save)"
+      },
+      {
         "command": "gitkit.openWorkflowStudio",
         "title": "Open Workflow Studio",
         "category": "GitKit",
@@ -191,6 +197,40 @@
           },
           "default": [],
           "markdownDescription": "Files or folders git ignores that a new worktree should get a copy of, relative to the repo, e.g. `[\".vscode/settings.json\"]`. Nothing is copied unless listed here: add `.env` only if you want your secrets duplicated into each worktree."
+        },
+        "gitkit.checkpoints.onAgentStart": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Save a checkpoint of a worktree's files when a coding agent starts in a terminal there (see `#gitkit.checkpoints.agentCommands#`). Checkpoints never touch your files, staging area or stashes, and show up in the Undo list."
+        },
+        "gitkit.checkpoints.agentCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "claude",
+            "codex",
+            "aider",
+            "gemini",
+            "opencode",
+            "cursor-agent",
+            "amp",
+            "goose"
+          ],
+          "description": "Terminal commands that start a coding agent. Also matched through npx, pnpm dlx and similar."
+        },
+        "gitkit.checkpoints.keep": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "description": "How many checkpoints to keep per worktree. Older ones are dropped, so they don't keep files alive in the repo forever."
+        },
+        "gitkit.checkpoints.maxAgeDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "Checkpoints older than this many days are dropped."
         },
         "gitkit.identities": {
           "type": "array",

@@ -40,7 +40,8 @@ export type ActionRequest =
   | { type: "removeWorktree"; path: string }
   | { type: "pruneWorktrees" }
   | { type: "lockWorktree"; path: string; reason?: string }
-  | { type: "unlockWorktree"; path: string };
+  | { type: "unlockWorktree"; path: string }
+  | { type: "restoreCheckpoint"; hash: string };
 
 export interface Plan {
   label: string;
@@ -151,6 +152,18 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
         "Remove worktree",
         [["worktree", "remove", w.path]],
         `Remove the worktree at ${w.path}? ${what}`.trim(),
+      );
+    }
+
+    case "restoreCheckpoint": {
+      const c = repo.checkpoints.find((x) => x.hash === request.hash);
+      if (!c) return fail("That checkpoint isn't there any more.");
+      if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
+      // --worktree only: files go back, the staging area and branch stay as they are.
+      return ok(
+        "Restore checkpoint",
+        [["restore", "--source", c.hash, "--worktree", "--", "."]],
+        `Bring this worktree's files back to the checkpoint "${c.reason}"? Files changed since are overwritten; files created since are kept. A checkpoint of how things are now is saved first, so you can undo this.`,
       );
     }
 

@@ -30,6 +30,8 @@ const repo = (status: Partial<RepoState["status"]> = {}, extra: Partial<RepoStat
   operation: null,
   activity: [],
   worktrees: [],
+  checkpoints: [],
+  removedCheckpoints: [],
   ...extra,
 });
 

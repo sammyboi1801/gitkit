@@ -20,6 +20,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("gitkit.cleanupBranches", () => pulse.cleanupBranches()),
     vscode.commands.registerCommand("gitkit.newWorktree", () => pulse.newWorktree()),
+    vscode.commands.registerCommand("gitkit.checkpoint", () => pulse.checkpoint()),
   );
 }
 

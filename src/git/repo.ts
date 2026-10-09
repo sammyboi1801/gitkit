@@ -12,6 +12,7 @@ import type {
 } from "../shared/types";
 import { BRANCH_FORMAT, parseBranches } from "./branches";
 import { pathKey } from "./discover";
+import { readCheckpointState } from "./checkpoints";
 import { readWorktreeInfo } from "./worktrees";
 import { layoutBranches } from "./lanes";
 import { LOG_FORMAT, parseLog } from "./log";
@@ -128,7 +129,10 @@ export async function readRepo(root: string): Promise<RepoState> {
     readActivity(root, refLines),
   ]);
   // Compared with the main branch on the remote when known, so "ahead" means not merged yet.
-  const worktrees = await readWorktreeInfo(root, base?.ref ?? (refNames.includes("main") ? "main" : null));
+  const [worktrees, checkpointState] = await Promise.all([
+    readWorktreeInfo(root, base?.ref ?? (refNames.includes("main") ? "main" : null)),
+    readCheckpointState(root),
+  ]);
 
   return {
     root,
@@ -148,6 +152,7 @@ export async function readRepo(root: string): Promise<RepoState> {
     operation: detectOperation(gitPaths),
     activity,
     worktrees,
+    ...checkpointState,
   };
 }
 
