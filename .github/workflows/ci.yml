@@ -16,8 +16,8 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm
@@ -27,8 +27,8 @@ jobs:
     name: Typecheck and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm
@@ -41,8 +41,8 @@ jobs:
       matrix:
         node-version: ["22", "24"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -55,8 +55,22 @@ jobs:
       matrix:
         node-version: ["22"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        node-version: ["24"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -66,12 +80,12 @@ jobs:
     name: VS Code smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm
       - run: npm ci
       - run: xvfb-run -a npm run test:integration
 
-# gitkit-model: {"name":"CI","file":"ci.yml","triggers":{"push":{"enabled":true,"branches":["main"]},"pullRequest":{"enabled":true,"branches":[]},"tags":{"enabled":false,"pattern":"v*"},"schedule":{"enabled":false,"cron":"0 6 * * 1"},"manual":true},"jobs":[{"id":"lint","name":"Lint","template":"node-lint","runsOn":"ubuntu-latest","versions":[],"needs":[],"inputs":{"command":"npm run lint"}},{"id":"typecheck","name":"Typecheck and build","template":"node-build","runsOn":"ubuntu-latest","versions":[],"needs":[],"inputs":{"command":"npm run typecheck && npm run build"}},{"id":"test","name":"Test (Linux)","template":"node-test","runsOn":"ubuntu-latest","versions":["22","24"],"needs":[],"inputs":{"command":"npm test"}},{"id":"test-windows","name":"Test (Windows)","template":"node-test","runsOn":"windows-latest","versions":["22"],"needs":[],"inputs":{"command":"npm test"}},{"id":"integration","name":"VS Code smoke test","template":"node-build","runsOn":"ubuntu-latest","versions":[],"needs":[],"inputs":{"command":"xvfb-run -a npm run test:integration"}}],"readOnlyPermissions":true,"cancelSuperseded":true}
+# gitkit-model: {"name":"CI","file":"ci.yml","triggers":{"push":{"enabled":true,"branches":["main"]},"pullRequest":{"enabled":true,"branches":[]},"tags":{"enabled":false,"pattern":"v*"},"schedule":{"enabled":false,"cron":"0 6 * * 1"},"manual":true},"jobs":[{"id":"lint","name":"Lint","template":"node-lint","runsOn":"ubuntu-latest","versions":[],"needs":[],"inputs":{"command":"npm run lint"}},{"id":"typecheck","name":"Typecheck and build","template":"node-build","runsOn":"ubuntu-latest","versions":[],"needs":[],"inputs":{"command":"npm run typecheck && npm run build"}},{"id":"test","name":"Test (Linux)","template":"node-test","runsOn":"ubuntu-latest","versions":["22","24"],"needs":[],"inputs":{"command":"npm test"}},{"id":"test-windows","name":"Test (Windows)","template":"node-test","runsOn":"windows-latest","versions":["22"],"needs":[],"inputs":{"command":"npm test"}},{"id":"test-macos","name":"Test (macOS)","template":"node-test","runsOn":"macos-latest","versions":["24"],"needs":[],"inputs":{"command":"npm test"}},{"id":"integration","name":"VS Code smoke test","template":"node-build","runsOn":"ubuntu-latest","versions":[],"needs":[],"inputs":{"command":"xvfb-run -a npm run test:integration"}}],"readOnlyPermissions":true,"cancelSuperseded":true}
