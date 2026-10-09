@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Clearer wording throughout:** the header says "in sync with remote" and leads with main's conflicts; nothing claims to be up to date before the first check; the fork picture uses the graph's colors; your own pushes fold into one line of the activity feed; the Undo list says "Went back to <commit>" instead of a hash; Checkpoint and "Commit 2 files" say what they do; worktree overlaps say whose change is committed; and the update button is "Merge main" everywhere.
+- The Branch Map and graph draw every fetched commit you haven't pulled as "not pulled yet", including teammates' new commits on main.
 - **A clearer paused merge:** one instruction instead of two, conflicts right under it (ahead of the Remote card), and Continue shows how many files are left. Pull, Push and Sync are off until the merge is finished or aborted, the outdated conflict forecast is hidden, and Open in the merge editor leads each conflicted file while Keep both is the quieter choice.
 - **New commits from teammates are announced:** when a background check finds that someone pushed to your branch or to main, a pop-up says who and how many (with Pull when it would just fast-forward), and a count appears on the GitKit icon until you look. `gitkit.newCommitAlerts` chooses a pop-up, only the count, or nothing. Background checks now also run while the GitKit panel is hidden.
 - **Why CI failed:** under the CI row, each failed job with the step it stopped at and the errors GitHub reported (failing tests, lint errors), linked to their file and line. The failed step's log opens in a read-only tab with the cursor on the first error.
