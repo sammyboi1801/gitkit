@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ActionRequest } from "../../src/git/actions";
   import type { RepoState } from "../../src/shared/types";
-  import { ago, preview, suggestedSync } from "../pulse/util";
+  import { ago, overlapSummary, preview, suggestedSync } from "../pulse/util";
   import { send } from "../pulse/vscode";
   import PrStatus from "../shared/PrStatus.svelte";
 
@@ -17,6 +17,7 @@
   const fetch = $derived(preview({ type: "fetch" }, repo));
   const update = $derived(preview({ type: "updateFromBase" }, repo));
   const checking = $derived(fetching || busy === "Fetch");
+  const overlap = $derived(overlapSummary(repo));
 
   const NEXT_LABEL = { push: "Push", pull: "Pull", sync: "Sync" };
   const NEXT_ICON = { push: "cloud-upload", pull: "cloud-download", sync: "sync" };
@@ -102,6 +103,13 @@
 
     {#if repo.pr}
       <span class="strip-item"><PrStatus {repo} {busy} {send} /></span>
+    {/if}
+
+    {#if overlap}
+      <span class="strip-item overlap {overlap.tone}" title="Worktrees that changed the same files since leaving main">
+        <span class="codicon codicon-{overlap.tone === 'conflict' ? 'error' : 'warning'}" aria-hidden="true"></span>
+        {overlap.text}{#if overlap.more}<span class="muted">+{overlap.more} more</span>{/if}
+      </span>
     {/if}
 
     <span class="spacer"></span>

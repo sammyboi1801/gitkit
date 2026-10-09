@@ -6,7 +6,7 @@
   import type { Commit, CommitDetails } from "../../src/shared/types";
   import CommitPanel from "../shared/CommitPanel.svelte";
   import { NO_LANE_COLOR, applyMainColor, emptyBranch, laneColor, laneStarts, refColor } from "../shared/graph";
-  import { ago, headAncestors, preview } from "../pulse/util";
+  import { ago, headAncestors, overlapNotes, preview, worktreeLabel } from "../pulse/util";
   import { send } from "../pulse/vscode";
   import Menu from "./Menu.svelte";
   import RemoteStrip from "./RemoteStrip.svelte";
@@ -68,6 +68,11 @@
   const commitNodes = $derived(display?.nodes.filter((n): n is CommitNode => n.kind === "commit") ?? []);
   const team = $derived(graph ? people(graph.commits) : []);
   const unpushed = $derived(new Set(repo?.unpushed ?? []));
+  /** Branches checked out in another worktree: they get a folder badge and "Open its worktree". */
+  const worktreeOf = $derived(
+    new Map(repo?.worktrees.filter((w) => w.branch && !w.current).map((w) => [w.branch!, w]) ?? []),
+  );
+  const mainPath = $derived(repo?.worktrees.find((w) => w.main)?.path ?? repo?.root ?? "");
   const incoming = $derived(new Set(repo?.incoming ?? []));
   const onHead = $derived(repo ? headAncestors(repo) : new Set<string>());
   // Everything is drawn at a fixed base size and the whole picture is scaled (viewBox), so zooming
@@ -186,6 +191,15 @@
   function openBranchMenu(branch: string, at: { x: number; y: number }) {
     const tip = tipOf(branch);
     const items: MenuItem[] = [];
+    const tree = worktreeOf.get(branch);
+    if (tree) {
+      items.push({
+        label: "Open its worktree",
+        icon: "folder-opened",
+        title: tree.path,
+        run: () => send({ type: "openWorktree", path: tree.path, newWindow: true }),
+      });
+    }
     if (branch !== current) {
       items.push(item(`Switch to ${branch}`, "arrow-swap", { type: "switch", branch }));
       if (current) {
@@ -633,7 +647,12 @@
               <!-- Branch and tag flags above the commit they point at, stacked if several. -->
               {#each commit.refs as ref, k (ref.kind + ref.name)}
                 {@const chip = refColor(graph, ref) ?? NO_LANE_COLOR}
-                {@const full = ref.kind === "tag" ? `🏷 ${ref.name}` : ref.name}
+                {@const full =
+                  ref.kind === "tag"
+                    ? `🏷 ${ref.name}`
+                    : ref.kind === "local" && worktreeOf.has(ref.name)
+                      ? `📂 ${ref.name}`
+                      : ref.name}
                 {@const label = clip(full, flagRoom.get(commit.hash) ?? Infinity)}
                 {@const w = label.length * 6.4 + 12}
                 {@const branch = ref.kind === "local" && localBranches.has(ref.name) ? ref.name : null}
@@ -692,6 +711,14 @@
             >
           {:else if isCurrent}
             <span class="muted">Not on the remote yet</span>
+          {/if}
+          {#if f.branch && worktreeOf.get(f.branch)}
+            {@const tree = worktreeOf.get(f.branch)!}
+            <span class="muted">Open in a worktree: {worktreeLabel(tree.path, mainPath)}</span>
+            {#if tree.changes}<span class="muted">{tree.changes} uncommitted</span>{/if}
+            {#each overlapNotes(tree.path, repo) as note (note.text)}
+              <span class={note.tone === "conflict" ? "error-text" : "warn-text"}>{note.text}</span>
+            {/each}
           {/if}
           {#if f.branch}
             <span class="muted hint-line">Click for actions · drag onto another branch to merge or rebase</span>

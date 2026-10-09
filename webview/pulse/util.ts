@@ -1,6 +1,6 @@
 import { planAction, type ActionRequest } from "../../src/git/actions";
 import { formatCommand } from "../../src/git/format";
-import type { RepoState } from "../../src/shared/types";
+import type { RepoState, WorktreeInfo } from "../../src/shared/types";
 
 /** The exact command(s) an action will run, or why it can't run. Shown on hover and under buttons. */
 export function preview(request: ActionRequest, repo: RepoState): { ok: boolean; text: string; label: string } {
@@ -31,6 +31,49 @@ export function worktreeLabel(path: string, mainPath: string): string {
   // Windows paths compare case-insensitively.
   const inside = target.toLowerCase().startsWith(`${parent.toLowerCase()}/`);
   return inside && parent ? target.slice(parent.length + 1) : target;
+}
+
+/** A worktree's name for people: its branch, or where it's detached. */
+export function worktreeName(w: WorktreeInfo): string {
+  return w.bare ? "bare repository" : (w.branch ?? `detached at ${w.head?.slice(0, 7) ?? "?"}`);
+}
+
+const fileList = (files: readonly string[], max = 3) =>
+  files.length > max ? `${files.slice(0, max).join(", ")} +${files.length - max} more` : files.join(", ");
+
+/**
+ * What a worktree has in common with the others: "also changed in agent/docs: auth.py", or, when
+ * merging their commits would conflict, "conflicts with agent/docs in auth.py".
+ */
+export function overlapNotes(path: string, repo: RepoState): { text: string; tone: "warn" | "conflict" }[] {
+  const byPath = new Map(repo.worktrees.map((w) => [w.path, w]));
+  return repo.worktreeOverlaps
+    .filter((o) => o.a === path || o.b === path)
+    .map((o) => {
+      const other = byPath.get(o.a === path ? o.b : o.a);
+      const name = other ? worktreeName(other) : "another worktree";
+      return o.conflicts?.length
+        ? { text: `conflicts with ${name} in ${fileList(o.conflicts)}`, tone: "conflict" as const }
+        : { text: `also changed in ${name}: ${fileList(o.files)}`, tone: "warn" as const };
+    });
+}
+
+/** The worst overlap between worktrees in one line (conflicts first), for the Branch Map's strip. */
+export function overlapSummary(repo: RepoState): { text: string; tone: "warn" | "conflict"; more: number } | null {
+  const overlaps = [...repo.worktreeOverlaps].sort(
+    (x, y) => Number(!!y.conflicts?.length) - Number(!!x.conflicts?.length),
+  );
+  const first = overlaps[0];
+  if (!first) return null;
+  const byPath = new Map(repo.worktrees.map((w) => [w.path, w]));
+  const name = (path: string) => {
+    const w = byPath.get(path);
+    return w ? worktreeName(w) : "a worktree";
+  };
+  const pair = `${name(first.a)} and ${name(first.b)}`;
+  return first.conflicts?.length
+    ? { text: `${pair} would conflict in ${fileList(first.conflicts, 2)}`, tone: "conflict", more: overlaps.length - 1 }
+    : { text: `${pair} both changed ${fileList(first.files, 2)}`, tone: "warn", more: overlaps.length - 1 };
 }
 
 /** One plain-English sentence describing where the repo stands. */

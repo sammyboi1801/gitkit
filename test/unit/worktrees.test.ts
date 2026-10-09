@@ -3,8 +3,11 @@ import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { discoverRepos, pathKey } from "../../src/git/discover";
 import { realPath } from "../../src/git/paths";
+import { readRepo } from "../../src/git/repo";
+import type { WorktreeInfo } from "../../src/shared/types";
 import {
   filesToCopy,
+  findOverlaps,
   gitFolderKind,
   newWorktreePath,
   parseStatusPaths,
@@ -134,6 +137,66 @@ describe("readWorktreeInfo", () => {
     expect(parseStatusPaths(git(dir, "status", "--porcelain", "-z", "--untracked-files=all")).sort()).toEqual([
       "new.txt",
       "renamed.txt",
+    ]);
+  });
+});
+
+describe("worktrees changing the same files", () => {
+  /** Two agents, each in its own worktree off main. */
+  function twoAgents() {
+    const base = tempDir();
+    const app = initRepo(join(base, "app"));
+    commit(app, "first", { "auth.py": "def login():\n    return 1\n", "api.py": "x = 1\n", "docs.md": "# Docs\n" });
+    const a = join(base, "a");
+    const b = join(base, "b");
+    git(app, "worktree", "add", "-q", "-b", "agent/a", a);
+    git(app, "worktree", "add", "-q", "-b", "agent/b", b);
+    return { app, a, b };
+  }
+
+  it("remembers what each worktree changed since leaving main, committed or not", async () => {
+    const { app, a } = twoAgents();
+    commit(a, "feat: login", { "auth.py": "def login():\n    return 2\n" });
+    write(a, "new_test.py", "assert True\n");
+    const info = await readWorktreeInfo(app, "main");
+    expect(info.find((w) => w.branch === "agent/a")!.touched).toEqual(["auth.py", "new_test.py"]);
+    expect(info.find((w) => w.branch === "main")!.touched).toEqual([]);
+  });
+
+  it("finds pairs that changed the same files, and forecasts whether their commits conflict", async () => {
+    const { app, a, b } = twoAgents();
+    commit(a, "a: login", { "auth.py": "def login():\n    return 'a'\n" });
+    commit(b, "b: login", { "auth.py": "def login():\n    return 'b'\n", "docs.md": "# B docs\n" });
+    write(a, "docs.md", "# A docs, not committed\n");
+    write(b, "api.py", "x = 2\n");
+
+    const repo = await readRepo(app);
+    expect(repo.worktreeOverlaps).toHaveLength(1);
+    const [overlap] = repo.worktreeOverlaps;
+    expect([overlap.a, overlap.b].map((p) => same(p, a) || same(p, b))).toEqual([true, true]);
+    expect(overlap.files).toEqual(["auth.py", "docs.md"]);
+    // Only committed work can be test-merged: auth.py conflicts; docs.md is uncommitted in a.
+    expect(overlap.conflicts).toEqual(["auth.py"]);
+  });
+
+  it("doesn't forecast conflicts while one side has no commits, and ignores separate files", async () => {
+    const { app, a, b } = twoAgents();
+    write(a, "auth.py", "edited in a\n");
+    write(b, "auth.py", "edited in b\n");
+    expect((await readRepo(app)).worktreeOverlaps).toMatchObject([{ files: ["auth.py"], conflicts: null }]);
+
+    write(b, "auth.py", "def login():\n    return 1\n"); // Back to how it was.
+    write(b, "api.py", "x = 3\n");
+    expect((await readRepo(app)).worktreeOverlaps).toEqual([]);
+  });
+
+  it("pairs every worktree with every other, once", () => {
+    const w = (path: string, touched: string[] | null) => ({ path, touched }) as WorktreeInfo;
+    const pairs = findOverlaps([w("a", ["x", "y"]), w("b", ["y"]), w("c", ["x", "y", "z"]), w("d", null), w("e", [])]);
+    expect(pairs.map((p) => [p.a.path, p.b.path, p.files])).toEqual([
+      ["a", "b", ["y"]],
+      ["a", "c", ["x", "y"]],
+      ["b", "c", ["y"]],
     ]);
   });
 });

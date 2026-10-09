@@ -129,6 +129,8 @@ export function filesToCopy(
 
 /** More would mean many git calls on every refresh; past this, the rest are listed without details. */
 const MAX_DETAILED = 12;
+/** Files remembered per worktree for spotting overlaps; enough for any sane change. */
+const MAX_TOUCHED = 2000;
 /** Changed files whose modification times are checked for "last activity". */
 const MAX_STATTED = 200;
 
@@ -164,17 +166,21 @@ export async function readWorktreeInfo(root: string, base: string | null): Promi
         ahead: null,
         behind: null,
         lastActivity: null,
+        touched: null,
       };
       if (w.bare || w.prunable !== null || !w.head || i >= MAX_DETAILED) return info;
 
       const tip = w.branch ? `refs/heads/${w.branch}` : w.head;
-      const [status, time, counts] = await Promise.all([
+      const [status, time, counts, committed] = await Promise.all([
         read(["status", "--porcelain", "-z", "--untracked-files=all"], w.path).catch(() => null),
         read(["log", "-1", "--format=%ct", w.head], root).catch(() => null),
         base ? read(["rev-list", "--left-right", "--count", `${base}...${tip}`], root).catch(() => null) : null,
+        // Three dots: what the branch changed since it left main, not what main did since.
+        base ? read(["diff", "--name-only", "-z", `${base}...${tip}`], root).catch(() => null) : null,
       ]);
+      let paths: string[] = [];
       if (status) {
-        const paths = parseStatusPaths(status.stdout);
+        paths = parseStatusPaths(status.stdout);
         info.changes = paths.length;
         const times = paths.slice(0, MAX_STATTED).map((p) => {
           try {
@@ -187,9 +193,32 @@ export async function readWorktreeInfo(root: string, base: string | null): Promi
       }
       const [behind, ahead] = (counts?.stdout.trim().split(/\s+/) ?? []).map(Number);
       if (Number.isFinite(behind) && Number.isFinite(ahead)) Object.assign(info, { ahead, behind });
+      if (status) {
+        const files = new Set([...(committed?.stdout.split("\0").filter(Boolean) ?? []), ...paths]);
+        info.touched = [...files].sort().slice(0, MAX_TOUCHED);
+      }
       return info;
     }),
   );
+}
+
+/**
+ * Pairs of worktrees that changed the same files since leaving main, committed or not: two agents
+ * editing auth.py in parallel is worth knowing before either tries to merge.
+ */
+export function findOverlaps(
+  worktrees: readonly WorktreeInfo[],
+): { a: WorktreeInfo; b: WorktreeInfo; files: string[] }[] {
+  const pairs: { a: WorktreeInfo; b: WorktreeInfo; files: string[] }[] = [];
+  const live = worktrees.filter((w) => w.touched?.length);
+  for (let i = 0; i < live.length; i++) {
+    const mine = new Set(live[i].touched);
+    for (let j = i + 1; j < live.length; j++) {
+      const files = live[j].touched!.filter((f) => mine.has(f));
+      if (files.length) pairs.push({ a: live[i], b: live[j], files });
+    }
+  }
+  return pairs;
 }
 
 export type GitFolder =

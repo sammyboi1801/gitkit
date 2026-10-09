@@ -128,6 +128,8 @@ export interface RepoState {
   activity: ActivityItem[];
   /** Every checkout of this repo, this one included; empty when it has just the one. */
   worktrees: WorktreeInfo[];
+  /** Pairs of worktrees that changed the same files. */
+  worktreeOverlaps: WorktreeOverlap[];
   /** Snapshots of this worktree's files, newest first. */
   checkpoints: Checkpoint[];
   /** Checkpoints of worktrees that have been removed since, newest first. */
@@ -177,6 +179,19 @@ export interface WorktreeInfo extends Worktree {
   behind: number | null;
   /** Unix seconds: its last commit or its newest uncommitted change, whichever is later. */
   lastActivity: number | null;
+  /** Files it changed since leaving the main branch, committed or not. */
+  touched: string[] | null;
+}
+
+/** Two worktrees that changed the same files: agents about to step on each other. */
+export interface WorktreeOverlap {
+  /** The two worktrees' paths. */
+  a: string;
+  b: string;
+  /** Files both changed, committed or not. */
+  files: string[];
+  /** Files a merge of their commits would conflict in; null when not checked (one has no commits). */
+  conflicts: string[] | null;
 }
 
 /** The open pull request for the current branch, as GitHub reports it. */

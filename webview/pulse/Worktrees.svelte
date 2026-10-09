@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { RepoState, WorktreeInfo } from "../../src/shared/types";
-  import { ago, preview, worktreeLabel } from "./util";
+  import { ago, overlapNotes, preview, worktreeLabel, worktreeName as name } from "./util";
   import { loadCollapsed, saveCollapsed, send } from "./vscode";
 
   // Every checkout of this repo, including ones made by the CLI or agent tools: which branch each
@@ -13,9 +13,6 @@
 
   const mainPath = $derived(repo.worktrees.find((w) => w.main)?.path ?? repo.root);
   const base = $derived(repo.base?.name ?? "main");
-
-  const name = (w: WorktreeInfo) =>
-    w.bare ? "bare repository" : (w.branch ?? `detached at ${w.head?.slice(0, 7) ?? "?"}`);
 
   function details(w: WorktreeInfo): string[] {
     const parts: string[] = [];
@@ -92,6 +89,12 @@
                     {#if w.lastActivity}<span class="time">{ago(w.lastActivity)}</span>{/if}
                   {/if}
                 </span>
+                {#each overlapNotes(w.path, repo) as note (note.text)}
+                  <span class="worktree-note {note.tone}">
+                    <span class="codicon codicon-{note.tone === 'conflict' ? 'error' : 'warning'}" aria-hidden="true"
+                    ></span>{note.text}
+                  </span>
+                {/each}
               </span>
             </button>
             {#if openable}

@@ -772,6 +772,23 @@ describe("worktrees", () => {
     });
   });
 
+  it("leaves branches open in a worktree out of 'Clean up merged branches'", async () => {
+    const { work } = makeDivergedClone();
+    git(work, "branch", "done", "origin/main");
+    git(work, "worktree", "add", "-q", "-b", "agent/merged", join(tempDir(), "agent"), "origin/main");
+    const panel = await openPanel(work);
+    harness.answers.push((items: { label: string }[]) => items, "Delete branches");
+    await panel.provider.cleanupBranches();
+
+    const offered = (harness.shown.find((s) => s.kind === "quickPick")!.items as { label: string }[]).map(
+      (i) => i.label,
+    );
+    expect(offered).toContain("done");
+    expect(offered).not.toContain("agent/merged");
+    expect(git(work, "branch", "--list", "done")).toBe("");
+    expect(git(work, "branch", "--list", "agent/merged")).toContain("agent/merged");
+  });
+
   it("marks branches open in another worktree in the branch switcher, and opens that worktree", async () => {
     const { app, feature } = repoWithWorktree();
     const panel = await openPanel(app);

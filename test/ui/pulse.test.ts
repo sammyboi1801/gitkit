@@ -165,6 +165,7 @@ describe("Worktrees", () => {
     ahead: 0,
     behind: 0,
     lastActivity: null,
+    touched: null,
     ...overrides,
   });
   const trees = [
@@ -259,6 +260,31 @@ describe("Worktrees", () => {
     const remove = button("Remove detached at 1234567") as HTMLButtonElement;
     expect(remove.disabled).toBe(true);
     expect(remove.getAttribute("title")).toBe("It's locked (agent session running). Unlock it first.");
+  });
+
+  it("warns under a worktree when another changed the same files, and when they'd conflict", () => {
+    render(Worktrees, {
+      props: {
+        repo: repoState({
+          worktrees: trees,
+          worktreeOverlaps: [
+            {
+              a: "/code/app.worktrees/feature-login",
+              b: "/elsewhere/agent",
+              files: ["auth.py", "api.py"],
+              conflicts: ["auth.py"],
+            },
+            { a: "/code/app", b: "/code/app.worktrees/feature-login", files: ["README.md"], conflicts: null },
+          ],
+        }),
+        busy: null,
+      },
+    });
+    const [main, feature, agent] = rows();
+    expect(within(feature).getByText("conflicts with detached at 1234567 in auth.py")).toBeTruthy();
+    expect(within(feature).getByText("also changed in main: README.md")).toBeTruthy();
+    expect(within(agent).getByText("conflicts with feature/login in auth.py")).toBeTruthy();
+    expect(within(main).getByText("also changed in feature/login: README.md")).toBeTruthy();
   });
 
   it("offers Clean up only when a worktree's folder is gone", () => {

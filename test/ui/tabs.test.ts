@@ -8,7 +8,7 @@ import { explain } from "../../src/workflow/yaml";
 import Map from "../../webview/map/Map.svelte";
 import Studio from "../../webview/workflow/Studio.svelte";
 import { sent } from "./setup";
-import type { CiStatus, RepoState } from "../../src/shared/types";
+import type { CiStatus, RepoState, WorktreeInfo } from "../../src/shared/types";
 import { commitOf, repoState } from "./state";
 
 const post = async (data: unknown) => {
@@ -190,6 +190,59 @@ describe("Branch Map", () => {
     await fireEvent.pointerLeave(flag("feat/login"));
     await fireEvent.pointerEnter(flag("main"));
     expect(within(screen.getByRole("tooltip")).queryByText(/you're on it/)).toBeNull();
+  });
+
+  describe("worktrees", () => {
+    const tree = (path: string, branch: string, extra: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
+      path,
+      branch,
+      head: "x",
+      main: false,
+      bare: false,
+      locked: null,
+      prunable: null,
+      current: false,
+      changes: 0,
+      ahead: 0,
+      behind: 0,
+      lastActivity: null,
+      touched: null,
+      ...extra,
+    });
+    const worktrees = [
+      tree("/repo", "feat/login", { main: true, current: true }),
+      tree("/repo.worktrees/main", "main", { changes: 4 }),
+    ];
+    const withTrees = (worktreeOverlaps: RepoState["worktreeOverlaps"] = []) =>
+      repoState({ status: { branch: "feat/login", oid: "x" }, commits, worktrees, worktreeOverlaps });
+
+    it("badges branches open in another worktree, and opens it from the branch menu", async () => {
+      await open(withTrees());
+      expect(flag("main").querySelector("text")!.textContent).toBe("📂 main");
+      expect(flag("feat/login").querySelector("text")!.textContent).toBe("feat/login");
+      await fireEvent.pointerDown(flag("main"));
+      await fireEvent.pointerUp(window);
+      await fireEvent.click(menuItem(/Open its worktree/));
+      expect(lastSent()).toEqual({ type: "openWorktree", path: "/repo.worktrees/main", newWindow: true });
+    });
+
+    it("says on hover where it's open, what's uncommitted there and what overlaps", async () => {
+      await open(withTrees([{ a: "/repo", b: "/repo.worktrees/main", files: ["app.ts"], conflicts: null }]));
+      await fireEvent.pointerEnter(flag("main"));
+      const tip = within(screen.getByRole("tooltip"));
+      expect(tip.getByText("Open in a worktree: /repo.worktrees/main")).toBeTruthy();
+      expect(tip.getByText("4 uncommitted")).toBeTruthy();
+      expect(tip.getByText("also changed in feat/login: app.ts")).toBeTruthy();
+    });
+
+    it("sums up overlapping worktrees in the strip, conflicts first", async () => {
+      await open(withTrees([{ a: "/repo", b: "/repo.worktrees/main", files: ["app.ts"], conflicts: ["app.ts"] }]));
+      expect(
+        within(screen.getByRole("region", { name: "Remote status" })).getByText(
+          /feat\/login and main would conflict in app\.ts/,
+        ),
+      ).toBeTruthy();
+    });
   });
 
   describe("a branch with no commits yet", () => {

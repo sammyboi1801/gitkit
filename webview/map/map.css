@@ -502,3 +502,25 @@ body {
 .flag {
   cursor: pointer;
 }
+
+.tooltip .warn-text {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.tooltip .error-text {
+  color: var(--vscode-errorForeground);
+}
+
+.strip-item.overlap.warn,
+.strip-item.overlap.warn > .codicon:first-child {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.strip-item.overlap.conflict,
+.strip-item.overlap.conflict > .codicon:first-child {
+  color: var(--vscode-errorForeground);
+}
+
+.strip-item.overlap {
+  white-space: normal;
+}

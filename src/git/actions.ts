@@ -316,6 +316,9 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
     case "deleteBranches": {
       if (request.names.length === 0) return fail("Pick at least one branch.");
       if (status.branch && request.names.includes(status.branch)) return fail("You can't delete the branch you're on.");
+      // Git refuses to delete a branch another worktree has checked out.
+      const open = repo.worktrees.find((w) => w.branch && request.names.includes(w.branch));
+      if (open) return fail(`${open.branch} is open in a worktree (${open.path}). Remove that worktree first.`);
       // -D: these were already checked as merged, gone or squash-merged; plain -d misses squash merges.
       return ok(
         "Delete branches",

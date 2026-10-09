@@ -10,6 +10,8 @@ import {
   relativeTime,
   splitPath,
   summarize,
+  overlapNotes,
+  overlapSummary,
   worktreeLabel,
   totals,
 } from "../../webview/pulse/util";
@@ -30,6 +32,7 @@ const repo = (status: Partial<RepoState["status"]> = {}, extra: Partial<RepoStat
   operation: null,
   activity: [],
   worktrees: [],
+  worktreeOverlaps: [],
   checkpoints: [],
   removedCheckpoints: [],
   ...extra,
@@ -144,5 +147,47 @@ describe("worktreeLabel", () => {
     ["/code/application", "/code/app", "application"],
   ])("%s next to %s → %s", (path, main, label) => {
     expect(worktreeLabel(path, main)).toBe(label);
+  });
+});
+
+describe("worktree overlap wording", () => {
+  const tree = (path: string, branch: string | null) =>
+    ({ path, branch, head: "1234567890", bare: false }) as RepoState["worktrees"][number];
+  const state = (worktreeOverlaps: RepoState["worktreeOverlaps"]) =>
+    ({
+      worktrees: [tree("/a", "agent/a"), tree("/b", "agent/b"), tree("/c", null)],
+      worktreeOverlaps,
+    }) as RepoState;
+
+  it("says what's also changed elsewhere, and where merging would conflict", () => {
+    const repo = state([
+      { a: "/a", b: "/b", files: ["auth.py", "api.py", "x.py", "y.py"], conflicts: null },
+      { a: "/a", b: "/c", files: ["auth.py"], conflicts: ["auth.py"] },
+    ]);
+    expect(overlapNotes("/a", repo)).toEqual([
+      { text: "also changed in agent/b: auth.py, api.py, x.py +1 more", tone: "warn" },
+      { text: "conflicts with detached at 1234567 in auth.py", tone: "conflict" },
+    ]);
+    expect(overlapNotes("/b", repo)).toEqual([
+      { text: "also changed in agent/a: auth.py, api.py, x.py +1 more", tone: "warn" },
+    ]);
+    expect(overlapNotes("/nowhere", repo)).toEqual([]);
+  });
+
+  it("sums up the worst overlap first for the Branch Map", () => {
+    expect(overlapSummary(state([]))).toBeNull();
+    expect(
+      overlapSummary(
+        state([
+          { a: "/a", b: "/b", files: ["docs.md"], conflicts: [] },
+          { a: "/b", b: "/c", files: ["auth.py", "api.py", "z.py"], conflicts: ["auth.py"] },
+        ]),
+      ),
+    ).toEqual({ text: "agent/b and detached at 1234567 would conflict in auth.py", tone: "conflict", more: 1 });
+    expect(overlapSummary(state([{ a: "/a", b: "/b", files: ["a", "b", "c"], conflicts: null }]))).toEqual({
+      text: "agent/a and agent/b both changed a, b +1 more",
+      tone: "warn",
+      more: 0,
+    });
   });
 });

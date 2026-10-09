@@ -41,6 +41,7 @@ export function repoState(
     operation: null,
     activity: [],
     worktrees: [],
+    worktreeOverlaps: [],
     checkpoints: [],
     removedCheckpoints: [],
     ...rest,

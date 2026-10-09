@@ -205,10 +205,14 @@ async function addToGitignore(root: string, file: string): Promise<void> {
 }
 
 export async function pickCleanup(repo: RepoState, baseRef: string, baseName: string) {
-  const candidates = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "Checking which branches are merged…" },
-    () => readCleanupCandidates(repo.root, baseRef, baseName),
-  );
+  // A branch some worktree has checked out can't be deleted; it's cleaned up with its worktree.
+  const inWorktrees = new Set(repo.worktrees.map((w) => w.branch));
+  const candidates = (
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Checking which branches are merged…" },
+      () => readCleanupCandidates(repo.root, baseRef, baseName),
+    )
+  ).filter((c) => !inWorktrees.has(c.branch.name));
   if (candidates.length === 0) {
     void vscode.window.showInformationMessage("No merged branches to clean up.");
     return undefined;

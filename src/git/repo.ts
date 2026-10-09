@@ -9,11 +9,13 @@ import type {
   RepoState,
   RepoSummary,
   StatusInfo,
+  WorktreeInfo,
+  WorktreeOverlap,
 } from "../shared/types";
 import { BRANCH_FORMAT, parseBranches } from "./branches";
 import { pathKey } from "./discover";
 import { readCheckpointState } from "./checkpoints";
-import { readWorktreeInfo } from "./worktrees";
+import { findOverlaps, readWorktreeInfo } from "./worktrees";
 import { layoutBranches } from "./lanes";
 import { LOG_FORMAT, parseLog } from "./log";
 import { REFLOG_FORMAT, STASH_FORMAT, parseHistory, parseStashes } from "./history";
@@ -133,6 +135,7 @@ export async function readRepo(root: string): Promise<RepoState> {
     readWorktreeInfo(root, base?.ref ?? (refNames.includes("main") ? "main" : null)),
     readCheckpointState(root),
   ]);
+  const worktreeOverlaps = await readOverlaps(root, worktrees);
 
   return {
     root,
@@ -152,6 +155,7 @@ export async function readRepo(root: string): Promise<RepoState> {
     operation: detectOperation(gitPaths),
     activity,
     worktrees,
+    worktreeOverlaps,
     ...checkpointState,
   };
 }
@@ -204,6 +208,25 @@ async function readBase(root: string, status: StatusInfo, remotes: string[], ref
   if (!isCurrent && ahead > 0 && behind > 0) conflicts = await predictConflicts(root, picked.ref);
 
   return { ...picked, ahead, behind, forkPoint, conflicts, isCurrent };
+}
+
+/** At most this many overlapping pairs get a merge forecast; each is one in-memory merge. */
+const MAX_FORECASTS = 10;
+
+/**
+ * Worktrees that changed the same files, and for pairs that both have commits, whether merging
+ * those commits would conflict (in memory, like the forecast for main).
+ */
+async function readOverlaps(root: string, worktrees: readonly WorktreeInfo[]): Promise<WorktreeOverlap[]> {
+  const pairs = findOverlaps(worktrees);
+  return Promise.all(
+    pairs.map(async ({ a, b, files }, i): Promise<WorktreeOverlap> => {
+      const tip = (w: WorktreeInfo) => (w.branch ? `refs/heads/${w.branch}` : w.head!);
+      const comparable = i < MAX_FORECASTS && !!a.ahead && !!b.ahead && !!a.head && !!b.head;
+      const conflicts = comparable ? await predictConflicts(root, tip(b), tip(a)) : null;
+      return { a: a.path, b: b.path, files, conflicts };
+    }),
+  );
 }
 
 /** Test-merges in memory with merge-tree: no files, index or refs are touched. */

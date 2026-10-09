@@ -16,6 +16,7 @@ const repo = (status: Partial<StatusInfo> = {}, remotes = ["origin"]): RepoState
   operation: null,
   activity: [],
   worktrees: [],
+  worktreeOverlaps: [],
   checkpoints: [],
   removedCheckpoints: [],
 });
@@ -290,6 +291,7 @@ describe("worktrees", () => {
     ahead: 0,
     behind: 0,
     lastActivity: null,
+    touched: null,
     ...extra,
   });
   const withTrees = (...extra: WorktreeInfo[]): RepoState => ({
@@ -422,5 +424,50 @@ describe("restoring a checkpoint", () => {
     expect(planAction({ type: "restoreCheckpoint", hash: "c1" }, withCheckpoint({ operation: "merge" })).ok).toBe(
       false,
     );
+  });
+});
+
+describe("deleting a branch open in a worktree", () => {
+  it("says to remove the worktree instead of letting git fail", () => {
+    const r: RepoState = {
+      ...repo(),
+      worktrees: [
+        {
+          path: "/repo",
+          head: "a",
+          branch: "main",
+          main: true,
+          bare: false,
+          locked: null,
+          prunable: null,
+          current: true,
+          changes: 0,
+          ahead: 0,
+          behind: 0,
+          lastActivity: null,
+          touched: null,
+        },
+        {
+          path: "/w/agent",
+          head: "b",
+          branch: "agent/x",
+          main: false,
+          bare: false,
+          locked: null,
+          prunable: null,
+          current: false,
+          changes: 0,
+          ahead: 0,
+          behind: 0,
+          lastActivity: null,
+          touched: null,
+        },
+      ],
+    };
+    expect(planAction({ type: "deleteBranches", names: ["old", "agent/x"] }, r)).toEqual({
+      ok: false,
+      reason: "agent/x is open in a worktree (/w/agent). Remove that worktree first.",
+    });
+    expect(planAction({ type: "deleteBranches", names: ["old"] }, r).ok).toBe(true);
   });
 });
