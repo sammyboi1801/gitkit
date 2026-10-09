@@ -91,9 +91,9 @@ describe("toYaml", () => {
 
   it("writes the test matrix and wires the version into setup", () => {
     expect(data.jobs.test.needs).toBe("lint");
-    expect(data.jobs.test.strategy).toEqual({ matrix: { "node-version": ["20", "22"] } });
+    expect(data.jobs.test.strategy).toEqual({ matrix: { "node-version": ["22", "24"] } });
     expect(data.jobs.test.steps[1]).toEqual({
-      uses: "actions/setup-node@v4",
+      uses: "actions/setup-node@v5",
       with: { "node-version": "${{ matrix.node-version }}", cache: "npm" },
     });
   });

@@ -259,9 +259,10 @@ describe("Workflow Studio", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: /^Test\b.*Test \(Node\)/ }));
     const editor = screen.getByRole("region", { name: "Edit Test" });
+    // Defaults are 22 and 24; switching 24 off leaves one version.
     await fireEvent.click(within(editor).getByRole("button", { name: "24" }));
     await fireEvent.click(within(editor).getByRole("radio", { name: "Windows" }));
-    expect(yamlText()).toContain('node-version: ["20", "22", "24"]');
+    expect(yamlText()).toContain('node-version: ["22"]');
     expect(yamlText()).toContain("runs-on: windows-latest");
   });
 
