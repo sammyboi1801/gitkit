@@ -264,4 +264,9 @@ describe("jobLook", () => {
   it("uses the template's own look for ready-made jobs", () => {
     expect(jobLook(newJob("node-test", []))).toEqual({ icon: "beaker", group: "check" });
   });
+
+  it("shows a job that runs a reusable workflow as one, whatever its name", () => {
+    const call = { ...job("deploy", "Deploy"), steps: undefined, extra: { uses: "./.github/workflows/deploy.yml" } };
+    expect(jobLook(call)).toEqual({ icon: "references", group: "other" });
+  });
 });

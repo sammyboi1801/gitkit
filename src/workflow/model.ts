@@ -291,6 +291,7 @@ export function jobLook(job: Job): { icon: string; group: Template["group"] } {
     const t = template(job.template);
     return { icon: t.icon, group: t.group };
   }
+  if (job.extra?.uses !== undefined) return { icon: "references", group: "other" };
   const name = `${job.id} ${job.name}`.toLowerCase().replace(/[-_]/g, " ");
   const steps = (job.steps ?? [])
     .map((s) => `${s.name ?? ""} ${s.run ?? ""} ${s.uses ?? ""}`)
