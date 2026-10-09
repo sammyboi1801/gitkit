@@ -103,9 +103,22 @@ export function summarize(repo: RepoState): { text: string; icon: string; tone: 
   if (status.behind)
     return { text: `${plural(status.behind, "new commit")} on the remote`, icon: "arrow-down", tone: "info" };
   if (status.ahead) return { text: `${plural(status.ahead, "commit")} ready to push`, icon: "arrow-up", tone: "info" };
+  // In sync with your remote branch, but main moved on in a way that will bite: say that first.
+  const base = repo.base && !repo.base.isCurrent ? repo.base : null;
+  if (base && base.behind && base.conflicts?.length) {
+    return {
+      text: `${base.name} has ${plural(base.behind, "new commit")} that would conflict`,
+      icon: "warning",
+      tone: "warn",
+    };
+  }
   if (status.files.length)
-    return { text: `Up to date · ${plural(status.files.length, "changed file")}`, icon: "edit", tone: "muted" };
-  return { text: "Clean and up to date", icon: "pass", tone: "ok" };
+    return {
+      text: `In sync with remote · ${plural(status.files.length, "changed file")}`,
+      icon: "edit",
+      tone: "muted",
+    };
+  return { text: "Clean and in sync with remote", icon: "pass", tone: "ok" };
 }
 
 export function totals(stats: ({ added: number; removed: number } | undefined)[]): { added: number; removed: number } {

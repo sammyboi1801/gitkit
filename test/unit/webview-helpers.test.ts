@@ -42,7 +42,28 @@ const repo = (status: Partial<RepoState["status"]> = {}, extra: Partial<RepoStat
 
 describe("summarize: the one-sentence status", () => {
   it.each([
-    [repo(), "Clean and up to date"],
+    [repo(), "Clean and in sync with remote"],
+    [
+      repo({ files: [{ path: "a", index: ".", worktree: "M", untracked: false, conflicted: false }] }),
+      "In sync with remote · 1 changed file",
+    ],
+    [
+      repo(
+        {},
+        {
+          base: {
+            ref: "origin/main",
+            name: "main",
+            ahead: 1,
+            behind: 2,
+            forkPoint: null,
+            conflicts: ["a"],
+            isCurrent: false,
+          },
+        },
+      ),
+      "main has 2 new commits that would conflict",
+    ],
     [repo({ ahead: 1 }), "1 commit ready to push"],
     [repo({ behind: 3 }), "3 new commits on the remote"],
     [repo({ ahead: 2, behind: 1 }), "Diverged: 2 to push, 1 to pull. Sync replays yours on top"],
