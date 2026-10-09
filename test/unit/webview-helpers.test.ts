@@ -10,6 +10,7 @@ import {
   relativeTime,
   splitPath,
   summarize,
+  worktreeLabel,
   totals,
 } from "../../webview/pulse/util";
 
@@ -28,6 +29,7 @@ const repo = (status: Partial<RepoState["status"]> = {}, extra: Partial<RepoStat
   lastFetch: null,
   operation: null,
   activity: [],
+  worktrees: [],
   ...extra,
 });
 
@@ -128,5 +130,17 @@ describe("graph helpers", () => {
     const main = graph.lanes.findIndex((l) => l.name === "main");
     expect(laneTips(graph).get(main)).toBe(1);
     expect(laneStarts(graph).get(main)).toBe(2);
+  });
+});
+
+describe("worktreeLabel", () => {
+  it.each([
+    ["/code/app.worktrees/feature-login", "/code/app", "app.worktrees/feature-login"],
+    ["C:\\Code\\app.worktrees\\x", "c:\\code\\app", "app.worktrees/x"],
+    ["/code/app/.worktrees/x", "/code/app", "app/.worktrees/x"],
+    ["/elsewhere/agent-1", "/code/app", "/elsewhere/agent-1"],
+    ["/code/application", "/code/app", "application"],
+  ])("%s next to %s → %s", (path, main, label) => {
+    expect(worktreeLabel(path, main)).toBe(label);
   });
 });

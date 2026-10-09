@@ -269,6 +269,10 @@ export const workspace = {
   get workspaceFolders() {
     return harness.folders.map((f) => ({ uri: Uri.file(f), name: f, index: 0 }));
   },
+  updateWorkspaceFolders(start: number, deleteCount: number, ...added: { uri: Uri }[]) {
+    harness.folders.splice(start, deleteCount, ...added.map((f) => f.uri.fsPath));
+    return true;
+  },
   createFileSystemWatcher() {
     const e = new Emitter<Uri>();
     return { onDidChange: e.event, onDidCreate: e.event, onDidDelete: e.event, dispose() {} };

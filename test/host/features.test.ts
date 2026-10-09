@@ -6,7 +6,7 @@ import { readCi, readPullRequest, rerunFailedJobs } from "../../src/github/clien
 import { readRepo } from "../../src/git/repo";
 import type { HostToStudio } from "../../src/shared/messages";
 import type { WorkflowModel } from "../../src/workflow/model";
-import { commit, git, makeDivergedClone, makeRepo, write } from "../fixtures/repos";
+import { commit, git, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
 import { harness, Uri } from "../mocks/vscode";
 import { memento, openPanel } from "./helpers";
 
@@ -608,6 +608,51 @@ describe("pull requests", () => {
     expect(panel.posted("error").at(-1)?.error.message).toBe(
       "GitHub didn't open the pull request: A pull request already exists for octo:feat/health-endpoint.",
     );
+  });
+});
+
+describe("worktrees", () => {
+  function repoWithWorktree() {
+    const app = makeRepo();
+    // Its own temp folder: next to the repo would be the shared temp dir, shared by every test.
+    const feature = join(tempDir(), "feature-login");
+    git(app, "worktree", "add", "-q", "-b", "feature/login", feature);
+    return { app, feature };
+  }
+
+  it("lists the repo's worktrees in the panel", async () => {
+    const { app } = repoWithWorktree();
+    const panel = await openPanel(app);
+    expect(panel.repo().worktrees.map((w) => [w.branch, w.current])).toEqual([
+      ["main", true],
+      ["feature/login", false],
+    ]);
+  });
+
+  it("opens a worktree in a new window, or adds it to this one", async () => {
+    const { app } = repoWithWorktree();
+    const panel = await openPanel(app);
+    const path = panel.repo().worktrees[1].path;
+
+    await panel.send({ type: "openWorktree", path, newWindow: true });
+    const opened = harness.executed.find((e) => e.command === "vscode.openFolder")!;
+    expect((opened.args[0] as Uri).fsPath).toBe(path);
+    expect(opened.args[1]).toEqual({ forceNewWindow: true });
+
+    await panel.send({ type: "openWorktree", path, newWindow: false });
+    expect(harness.folders).toEqual([app, path]);
+    // Adding it twice doesn't add a second copy.
+    await panel.send({ type: "openWorktree", path, newWindow: false });
+    expect(harness.folders).toHaveLength(2);
+  });
+
+  it("only opens folders git listed as this repo's worktrees", async () => {
+    const { app } = repoWithWorktree();
+    const panel = await openPanel(app);
+    const elsewhere = makeRepo();
+    await panel.send({ type: "openWorktree", path: elsewhere, newWindow: true });
+    await panel.send({ type: "openWorktree", path: app, newWindow: true }); // This window's own.
+    expect(harness.executed.some((e) => e.command === "vscode.openFolder")).toBe(false);
   });
 });
 

@@ -126,6 +126,8 @@ export interface RepoState {
   /** A merge, rebase, cherry-pick or revert that stopped part-way, usually on conflicts. */
   operation: Operation | null;
   activity: ActivityItem[];
+  /** Every checkout of this repo, this one included; empty when it has just the one. */
+  worktrees: WorktreeInfo[];
   /** Set by the extension: GitHub checks for the latest pushed commit; null/undefined hides the row. */
   ci?: CiStatus | null;
   /** Set by the extension: the branch's pull request, or how to open one; null/undefined hides it. */
@@ -146,6 +148,19 @@ export interface Worktree {
   locked: string | null;
   /** Why git would clean it up, usually that its folder is gone; null when it's fine. */
   prunable: string | null;
+}
+
+/** A worktree and what's going on in it. Details are null when unknown (folder gone, too many). */
+export interface WorktreeInfo extends Worktree {
+  /** The worktree this window has open. */
+  current: boolean;
+  /** Uncommitted files, including new ones. */
+  changes: number | null;
+  /** Commits it has that the main branch doesn't, and the other way round. */
+  ahead: number | null;
+  behind: number | null;
+  /** Unix seconds: its last commit or its newest uncommitted change, whichever is later. */
+  lastActivity: number | null;
 }
 
 /** The open pull request for the current branch, as GitHub reports it. */

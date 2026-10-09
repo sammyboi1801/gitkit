@@ -40,6 +40,7 @@ export function repoState(
     lastFetch: Math.floor(Date.now() / 1000) - 120,
     operation: null,
     activity: [],
+    worktrees: [],
     ...rest,
   };
 }

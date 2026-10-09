@@ -1,6 +1,7 @@
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import type { Worktree } from "../shared/types";
+import type { Worktree, WorktreeInfo } from "../shared/types";
+import { samePath } from "./paths";
 import { runGit } from "./runner";
 
 // Worktrees: every checkout of a repo, as git lists them (including ones made by the CLI or by
@@ -49,6 +50,71 @@ export async function readWorktrees(root: string): Promise<Worktree[]> {
   return parseWorktreeList(stdout);
 }
 
+/** More would mean many git calls on every refresh; past this, the rest are listed without details. */
+const MAX_DETAILED = 12;
+/** Changed files whose modification times are checked for "last activity". */
+const MAX_STATTED = 200;
+
+const read = (args: string[], cwd: string) => runGit(["--no-optional-locks", ...args], cwd);
+
+/** Paths in `git status --porcelain -z`; a rename's second field is its old path, not another file. */
+export function parseStatusPaths(out: string): string[] {
+  const fields = out.split("\0");
+  const paths: string[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (field.length < 4) continue;
+    paths.push(field.slice(3));
+    if (field[0] === "R" || field[0] === "C") i++;
+  }
+  return paths;
+}
+
+/**
+ * Every worktree with what's going on in it: uncommitted files, distance from `base`, and when it
+ * last changed (newest of its last commit and its changed files, so an agent that hasn't committed
+ * yet still shows as active). Empty when the repo has only its own checkout.
+ */
+export async function readWorktreeInfo(root: string, base: string | null): Promise<WorktreeInfo[]> {
+  const list = await readWorktrees(root).catch(() => [] as Worktree[]);
+  if (list.length < 2) return [];
+  return Promise.all(
+    list.map(async (w, i): Promise<WorktreeInfo> => {
+      const info: WorktreeInfo = {
+        ...w,
+        current: samePath(w.path, root),
+        changes: null,
+        ahead: null,
+        behind: null,
+        lastActivity: null,
+      };
+      if (w.bare || w.prunable !== null || !w.head || i >= MAX_DETAILED) return info;
+
+      const tip = w.branch ? `refs/heads/${w.branch}` : w.head;
+      const [status, time, counts] = await Promise.all([
+        read(["status", "--porcelain", "-z", "--untracked-files=all"], w.path).catch(() => null),
+        read(["log", "-1", "--format=%ct", w.head], root).catch(() => null),
+        base ? read(["rev-list", "--left-right", "--count", `${base}...${tip}`], root).catch(() => null) : null,
+      ]);
+      if (status) {
+        const paths = parseStatusPaths(status.stdout);
+        info.changes = paths.length;
+        const times = paths.slice(0, MAX_STATTED).map((p) => {
+          try {
+            return Math.floor(statSync(resolve(w.path, p)).mtimeMs / 1000);
+          } catch {
+            return 0; // Deleted files have no time of their own.
+          }
+        });
+        info.lastActivity = Math.max(Number(time?.stdout.trim()) || 0, ...times) || null;
+      }
+      const [behind, ahead] = (counts?.stdout.trim().split(/\s+/) ?? []).map(Number);
+      if (Number.isFinite(behind) && Number.isFinite(ahead)) Object.assign(info, { ahead, behind });
+      return info;
+    }),
+  );
+}
+
 export type GitFolder =
   | { kind: "repo" }
   /** A linked worktree; `mainRoot` is the main worktree's folder (null for a bare repo's). */
@@ -90,13 +156,4 @@ export function gitFolderKind(dir: string): GitFolder {
   }
   // A normal repo's common dir is its .git folder; a bare repo's is the repo itself.
   return { kind: "worktree", mainRoot: basename(common) === ".git" ? dirname(common) : null };
-}
-
-/** Resolves junctions, symlinks and 8.3 short names, so two spellings of a folder compare equal. */
-export function realPath(path: string): string {
-  try {
-    return realpathSync.native(path);
-  } catch {
-    return resolve(path);
-  }
 }

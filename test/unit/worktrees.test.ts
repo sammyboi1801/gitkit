@@ -2,8 +2,15 @@ import { mkdirSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { discoverRepos, pathKey } from "../../src/git/discover";
-import { gitFolderKind, parseWorktreeList, readWorktrees, realPath } from "../../src/git/worktrees";
-import { commit, git, initRepo, makeRepo, tempDir } from "../fixtures/repos";
+import { realPath } from "../../src/git/paths";
+import {
+  gitFolderKind,
+  parseStatusPaths,
+  parseWorktreeList,
+  readWorktreeInfo,
+  readWorktrees,
+} from "../../src/git/worktrees";
+import { commit, git, initRepo, makeRepo, tempDir, write } from "../fixtures/repos";
 
 const same = (a: string, b: string) => pathKey(realPath(a)) === pathKey(realPath(b));
 const keys = (paths: string[]) => paths.map((p) => pathKey(realPath(p))).sort();
@@ -73,6 +80,57 @@ describe("parseWorktreeList", () => {
       main: true,
     });
     expect(parseWorktreeList("")).toEqual([]);
+  });
+});
+
+describe("readWorktreeInfo", () => {
+  it("says what's going on in each worktree: uncommitted work, distance from main, last activity", async () => {
+    const { app, trees, feature } = repoWithWorktrees();
+    commit(feature, "feat: login form", { "login.txt": "form\n" });
+    commit(feature, "test: login", { "login.test.txt": "ok\n" });
+    write(feature, "notes.txt", "agent scratch\n"); // New, uncommitted: what agents mostly produce.
+    write(feature, "a.txt", "changed\n");
+    commit(app, "fix: on main meanwhile", { "b.txt": "b\n" });
+    const detached = join(trees, "detached");
+    git(app, "worktree", "add", "-q", "--detach", detached, "HEAD~1");
+    const gone = join(trees, "gone");
+    git(app, "worktree", "add", "-q", "-b", "gone", gone);
+    rmSync(gone, { recursive: true, force: true });
+
+    const before = Math.floor(Date.now() / 1000) - 5;
+    const info = await readWorktreeInfo(app, "main");
+    const byBranch = (b: string | null) => info.find((w) => w.branch === b)!;
+
+    expect(byBranch("main")).toMatchObject({ main: true, current: true, changes: 0, ahead: 0, behind: 0 });
+    expect(byBranch("feature/login")).toMatchObject({ current: false, changes: 2, ahead: 2, behind: 1 });
+    expect(byBranch("feature/login").lastActivity).toBeGreaterThanOrEqual(before);
+    expect(byBranch(null)).toMatchObject({ changes: 0, ahead: 0, behind: 1 });
+    // A worktree whose folder was deleted can't be read; it's listed, with no details.
+    expect(byBranch("gone")).toMatchObject({ changes: null, ahead: null, lastActivity: null });
+    expect(byBranch("gone").prunable).not.toBeNull();
+  });
+
+  it("knows which worktree this window has open", async () => {
+    const { feature } = repoWithWorktrees();
+    const info = await readWorktreeInfo(feature, "main");
+    expect(info.map((w) => [w.branch, w.current])).toEqual([
+      ["main", false],
+      ["feature/login", true],
+    ]);
+  });
+
+  it("is empty for a repo with just its own checkout", async () => {
+    expect(await readWorktreeInfo(makeRepo(), "main")).toEqual([]);
+  });
+
+  it("counts a renamed file once", async () => {
+    const dir = makeRepo();
+    git(dir, "mv", "a.txt", "renamed.txt");
+    write(dir, "new.txt", "x\n");
+    expect(parseStatusPaths(git(dir, "status", "--porcelain", "-z", "--untracked-files=all")).sort()).toEqual([
+      "new.txt",
+      "renamed.txt",
+    ]);
   });
 });
 

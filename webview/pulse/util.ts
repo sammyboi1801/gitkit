@@ -20,6 +20,19 @@ export function suggestedSync(repo: RepoState): "push" | "pull" | "sync" | null 
   return null;
 }
 
+/**
+ * A worktree's folder as a short label: relative to the folder the main checkout sits in
+ * ("app.worktrees/feature-login"), or the full path when it lives somewhere else.
+ */
+export function worktreeLabel(path: string, mainPath: string): string {
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const target = norm(path);
+  const parent = norm(mainPath).replace(/\/[^/]*$/, "");
+  // Windows paths compare case-insensitively.
+  const inside = target.toLowerCase().startsWith(`${parent.toLowerCase()}/`);
+  return inside && parent ? target.slice(parent.length + 1) : target;
+}
+
 /** One plain-English sentence describing where the repo stands. */
 export function summarize(repo: RepoState): { text: string; icon: string; tone: string } {
   const { status } = repo;

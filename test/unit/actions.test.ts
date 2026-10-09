@@ -15,6 +15,7 @@ const repo = (status: Partial<StatusInfo> = {}, remotes = ["origin"]): RepoState
   lastFetch: null,
   operation: null,
   activity: [],
+  worktrees: [],
 });
 
 const file = (path: string, change: Partial<FileChange> = {}): FileChange => ({

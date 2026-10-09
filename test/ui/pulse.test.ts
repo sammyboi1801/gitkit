@@ -10,7 +10,8 @@ import History from "../../webview/pulse/History.svelte";
 import Remote from "../../webview/pulse/Remote.svelte";
 import Repos from "../../webview/pulse/Repos.svelte";
 import Stashes from "../../webview/pulse/Stashes.svelte";
-import type { CiStatus, PullRequest, RepoState } from "../../src/shared/types";
+import Worktrees from "../../webview/pulse/Worktrees.svelte";
+import type { CiStatus, PullRequest, RepoState, WorktreeInfo } from "../../src/shared/types";
 import { commitOf, file, repoState } from "./state";
 import { sent } from "./setup";
 
@@ -147,6 +148,86 @@ describe("ConflictView", () => {
     render(ConflictView, { props: { repo: repoState({ operation: "merge" }), path: "a.ts", blocks: [], busy: null } });
     await fireEvent.click(button(/Mark resolved/));
     expect(lastSent()).toEqual({ type: "action", request: { type: "stage", paths: ["a.ts"] } });
+  });
+});
+
+describe("Worktrees", () => {
+  const tree = (overrides: Partial<WorktreeInfo>): WorktreeInfo => ({
+    path: "/code/app.worktrees/x",
+    head: "abcdef1234",
+    branch: "x",
+    main: false,
+    bare: false,
+    locked: null,
+    prunable: null,
+    current: false,
+    changes: 0,
+    ahead: 0,
+    behind: 0,
+    lastActivity: null,
+    ...overrides,
+  });
+  const trees = [
+    tree({ path: "/code/app", branch: "main", main: true, current: true }),
+    tree({
+      path: "/code/app.worktrees/feature-login",
+      branch: "feature/login",
+      changes: 3,
+      ahead: 2,
+      behind: 1,
+      lastActivity: Math.floor(Date.now() / 1000) - 120,
+    }),
+    tree({ path: "/elsewhere/agent", branch: null, head: "1234567890", locked: "agent session running" }),
+    tree({ path: "/code/app.worktrees/gone", branch: "gone", prunable: "gitdir file points to non-existent location" }),
+  ];
+  const show = (worktrees = trees) =>
+    render(Worktrees, { props: { repo: repoState({ worktrees, base: { ...baseInfo, name: "main" } }) } });
+  const baseInfo = {
+    ref: "origin/main",
+    name: "main",
+    ahead: 0,
+    behind: 0,
+    forkPoint: null,
+    conflicts: null,
+    isCurrent: true,
+  };
+  const rows = () => within(screen.getByRole("list", { name: "Worktrees" })).getAllByRole("listitem");
+
+  it("lists every checkout with its branch, folder and what's going on in it", () => {
+    show();
+    const [main, feature, agent, gone] = rows();
+    expect(within(main).getByText("this window")).toBeTruthy();
+    expect(within(feature).getByText("feature/login")).toBeTruthy();
+    expect(within(feature).getByText("app.worktrees/feature-login")).toBeTruthy();
+    expect(within(feature).getByText("3 uncommitted")).toBeTruthy();
+    expect(within(feature).getByText("↑2")).toBeTruthy();
+    expect(within(feature).getByText("↓1 behind main")).toBeTruthy();
+    expect(within(feature).getByText("2m ago")).toBeTruthy();
+    expect(within(agent).getByText("detached at 1234567")).toBeTruthy();
+    expect(within(agent).getByText("/elsewhere/agent")).toBeTruthy();
+    expect(within(agent).getByTitle("Locked: agent session running")).toBeTruthy();
+    expect(within(gone).getByText("folder is gone")).toBeTruthy();
+  });
+
+  it("opens a worktree in a new window on click, or adds it to this window", async () => {
+    show();
+    await fireEvent.click(within(rows()[1]).getByRole("button", { name: /^feature\/login/ }));
+    expect(lastSent()).toEqual({ type: "openWorktree", path: "/code/app.worktrees/feature-login", newWindow: true });
+    await fireEvent.click(button("Add feature/login to this window"));
+    expect(lastSent()).toEqual({ type: "openWorktree", path: "/code/app.worktrees/feature-login", newWindow: false });
+  });
+
+  it("can't open this window's own worktree, or one whose folder is gone", () => {
+    show();
+    const [main, , , gone] = rows();
+    expect((within(main).getByRole("button") as HTMLButtonElement).disabled).toBe(true);
+    expect((within(gone).getByRole("button") as HTMLButtonElement).disabled).toBe(true);
+    expect(within(gone).queryByRole("button", { name: /to this window/ })).toBeNull();
+  });
+
+  it("stays out of the way for a repo with just its own checkout", () => {
+    show([]);
+    expect(screen.queryByText("Worktrees")).toBeNull();
   });
 });
 

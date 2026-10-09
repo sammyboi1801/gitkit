@@ -1567,3 +1567,105 @@ body {
 .remote-row.pr-row .pr-status {
   flex: 1;
 }
+
+/* Worktrees */
+
+.worktree {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 12px 0 14px;
+}
+
+.worktree:hover {
+  background: var(--gk-hover);
+}
+
+.worktree:hover .file-actions,
+.worktree:focus-within .file-actions {
+  display: inline-flex;
+}
+
+.worktree-open {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  text-align: left;
+}
+
+.worktree-open:hover:not(:disabled) {
+  background: transparent;
+}
+
+/* Not a dead control: it's the current or a missing worktree, which can't be opened. */
+.worktree-open:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.worktree-open .row-icon {
+  margin-top: 2px;
+}
+
+.worktree.current .row-icon {
+  color: var(--gk-accent);
+}
+
+.worktree-text {
+  display: grid;
+  min-width: 0;
+}
+
+.worktree-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.worktree-name .branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worktree-name .codicon-lock {
+  color: var(--gk-muted);
+  font-size: 12px;
+}
+
+.worktree .tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 7px;
+  font-size: 0.78em;
+  line-height: 14px;
+  border: 1px solid var(--gk-border);
+  color: var(--gk-muted);
+}
+
+.worktree-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  font-size: 0.85em;
+  color: var(--gk-muted);
+}
+
+.worktree-meta .dir {
+  font-family: var(--gk-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.worktree.missing .worktree-name {
+  opacity: 0.6;
+}

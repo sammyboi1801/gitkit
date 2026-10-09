@@ -291,6 +291,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       case "openFolder":
         await vscode.commands.executeCommand("vscode.openFolder");
         return;
+      case "openWorktree":
+        return this.openWorktree(message.path, message.newWindow);
       case "initRepo": {
         const folder = workspaceFolders()[0];
         if (!folder) return;
@@ -477,6 +479,23 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     } else if (choice.branch) {
       await this.runAction({ type: "switch", branch: choice.branch });
     }
+  }
+
+  /**
+   * Opens a worktree in a new window, or adds it to this one. Only paths git listed for this repo:
+   * the path comes from the webview, which must never be able to open arbitrary folders.
+   */
+  private async openWorktree(path: string, newWindow: boolean): Promise<void> {
+    const worktree = this.repo?.worktrees.find((w) => pathKey(w.path) === pathKey(path));
+    if (!worktree || worktree.current) return;
+    const uri = vscode.Uri.file(worktree.path);
+    if (newWindow) {
+      await vscode.commands.executeCommand("vscode.openFolder", uri, { forceNewWindow: true });
+      return;
+    }
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    if (folders.some((f) => pathKey(f.uri.fsPath) === pathKey(worktree.path))) return;
+    vscode.workspace.updateWorkspaceFolders(folders.length, 0, { uri });
   }
 
   /** What the extension knows about the remote besides git: fetch errors, CI and the PR. */

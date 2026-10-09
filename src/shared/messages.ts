@@ -31,6 +31,8 @@ export type WebviewToHost =
   | { type: "ready" }
   | { type: "refresh" }
   | { type: "openFolder" }
+  /** Opens one of the repo's worktrees, by its path as listed in the state. */
+  | { type: "openWorktree"; path: string; newWindow: boolean }
   | { type: "initRepo" }
   | { type: "openFile"; path: string }
   | { type: "action"; request: ActionRequest }

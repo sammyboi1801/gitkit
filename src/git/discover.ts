@@ -1,6 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { gitFolderKind, realPath } from "./worktrees";
+import { pathKey, realPath } from "./paths";
+import { gitFolderKind } from "./worktrees";
+
+export { pathKey } from "./paths";
 
 // Folders that are never worth scanning for repos: dependencies, environments, build output.
 const SKIP = new Set([
@@ -74,12 +77,6 @@ async function scan(dir: string, depth: number, add: (path: string) => void): Pr
       .filter((e) => e.isDirectory() && !e.isSymbolicLink() && !e.name.startsWith(".") && !SKIP.has(e.name))
       .map((e) => scan(join(dir, e.name), depth - 1, add)),
   );
-}
-
-/** Windows paths are case-insensitive; compare them that way. */
-export function pathKey(path: string): string {
-  const resolved = resolve(path);
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 /** The repo that contains a file: the deepest root its path is inside. */

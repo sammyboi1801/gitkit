@@ -7,6 +7,7 @@
   import Header from "./Header.svelte";
   import History from "./History.svelte";
   import Stashes from "./Stashes.svelte";
+  import Worktrees from "./Worktrees.svelte";
   import Remote from "./Remote.svelte";
   import Repos from "./Repos.svelte";
   import { applyMainColor } from "../shared/graph";
@@ -114,6 +115,7 @@
     {#key view.repo.root}
       <Remote repo={view.repo} {busy} {fetching} />
       <Changes repo={view.repo} {busy} {conflictBlocks} />
+      <Worktrees repo={view.repo} />
       <Stashes repo={view.repo} {busy} />
       <History repo={view.repo} {busy} />
       <Graph repo={view.repo} {busy} {details} />
