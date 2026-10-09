@@ -617,6 +617,9 @@ textarea:focus-visible {
   --kind: var(--vscode-charts-orange);
 }
 
+/* .codicon.job-icon: the codicon stylesheet's ".codicon[class*='codicon-'] { display: inline-block }"
+   outranks a single class, which left the glyph in the top-left corner instead of centred. */
+.codicon.job-icon,
 .job-icon {
   flex: none;
   display: inline-grid;

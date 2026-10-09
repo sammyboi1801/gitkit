@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { layoutBranches } from "../../src/git/lanes";
 import type { RepoState } from "../../src/shared/types";
@@ -189,5 +191,18 @@ describe("worktree overlap wording", () => {
       tone: "warn",
       more: 0,
     });
+  });
+});
+
+describe("icon boxes", () => {
+  it("centre their glyph: the layout outranks the codicon stylesheet's inline-block", () => {
+    const css = readFileSync(join(__dirname, "..", "..", "webview", "workflow", "studio.css"), "utf8");
+    // ".codicon[class*='codicon-']" has two-class specificity; a lone ".job-icon" loses to it.
+    const rule = /([^{}]*)\{([^}]*)\}/g;
+    const winning = [...css.matchAll(rule)].filter(
+      ([, selectors, body]) => /\.codicon\.job-icon\b/.test(selectors) && /display:\s*inline-grid/.test(body),
+    );
+    expect(winning).toHaveLength(1);
+    expect(winning[0][2]).toMatch(/place-items:\s*center/);
   });
 });
