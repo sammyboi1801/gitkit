@@ -310,7 +310,15 @@ describe("Remote card", () => {
       unresolved: 2,
       mergeable: "clean",
     };
-    const success: CiStatus = { state: "success", sha: "s", summary: "", failed: [], url: "", runId: null };
+    const success: CiStatus = {
+      state: "success",
+      sha: "s",
+      summary: "",
+      failed: [],
+      url: "",
+      runId: null,
+      failures: [],
+    };
     const show = (pr: RepoState["pr"], ci: CiStatus | null = success) =>
       render(Remote, {
         props: {
@@ -403,6 +411,7 @@ describe("Remote card", () => {
         failed: ["test"],
         url: "https://github.com/o/r/actions/runs/7",
         runId: 7,
+        failures: [],
       },
     });
     const { unmount } = render(Remote, { props: { repo: failing, busy: null, fetching: false } });
@@ -412,11 +421,97 @@ describe("Remote card", () => {
     unmount();
 
     const signin = repoState({
-      ci: { state: "signin", sha: "c2", summary: "Sign in to GitHub to see CI", failed: [], url: "x", runId: null },
+      ci: {
+        state: "signin",
+        sha: "c2",
+        summary: "Sign in to GitHub to see CI",
+        failed: [],
+        url: "x",
+        runId: null,
+        failures: [],
+      },
     });
     render(Remote, { props: { repo: signin, busy: null, fetching: false } });
     await fireEvent.click(button("Sign in"));
     expect(lastSent()).toEqual({ type: "signInGitHub" });
+  });
+
+  describe("why CI failed", () => {
+    const error = (text: string, file: string | null = "src/a.test.ts", line: number | null = 4) => ({
+      text,
+      detail: `AssertionError: ${text}`,
+      file,
+      line,
+      url: file ? `https://github.com/o/r/blob/c2/${file}#L${line}` : null,
+    });
+    const failing = (failures: CiStatus["failures"], sha = "c2") =>
+      repoState({
+        ci: {
+          state: "failure",
+          sha,
+          summary: "2 of 5 checks failed",
+          failed: failures.flatMap((f) => f.jobs),
+          url: "https://github.com/o/r/actions/runs/7",
+          runId: 7,
+          failures,
+        },
+      });
+    const tests = {
+      jobs: ["Test (Linux) (22)", "Test (Linux) (24)"],
+      jobId: 11,
+      step: "npm test",
+      url: "https://github.com/o/r/actions/runs/7/job/11#step:5:1",
+      errors: [
+        error("adds numbers"),
+        error("rounds totals", "src/b.test.ts", 9),
+        error("The job timed out.", null, null),
+      ],
+    };
+    const lint = { jobs: ["Lint"], jobId: 12, step: "npm run lint", url: "x", errors: [error("'x' is unused")] };
+
+    it("lists each failed job once with the step it failed at, and its errors under it", () => {
+      render(Remote, { props: { repo: failing([tests]), busy: null, fetching: false } });
+      // The jobs are listed below, so the summary doesn't repeat their names.
+      expect(screen.getByText("2 of 5 checks failed").textContent?.trim()).toBe("2 of 5 checks failed");
+      const job = screen.getByText("Test (Linux) (22)").closest("li")!;
+      expect(job.textContent).toMatch(/Test \(Linux\) \(22\)\s*\+1\s*npm test/);
+      expect(job.querySelector(".ci-job-name")?.getAttribute("title")).toBe("Test (Linux) (22)\nTest (Linux) (24)");
+      const where = [...document.querySelectorAll(".ci-error-link")].map((b) =>
+        b.textContent?.replace(/\s+/g, " ").trim(),
+      );
+      expect(where).toEqual(["adds numbers a.test.ts:4", "rounds totals b.test.ts:9", "The job timed out."]);
+      expect(screen.getByText("adds numbers").closest("button")?.getAttribute("title")).toBe(
+        "src/a.test.ts:4\nAssertionError: adds numbers",
+      );
+      // Nothing to open for an error about no file in particular.
+      expect(screen.getByText("The job timed out.").closest("button")?.disabled).toBe(true);
+    });
+
+    it("opens a log or an error by its place in the list", async () => {
+      render(Remote, { props: { repo: failing([tests, lint]), busy: null, fetching: false } });
+      await fireEvent.click(screen.getByLabelText("Show the log of Lint"));
+      expect(lastSent()).toEqual({ type: "openCiLog", failure: 1 });
+      await fireEvent.click(screen.getByText("rounds totals"));
+      expect(lastSent()).toEqual({ type: "openCiError", failure: 0, error: 1 });
+    });
+
+    it("lists three errors, the rest behind +N more, folded again for another commit", async () => {
+      const { rerender } = render(Remote, { props: { repo: failing([tests, lint]), busy: null, fetching: false } });
+      const shown = () => [...document.querySelectorAll(".ci-error-text")].map((e) => e.textContent);
+      expect(shown()).toEqual(["adds numbers", "rounds totals", "The job timed out."]);
+      await fireEvent.click(screen.getByText("+1 more"));
+      expect(shown()).toEqual(["adds numbers", "rounds totals", "The job timed out.", "'x' is unused"]);
+      expect(screen.queryByText(/more$/)).toBeNull();
+
+      await rerender({ repo: failing([tests, lint], "c3"), busy: null, fetching: false });
+      expect(shown()).toHaveLength(3);
+    });
+
+    it("has no log button for checks that aren't GitHub Actions jobs", () => {
+      const app = { jobs: ["codecov/patch"], jobId: null, step: null, url: "https://codecov.io", errors: [] };
+      render(Remote, { props: { repo: failing([app]), busy: null, fetching: false } });
+      expect(screen.getByText("codecov/patch").closest("li")!.querySelector("button")).toBeNull();
+    });
   });
 
   it("is hidden for repos without a remote", () => {

@@ -51,6 +51,9 @@ export type WebviewToHost =
   | { type: "signInGitHub" }
   | { type: "openUrl"; url: string }
   | { type: "rerunFailed" }
+  /** Indexes into the state's ci.failures (and that failure's errors), so the host uses its own copy. */
+  | { type: "openCiLog"; failure: number }
+  | { type: "openCiError"; failure: number; error: number }
   | { type: "createPr" }
   | { type: "cleanupBranches" };
 

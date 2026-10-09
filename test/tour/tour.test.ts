@@ -157,6 +157,140 @@ async function setTheme(theme: string) {
 }
 const tabLabels = () => vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label));
 
+// --- A failed CI run, as GitHub would report it -----------------------------------------------
+
+/**
+ * Points the repo at GitHub and answers GitKit's GitHub requests with a CI run in which Lint and
+ * both test jobs failed, in the shape GitHub's API uses. Returns a function that undoes it all.
+ */
+function fakeGitHub(): () => void {
+  const local = git("remote", "get-url", "origin");
+  git("remote", "set-url", "origin", "https://github.com/acme/acme-web.git");
+  writeFileSync(
+    join(repo, "src", "cart.test.js"),
+    "import { total } from './cart.js';\n\ntest('applies the discount', () => {\n" +
+      "  const items = [{ price: 12, qty: 2 }];\n  expect(total(items, 0.1)).toBe(21.6);\n});\n",
+  );
+
+  const web = "https://github.com/acme/acme-web";
+  const job = (id: number, name: string, command: string, ok: boolean) => ({
+    id,
+    name,
+    html_url: `${web}/actions/runs/500/job/${id}`,
+    steps: [
+      ["Set up job", "10:00:00", "10:00:01"],
+      ["Run actions/checkout@v7", "10:00:01", "10:00:03"],
+      ["Run actions/setup-node@v7", "10:00:03", "10:00:08"],
+      ["Run npm ci", "10:00:08", "10:00:20"],
+      [`Run ${command}`, "10:00:20", "10:00:31"],
+      ["Complete job", "10:00:31", "10:00:31"],
+    ].map(([stepName, from, to], i) => ({
+      name: stepName,
+      number: i + 1,
+      conclusion: i === 4 && !ok ? "failure" : "success",
+      started_at: `2026-10-09T${from}Z`,
+      completed_at: `2026-10-09T${to}Z`,
+    })),
+  });
+  const jobs = [
+    job(1, "Lint", "npm run lint", false),
+    job(2, "Test (22)", "npm test", false),
+    job(3, "Test (24)", "npm test", false),
+  ];
+  const annotation = (path: string, line: number, title: string, message: string) => ({
+    path,
+    start_line: line,
+    annotation_level: "failure",
+    title,
+    message,
+    blob_href: `${web}/blob/abc1234/${path}`,
+  });
+  const exit = annotation(".github", 1, "", "Process completed with exit code 1.");
+  const annotations: Record<number, unknown[]> = {
+    1: [annotation("src/checkout.js", 1, "", "'total' is defined but never used. (no-unused-vars)"), exit],
+    2: [
+      annotation(
+        "src/cart.test.js",
+        5,
+        "src/cart.test.js > applies the discount",
+        "AssertionError: expected 24 to be 21.6",
+      ),
+      annotation(
+        "src/cart.test.js",
+        9,
+        "src/cart.test.js > rounds to cents",
+        "AssertionError: expected 21.599 to be 21.6",
+      ),
+      exit,
+    ],
+  };
+  annotations[3] = annotations[2];
+  const at = (time: string, text: string) => `2026-10-09T${time}Z ${text}`;
+  const log = [
+    at("10:00:00.1234567", "Current runner version: '2.329.0'"),
+    at("10:00:08.5012345", "##[group]Run npm ci"),
+    at("10:00:08.5013456", "##[endgroup]"),
+    at("10:00:19.9012345", "added 286 packages in 11s"),
+    at("10:00:20.1012345", "##[group]Run npm test"),
+    at("10:00:20.1013456", "\x1b[36;1mnpm test\x1b[0m"),
+    at("10:00:20.1014567", "shell: /usr/bin/bash -e {0}"),
+    at("10:00:20.1015678", "##[endgroup]"),
+    at("10:00:21.2012345", "> acme-web@1.2.0 test"),
+    at("10:00:21.2013456", "> vitest run"),
+    at("10:00:29.4012345", " \x1b[31m❯\x1b[39m src/cart.test.js (2 tests | \x1b[31m2 failed\x1b[39m)"),
+    at("10:00:29.4013456", "   × applies the discount"),
+    at("10:00:29.4014567", "   × rounds to cents"),
+    at("10:00:29.5012345", "##[error]AssertionError: expected 24 to be 21.6"),
+    at("10:00:29.5013456", "##[error]AssertionError: expected 21.599 to be 21.6"),
+    at("10:00:29.6012345", "      Tests  2 failed (2)"),
+    at("10:00:30.9012345", "##[error]Process completed with exit code 1."),
+    at("10:00:31.0012345", "Cleaning up orphan processes"),
+  ].join("\n");
+
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input instanceof Request ? input.url : input).replace("https://api.github.com", "");
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+    if (url.includes("/check-runs?")) {
+      const run = (name: string, conclusion: string, id?: number) => ({
+        id: id ?? 90 + name.length,
+        name,
+        status: "completed",
+        conclusion,
+        html_url: id ? `${web}/actions/runs/500/job/${id}` : `${web}/actions/runs/500`,
+        details_url: id ? `${web}/actions/runs/500/job/${id}` : null,
+      });
+      return json({
+        check_runs: [
+          run("Lint", "failure", 1),
+          run("Test (22)", "failure", 2),
+          run("Test (24)", "failure", 3),
+          run("Build", "skipped"),
+          run("Deploy to Pages", "skipped"),
+        ],
+      });
+    }
+    const annotated = /\/check-runs\/(\d+)\/annotations/.exec(url);
+    if (annotated) return json(annotations[Number(annotated[1])] ?? []);
+    if (/\/actions\/jobs\/\d+\/logs$/.test(url)) return new Response(log, { status: 200 });
+    const jobMatch = /\/actions\/jobs\/(\d+)$/.exec(url);
+    if (jobMatch) return json(jobs.find((j) => j.id === Number(jobMatch[1])));
+    if (url === "/graphql") return json({ data: { repository: { pullRequests: { nodes: [] } } } });
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+
+  const auth = vscode.authentication as unknown as Record<string, unknown>;
+  const realSession = auth.getSession;
+  auth.getSession = async () => ({ accessToken: "tour", account: { label: "jordan", id: "1" }, scopes: [] });
+
+  return () => {
+    globalThis.fetch = realFetch;
+    auth.getSession = realSession;
+    git("remote", "set-url", "origin", local);
+    rmSync(join(repo, "src", "cart.test.js"), { force: true });
+  };
+}
+
 // --- The tour ---------------------------------------------------------------------------------
 
 describe("GitKit tour", () => {
@@ -387,6 +521,47 @@ describe("GitKit tour", () => {
         "gitkit.openWorkflowStudio",
         vscode.Uri.file(join(repo, ".github", "workflows", "ci.yml")),
       );
+    });
+
+    await step("ci-failed", "CI failed: which step, the failing tests, and the step's log", async () => {
+      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+      const restore = fakeGitHub();
+      try {
+        await vscode.workspace.getConfiguration("gitkit").update("ciStatus", true, vscode.ConfigurationTarget.Global);
+        await pulse.receive({ type: "signInGitHub" });
+        await waitFor(() => repoState().ci?.state === "failure", "CI to show the failure");
+        const failures = repoState().ci!.failures;
+        check(
+          failures.length === 2 &&
+            failures[0].jobs.join() === "Lint" &&
+            failures[1].jobs.join() === "Test (22),Test (24)",
+          `Lint, and both test jobs listed once: ${JSON.stringify(failures.map((f) => f.jobs))}`,
+        );
+        check(failures[1].step === "npm test" && failures[1].errors.length === 2, "the failed step and its two tests");
+        await screenshot("ci-failed-sidebar");
+
+        await pulse.receive({ type: "openCiLog", failure: 1 });
+        await waitFor(() => tabLabels().includes("Test (22).log"), "the log tab");
+        const editor = vscode.window.activeTextEditor!;
+        const line = editor.document.lineAt(editor.selection.active.line).text;
+        check(
+          line === "Error: AssertionError: expected 24 to be 21.6",
+          `the cursor is on the first error, not "${line}"`,
+        );
+        check(!editor.document.getText().includes("npm ci"), "only the failed step is shown");
+        await screenshot("ci-log");
+
+        await pulse.receive({ type: "openCiError", failure: 1, error: 0 });
+        await waitFor(
+          () => vscode.window.activeTextEditor?.document.uri.fsPath.endsWith("cart.test.js") === true,
+          "the failing test's file",
+        );
+        check(vscode.window.activeTextEditor!.selection.active.line === 4, "on the failing line");
+      } finally {
+        await vscode.workspace.getConfiguration("gitkit").update("ciStatus", false, vscode.ConfigurationTarget.Global);
+        restore();
+        await refresh();
+      }
     });
 
     for (const [theme, slug] of [

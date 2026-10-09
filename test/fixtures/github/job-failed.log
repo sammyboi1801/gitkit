@@ -1,0 +1,40 @@
+﻿2026-10-09T04:13:31.8812345Z Current runner version: '2.329.0'
+2026-10-09T04:13:31.8843210Z ##[group]Operating System
+2026-10-09T04:13:31.8843990Z Microsoft Windows Server 2025
+2026-10-09T04:13:31.8844512Z ##[endgroup]
+2026-10-09T04:13:32.1022211Z Complete job name: Test (Windows) (22)
+2026-10-09T04:13:32.2134511Z ##[group]Run actions/checkout@v5
+2026-10-09T04:13:32.2135010Z with:
+2026-10-09T04:13:32.2135422Z   repository: sammyboi1801/gitkit
+2026-10-09T04:13:32.2136010Z ##[endgroup]
+2026-10-09T04:13:35.4410021Z Syncing repository: sammyboi1801/gitkit
+2026-10-09T04:13:39.9910021Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-10-09T04:13:40.0123400Z ##[group]Run actions/setup-node@v5
+2026-10-09T04:13:40.0124011Z with:
+2026-10-09T04:13:40.0124522Z   node-version: 22
+2026-10-09T04:13:40.0125001Z ##[endgroup]
+2026-10-09T04:13:47.5521200Z ##[group]Environment details
+2026-10-09T04:13:47.5522011Z node: v22.20.0
+2026-10-09T04:13:47.5522900Z ##[endgroup]
+2026-10-09T04:13:49.0012345Z Cache restored from key: node-cache-Windows-x64-npm-1a2b3c
+2026-10-09T04:13:49.1187700Z ##[group]Run npm ci
+2026-10-09T04:13:49.1188201Z [36;1mnpm ci[0m
+2026-10-09T04:13:49.1189011Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-10-09T04:13:49.1189522Z ##[endgroup]
+2026-10-09T04:14:06.9012345Z added 412 packages, and audited 413 packages in 17s
+2026-10-09T04:14:07.0011223Z found [32m[1m0[22m[39m vulnerabilities
+2026-10-09T04:14:07.2210034Z ##[group]Run npm test
+2026-10-09T04:14:07.2210533Z [36;1mnpm test[0m
+2026-10-09T04:14:07.2211001Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-10-09T04:14:07.2211502Z ##[endgroup]
+2026-10-09T04:14:08.5521001Z > gitkit@0.1.0 test
+2026-10-09T04:14:08.5521502Z > vitest run
+2026-10-09T04:16:12.1102345Z  [31m❯[39m test/host/features.test.ts [2m([22m[2m154 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m
+2026-10-09T04:16:12.1103001Z [31m   [31m×[31m checkpoints > checkpoints the worktree the terminal is in, even one opened by path[39m
+2026-10-09T04:16:14.3301122Z ##[error]AssertionError: expected [] to deeply equal [ 'before codex' ]
+2026-10-09T04:16:14.3302001Z ##[error]AssertionError: expected undefined to be true
+2026-10-09T04:16:14.4401223Z [2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m487 passed[39m[22m[90m (489)[39m
+2026-10-09T04:16:15.0102345Z ##[error]Process completed with exit code 1.
+2026-10-09T04:16:15.0213456Z Post job cleanup.
+2026-10-09T04:16:15.1023344Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-10-09T04:16:17.2234455Z Cleaning up orphan processes

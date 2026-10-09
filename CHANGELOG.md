@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Why CI failed:** under the CI row, each failed job with the step it stopped at and the errors GitHub reported (failing tests, lint errors), linked to their file and line. The failed step's log opens in a read-only tab with the cursor on the first error.
+- Turning off `gitkit.ciStatus` now hides the CI and pull request rows right away, instead of leaving the last results.
 - **Workflow Studio checks workflows against GitHub's official schema** before saving, so a typo in a YAML box is caught with a plain explanation ("jobs › test: GitHub doesn't know "runs_on"").
 - **Open in Workflow Studio** from a workflow file's right-click menu or editor title bar.
 - **Removing a worktree** closes the terminals open in it first (Windows can't delete a folder in use), and no longer reports an error when only the emptied folder is still briefly in use.

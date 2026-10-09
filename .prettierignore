@@ -1,2 +1,4 @@
 # Vendored as published (GitHub workflow schema from SchemaStore).
 src/workflow/github-workflow.schema.json
+# Real GitHub responses for tests, kept in its own formatting.
+test/fixtures/github/

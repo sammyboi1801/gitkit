@@ -227,6 +227,33 @@ export interface CiStatus {
   url: string;
   /** The Actions run behind the first failure, for re-running failed jobs. */
   runId: number | null;
+  /** Where and why the failed checks failed, read from GitHub only when something failed. */
+  failures: CiFailure[];
+}
+
+/** Failed jobs that failed the same way, like one test failing on every Node version. */
+export interface CiFailure {
+  jobs: string[];
+  /** The first job's id, for its log; null for checks that aren't GitHub Actions jobs. */
+  jobId: number | null;
+  /** The step that failed, e.g. "npm test". */
+  step: string | null;
+  /** The job on GitHub, at the failed step when known. */
+  url: string;
+  errors: CiError[];
+}
+
+/** An error GitHub attached to a failed check, such as a failing test or a lint error. */
+export interface CiError {
+  /** What failed, in one line: the test's name, or the error's first line. */
+  text: string;
+  /** GitHub's whole message. */
+  detail: string;
+  /** Path in the repo, when the error points at a file. */
+  file: string | null;
+  line: number | null;
+  /** The line on GitHub, at the commit that failed. */
+  url: string | null;
 }
 
 /** One thing that happened to HEAD, from the reflog, in plain English. */

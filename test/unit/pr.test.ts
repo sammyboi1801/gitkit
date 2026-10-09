@@ -38,7 +38,15 @@ const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
   mergeable: "clean",
   ...overrides,
 });
-const ci = (state: CiStatus["state"]): CiStatus => ({ state, sha: "s", summary: "", failed: [], url: "", runId: null });
+const ci = (state: CiStatus["state"]): CiStatus => ({
+  state,
+  sha: "s",
+  summary: "",
+  failed: [],
+  url: "",
+  runId: null,
+  failures: [],
+});
 
 describe("pullFromGraphql", () => {
   it("reads the PR, its review decision and unresolved threads", () => {

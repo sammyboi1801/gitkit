@@ -1,0 +1,38 @@
+[
+  {
+    "path": ".github",
+    "blob_href": "https://github.com/sammyboi1801/gitkit/blob/fc9bb88b0af1fd4a2f6ea17d702742235beb54e8/.github",
+    "start_line": 265,
+    "start_column": null,
+    "end_line": 265,
+    "end_column": null,
+    "annotation_level": "failure",
+    "title": "",
+    "message": "Process completed with exit code 1.",
+    "raw_details": ""
+  },
+  {
+    "path": "test/host/features.test.ts",
+    "blob_href": "https://github.com/sammyboi1801/gitkit/blob/fc9bb88b0af1fd4a2f6ea17d702742235beb54e8/test/host/features.test.ts",
+    "start_line": 890,
+    "start_column": null,
+    "end_line": 890,
+    "end_column": null,
+    "annotation_level": "failure",
+    "title": "[node] test/host/features.test.ts > checkpoints > checkpoints the worktree the terminal is in, even one opened by path",
+    "message": "AssertionError: expected [] to deeply equal [ 'before codex' ]\n\n- Expected\n+ Received\n\n- [\n-   \"before codex\",\n- ]\n+ []\n\n ❯ test/host/features.test.ts:890:80\n\n",
+    "raw_details": ""
+  },
+  {
+    "path": "test/host/features.test.ts",
+    "blob_href": "https://github.com/sammyboi1801/gitkit/blob/fc9bb88b0af1fd4a2f6ea17d702742235beb54e8/test/host/features.test.ts",
+    "start_line": 650,
+    "start_column": null,
+    "end_line": 650,
+    "end_column": null,
+    "annotation_level": "failure",
+    "title": "[node] test/host/features.test.ts > worktrees > creating > makes one next to the repo for a new branch, copies listed files and runs the setup command",
+    "message": "AssertionError: expected 'Create a worktree for agent/fix-login…' to be 'Create a worktree for agent/fix-login…' // Object.is equality\n\nExpected: \"Create a worktree for agent/fix-login (new, from main) at C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\gitkit-test-0bePmO\\app.worktrees\\agent-fix-login?\"\nReceived: \"Create a worktree for agent/fix-login (new, from main) at C:\\Users\\runneradmin\\AppData\\Local\\Temp\\gitkit-test-0bePmO\\app.worktrees\\agent-fix-login?\"\n\n ❯ test/host/features.test.ts:650:31\n\n",
+    "raw_details": ""
+  }
+]

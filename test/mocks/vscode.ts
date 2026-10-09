@@ -15,7 +15,12 @@ class Emitter<T> {
   fire(value: T) {
     this.listeners.forEach((l) => l(value));
   }
+  dispose() {
+    this.listeners = [];
+  }
 }
+
+export { Emitter as EventEmitter };
 
 export class Disposable {
   constructor(private readonly onDispose: () => void = () => {}) {}
@@ -73,7 +78,7 @@ export class ThemeIcon {
 
 export const ViewColumn = { Active: -1, One: 1 };
 export const QuickPickItemKind = { Separator: -1, Default: 0 };
-export const ProgressLocation = { Notification: 15 };
+export const ProgressLocation = { Window: 10, Notification: 15 };
 
 // --- The harness tests drive -----------------------------------------------------------------
 
@@ -122,6 +127,8 @@ export const harness = {
   shown: [] as { kind: string; message: string; detail?: string; items?: unknown[] }[],
   executed: [] as { command: string; args: unknown[] }[],
   opened: [] as string[],
+  /** Documents shown in an editor, and the line the cursor was put on. */
+  editors: [] as { uri: Uri; line: number | null }[],
   clipboard: "",
   config: {} as Record<string, unknown>,
   folders: [] as string[],
@@ -151,6 +158,7 @@ export const harness = {
     this.shown = [];
     this.executed = [];
     this.opened = [];
+    this.editors = [];
     this.clipboard = "";
     this.config = {};
     this.folders = [];
@@ -222,9 +230,10 @@ export const window = {
     if (answer !== undefined && options?.validateInput?.(answer)) return undefined;
     return answer;
   },
-  async showTextDocument(target: Uri | { uri: Uri }) {
+  async showTextDocument(target: Uri | { uri: Uri }, options?: { selection?: Range }) {
     const uri = target instanceof Uri ? target : target.uri;
     harness.opened.push(uri.fsPath);
+    harness.editors.push({ uri, line: options?.selection ? (options.selection.start as number) : null });
     return {};
   },
   get onDidStartTerminalShellExecution() {
@@ -292,7 +301,8 @@ export const window = {
 class TextDocument {
   constructor(readonly uri: Uri) {}
   getText() {
-    return readFileSync(this.uri.fsPath, "utf8");
+    const provider = harness.contentProviders.get(this.uri.scheme);
+    return provider ? provider.provideTextDocumentContent(this.uri) : readFileSync(this.uri.fsPath, "utf8");
   }
   positionAt(offset: number) {
     return offset;

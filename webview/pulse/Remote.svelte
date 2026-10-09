@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ActivityItem, RepoState } from "../../src/shared/types";
+  import type { ActivityItem, CiError, RepoState } from "../../src/shared/types";
   import PrStatus from "../shared/PrStatus.svelte";
   import { ago, preview } from "./util";
   import { send } from "./vscode";
@@ -47,6 +47,26 @@
 
   const icon = (item: ActivityItem) =>
     ({ push: "arrow-up", fetch: "arrow-down", forced: "warning", created: "add" })[item.kind];
+
+  /** Errors listed before "+N more": enough to see what broke without crowding the card. */
+  const MAX_ERRORS = 3;
+  /** The commit whose errors are all listed; another commit's failures start folded again. */
+  let unfolded = $state<string | null>(null);
+  const showAllErrors = $derived(!!repo.ci && unfolded === repo.ci.sha);
+  const failures = $derived(repo.ci?.state === "failure" ? repo.ci.failures : []);
+  const errorCount = $derived(failures.reduce((n, f) => n + f.errors.length, 0));
+  /** How many of each failure's errors to list, in order, up to MAX_ERRORS in all. */
+  const errorsShown = $derived.by(() => {
+    let left = showAllErrors ? Infinity : MAX_ERRORS;
+    return failures.map((f) => {
+      const n = Math.min(f.errors.length, left);
+      left -= n;
+      return n;
+    });
+  });
+  const where = (e: CiError) => (e.file ? `${e.file.split("/").at(-1)}${e.line ? `:${e.line}` : ""}` : "");
+  const errorTitle = (e: CiError) =>
+    [e.file ? `${e.file}${e.line ? `:${e.line}` : ""}` : "", e.detail.slice(0, 800)].filter(Boolean).join("\n");
 </script>
 
 {#if repo.remotes.length > 0}
@@ -155,11 +175,13 @@
     <!-- GitHub checks for the latest pushed commit. -->
     {#if repo.ci}
       {@const ci = repo.ci}
+      <!-- With details below, the names would only repeat them. -->
+      {@const names = ci.failed.length && !failures.length ? `: ${ci.failed.join(", ")}` : ""}
       <div class="remote-row ci-row ci-{ci.state}">
         <span class="codicon codicon-{ciIcon[ci.state]} row-icon" class:spin={ci.state === "pending"}></span>
         <span class="row-label">CI</span>
         <span class="ci-summary" title={ci.failed.length ? `Failed: ${ci.failed.join(", ")}` : ci.summary}>
-          {ci.summary}{ci.failed.length ? `: ${ci.failed.join(", ")}` : ""}
+          {ci.summary}{names}
         </span>
         <span class="row-status">
           {#if ci.state === "signin"}
@@ -178,6 +200,51 @@
           {/if}
         </span>
       </div>
+      {#if failures.length}
+        <ul class="ci-failures">
+          {#each failures as failure, i (i)}
+            <li class="ci-job">
+              <span class="ci-job-name" title={failure.jobs.join("\n")}
+                >{failure.jobs[0]}{#if failure.jobs.length > 1}<span class="muted">
+                    +{failure.jobs.length - 1}</span
+                  >{/if}</span
+              >
+              {#if failure.step}<span class="ci-step" title="Failed at {failure.step}">{failure.step}</span>{/if}
+              <span class="ci-job-actions">
+                {#if failure.jobId !== null}
+                  <button
+                    class="icon-button"
+                    title="Show the failed step's log"
+                    aria-label="Show the log of {failure.jobs[0]}"
+                    onclick={() => send({ type: "openCiLog", failure: i })}
+                    ><span class="codicon codicon-output"></span></button
+                  >
+                {/if}
+              </span>
+            </li>
+            {#each failure.errors.slice(0, errorsShown[i]) as error, j (j)}
+              <li class="ci-error">
+                <button
+                  class="ci-error-link"
+                  title={errorTitle(error)}
+                  disabled={!error.file && !error.url}
+                  onclick={() => send({ type: "openCiError", failure: i, error: j })}
+                >
+                  <span class="ci-error-text">{error.text}</span>
+                  {#if error.file}<span class="ci-error-where">{where(error)}</span>{/if}
+                </button>
+              </li>
+            {/each}
+          {/each}
+          {#if !showAllErrors && errorCount > MAX_ERRORS}
+            <li class="ci-error">
+              <button class="link-button ci-more" onclick={() => (unfolded = ci.sha)}
+                >+{errorCount - MAX_ERRORS} more</button
+              >
+            </li>
+          {/if}
+        </ul>
+      {/if}
     {/if}
 
     {#if repo.pr}

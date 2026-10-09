@@ -1,7 +1,18 @@
 import * as vscode from "vscode";
 import { runGit } from "../git/runner";
-import type { CiStatus, PrState, PullRequest, RepoState } from "../shared/types";
-import { parseGitHubRemote, summarizeChecks, type CheckRun } from "./ci";
+import type { CiFailure, CiStatus, PrState, PullRequest, RepoState } from "../shared/types";
+import {
+  describeFailures,
+  failedStep,
+  isFailed,
+  jobIdFrom,
+  parseGitHubRemote,
+  summarizeChecks,
+  type Annotation,
+  type CheckRun,
+  type Job,
+} from "./ci";
+import { formatFailedLog } from "./logs";
 import { PR_QUERY, compareUrl, pullFromGraphql, pullFromRest, type RestPull, type RestReview } from "./pr";
 
 // GitHub calls for CI status and pull requests. Public repos work without signing in; private ones use the
@@ -36,7 +47,9 @@ async function github(path: string, init: RequestInit = {}, auth?: string): Prom
   });
 }
 
-async function githubRepo(repo: RepoState): Promise<{ owner: string; repo: string } | null> {
+type GitHubRepo = { owner: string; repo: string };
+
+async function githubRepo(repo: RepoState): Promise<GitHubRepo | null> {
   const remote = repo.status.upstream?.split("/")[0] ?? (repo.remotes.includes("origin") ? "origin" : repo.remotes[0]);
   if (!remote) return null;
   const url = await runGit(["remote", "get-url", remote], repo.root).then(
@@ -57,18 +70,80 @@ export async function readCi(repo: RepoState, prompt = false): Promise<CiStatus 
   if (!sha) return null;
 
   const actionsUrl = `https://github.com/${gh.owner}/${gh.repo}/actions`;
+  const unknown = { sha, failed: [], url: actionsUrl, runId: null, failures: [] };
   const auth = await token(prompt);
   const response = await github(`/repos/${gh.owner}/${gh.repo}/commits/${sha}/check-runs?per_page=100`, {}, auth);
 
   // 404 for a private repo, 403/429 when rate-limited: both fixed by signing in.
   if ((response.status === 404 || response.status === 403 || response.status === 429) && !auth) {
-    return { state: "signin", sha, summary: "Sign in to GitHub to see CI", failed: [], url: actionsUrl, runId: null };
+    return { ...unknown, state: "signin", summary: "Sign in to GitHub to see CI" };
   }
-  if (!response.ok) {
-    return { state: "error", sha, summary: `GitHub said ${response.status}`, failed: [], url: actionsUrl, runId: null };
+  if (!response.ok) return { ...unknown, state: "error", summary: `GitHub said ${response.status}` };
+  const runs = ((await response.json()) as { check_runs?: CheckRun[] }).check_runs ?? [];
+  const status = summarizeChecks(sha, runs, actionsUrl);
+  if (status.state === "failure") status.failures = await readFailures(gh, runs.filter(isFailed), auth);
+  return status;
+}
+
+/** Failed checks looked at in detail; more than this is rare, and each costs two requests. */
+const MAX_FAILURES = 5;
+/** A finished job's steps and errors never change, so they're read once (per GitKit session). */
+const details = new Map<string, Promise<{ job: Job | null; annotations: Annotation[] }>>();
+
+async function readFailures(gh: GitHubRepo, failed: CheckRun[], auth?: string): Promise<CiFailure[]> {
+  const read = async <T>(path: string): Promise<T | null> => {
+    const response = await github(path, {}, auth).catch(() => null);
+    return response?.ok ? ((await response.json()) as T) : null;
+  };
+  const found = await Promise.all(
+    failed.slice(0, MAX_FAILURES).map(async (run) => {
+      const jobId = jobIdFrom(run.details_url ?? run.html_url);
+      const key = `${gh.owner}/${gh.repo}/${run.id}/${jobId}`;
+      let detail = details.get(key);
+      if (!detail) {
+        const repoPath = `/repos/${gh.owner}/${gh.repo}`;
+        // Extras for the CI row: if GitHub doesn't answer, it still says which checks failed.
+        detail = Promise.all([
+          jobId ? read<Job>(`${repoPath}/actions/jobs/${jobId}`) : null,
+          run.id ? read<Annotation[]>(`${repoPath}/check-runs/${run.id}/annotations?per_page=50`) : null,
+        ]).then(([job, annotations]) => ({ job, annotations: Array.isArray(annotations) ? annotations : [] }));
+        details.set(key, detail);
+        // Forget a reading that failed, so the next check tries again.
+        void detail.then((d) => {
+          if (jobId && !d.job) details.delete(key);
+        });
+      }
+      return { run, ...(await detail) };
+    }),
+  );
+  return describeFailures(found, gh.repo);
+}
+
+/** A failed job's log, cut down to the step that failed; GitHub shares logs only with signed-in users. */
+export async function readFailedLog(
+  repo: RepoState,
+  jobId: number,
+): Promise<{ name: string; text: string; errorLine: number }> {
+  const gh = await githubRepo(repo);
+  if (!gh) throw new Error("This repo isn't on GitHub.");
+  const auth = await token(true);
+  if (!auth) throw new Error("Sign in to GitHub to read CI logs: GitHub shares them only with signed-in users.");
+  const repoPath = `/repos/${gh.owner}/${gh.repo}/actions/jobs/${jobId}`;
+  const [jobResponse, logResponse] = await Promise.all([
+    github(repoPath, {}, auth),
+    github(`${repoPath}/logs`, {}, auth),
+  ]);
+  if (logResponse.status === 404 || logResponse.status === 410) {
+    throw new Error("GitHub no longer has this log. Logs are kept for 90 days unless the repo keeps them for less.");
   }
-  const body = (await response.json()) as { check_runs: CheckRun[] };
-  return summarizeChecks(sha, body.check_runs ?? [], actionsUrl);
+  if (!logResponse.ok)
+    throw new Error(`GitHub didn't send the log (${logResponse.status}). Try again, or open it on GitHub.`);
+  const job = jobResponse.ok ? ((await jobResponse.json()) as Job) : null;
+  const name = job?.name ?? "CI job";
+  const step = failedStep(job);
+  const jobUrl = job?.html_url ?? `https://github.com/${gh.owner}/${gh.repo}/actions/runs`;
+  const url = step ? `${jobUrl}#step:${step.number}:1` : jobUrl;
+  return { name, ...formatFailedLog(await logResponse.text(), { name, url }, step) };
 }
 
 /** The remote branch's name on GitHub ("origin/feat/x" → "feat/x"), or null if not pushed. */

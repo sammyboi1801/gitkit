@@ -12,6 +12,8 @@ import { listCheckpoints, readCheckpointState } from "../../src/git/checkpoints"
 import { formatCommand } from "../../src/git/format";
 import { realPath, samePath } from "../../src/git/paths";
 import { commit, git, initRepo, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
+import annotationsFixture from "../fixtures/github/annotations-failed.json";
+import jobFixture from "../fixtures/github/job-failed.json";
 import { harness, Uri } from "../mocks/vscode";
 import { memento, openPanel } from "./helpers";
 
@@ -560,6 +562,116 @@ describe("CI status", () => {
     harness.changeConfig("gitkit.ciStatus", false);
     await vi.waitFor(() => expect(panel.repo().ci).toBeNull());
     expect(panel.repo().pr).toBeNull();
+  });
+
+  describe("why it failed", () => {
+    const log = readFileSync(join(__dirname, "../fixtures/github/job-failed.log"), "utf8");
+
+    /** GitHub with one failed Actions job (real responses for it, under the given job id). */
+    function failedOnGitHub(jobId: number, options: { log?: boolean } = {}) {
+      const job = { ...jobFixture, id: jobId, html_url: `https://github.com/octo/demo/actions/runs/7/job/${jobId}` };
+      const calls: string[] = [];
+      vi.stubGlobal("fetch", async (url: string) => {
+        calls.push(url.replace("https://api.github.com/repos/octo/demo", ""));
+        const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+        if (url.includes("/check-runs?")) {
+          const run = { id: jobId, name: job.name, status: "completed", conclusion: "failure" };
+          return json({ check_runs: [{ ...run, html_url: job.html_url, details_url: job.html_url }] });
+        }
+        if (url.endsWith(`/check-runs/${jobId}/annotations?per_page=50`)) return json(annotationsFixture);
+        if (url.endsWith(`/actions/jobs/${jobId}`)) return json(job);
+        if (url.endsWith(`/actions/jobs/${jobId}/logs`)) {
+          return options.log === false ? new Response(null, { status: 410 }) : new Response(log, { status: 200 });
+        }
+        if (url.includes("/pulls?")) return json([]);
+        throw new Error(`Unexpected GitHub request: ${url}`);
+      });
+      return calls;
+    }
+
+    async function failingPanel(jobId: number, options: { log?: boolean } = {}) {
+      const work = githubClone();
+      // The file the first error points at, so it can be opened here.
+      write(work, "test/host/features.test.ts", "// the test\n");
+      harness.config["gitkit.ciStatus"] = true;
+      const calls = failedOnGitHub(jobId, options);
+      const panel = await openPanel(work);
+      harness.answers.push({ accessToken: "t" });
+      await panel.send({ type: "signInGitHub" });
+      return { work, panel, calls };
+    }
+
+    it("says which step failed and the errors GitHub found, reading each job only once", async () => {
+      const work = githubClone();
+      const calls = failedOnGitHub(9001);
+      const repo = await readRepo(work);
+      const ci = await readCi(repo);
+      expect(ci?.failures).toEqual([
+        expect.objectContaining({
+          jobs: ["Test (Windows) (22)"],
+          jobId: 9001,
+          step: "npm test",
+          url: "https://github.com/octo/demo/actions/runs/7/job/9001#step:5:1",
+          errors: [
+            expect.objectContaining({ file: "test/host/features.test.ts", line: 890 }),
+            expect.objectContaining({ file: "test/host/features.test.ts", line: 650 }),
+          ],
+        }),
+      ]);
+      await readCi(repo);
+      expect(calls.filter((c) => c.includes("/actions/jobs/") || c.includes("/annotations"))).toEqual([
+        "/actions/jobs/9001",
+        "/check-runs/9001/annotations?per_page=50",
+      ]);
+    });
+
+    it("opens the failed step's log in a tab, with the cursor on the first error", async () => {
+      const { panel } = await failingPanel(9002);
+      expect(panel.repo().ci?.failures[0].step).toBe("npm test");
+      await panel.send({ type: "openCiLog", failure: 0 });
+
+      const shown = harness.editors.at(-1)!;
+      expect(shown.uri.scheme).toBe("gitkit-ci-log");
+      expect(shown.uri.path).toBe("/Test (Windows) (22).log");
+      const text = harness.contentProviders.get("gitkit-ci-log")!.provideTextDocumentContent(shown.uri) as string;
+      const lines = text.split("\n");
+      expect(lines[0]).toBe('Test (Windows) (22) failed at "npm test"');
+      expect(lines[shown.line!]).toBe("Error: AssertionError: expected [] to deeply equal [ 'before codex' ]");
+      expect(text).not.toContain("npm ci");
+    });
+
+    it("explains when the log is gone, or when signing in for it is declined", async () => {
+      const { panel } = await failingPanel(9003, { log: false });
+      await panel.send({ type: "openCiLog", failure: 0 });
+      expect(panel.posted("error").at(-1)?.error.message).toBe(
+        "GitHub no longer has this log. Logs are kept for 90 days unless the repo keeps them for less.",
+      );
+
+      harness.session = undefined;
+      harness.answers.push(undefined);
+      await panel.send({ type: "openCiLog", failure: 0 });
+      expect(panel.posted("error").at(-1)?.error.message).toBe(
+        "Sign in to GitHub to read CI logs: GitHub shares them only with signed-in users.",
+      );
+      expect(harness.editors).toEqual([]);
+    });
+
+    it("opens an error's file at its line, or the line on GitHub when the file isn't here", async () => {
+      const { work, panel } = await failingPanel(9004);
+      await panel.send({ type: "openCiError", failure: 0, error: 0 });
+      expect(harness.editors.at(-1)).toMatchObject({ line: 889 });
+      expect(harness.editors.at(-1)!.uri.fsPath).toBe(join(work, "test", "host", "features.test.ts"));
+
+      rmSync(join(work, "test"), { recursive: true });
+      await panel.send({ type: "openCiError", failure: 0, error: 1 });
+      expect(harness.opened.at(-1)).toBe(
+        "https://github.com/sammyboi1801/gitkit/blob/fc9bb88b0af1fd4a2f6ea17d702742235beb54e8/test/host/features.test.ts#L650",
+      );
+      // Indexes from the webview that point at nothing do nothing.
+      await panel.send({ type: "openCiError", failure: 3, error: 0 });
+      await panel.send({ type: "openCiLog", failure: -1 });
+      expect(panel.posted("error")).toEqual([]);
+    });
   });
 });
 

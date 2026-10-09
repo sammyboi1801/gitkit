@@ -101,6 +101,7 @@ describe("Branch Map", () => {
         failed: ["test"],
         url: "https://ci",
         runId: 1,
+        failures: [],
       };
       await open(repoState({ status: { branch: "feat/login", oid: "x" }, commits, ci }));
       expect(within(strip()).getByText("CI: 1 of 3 checks failed")).toBeTruthy();

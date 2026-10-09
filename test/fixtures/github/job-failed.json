@@ -1,0 +1,76 @@
+{
+  "id": 113666254978,
+  "run_id": 37882859595,
+  "name": "Test (Windows) (22)",
+  "html_url": "https://github.com/sammyboi1801/gitkit/actions/runs/37882859595/job/113666254978",
+  "status": "completed",
+  "conclusion": "failure",
+  "started_at": "2026-10-09T04:13:30Z",
+  "completed_at": "2026-10-09T04:16:18Z",
+  "steps": [
+    {
+      "name": "Set up job",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 1,
+      "started_at": "2026-10-09T04:13:31Z",
+      "completed_at": "2026-10-09T04:13:32Z"
+    },
+    {
+      "name": "Run actions/checkout@v5",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 2,
+      "started_at": "2026-10-09T04:13:32Z",
+      "completed_at": "2026-10-09T04:13:40Z"
+    },
+    {
+      "name": "Run actions/setup-node@v5",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 3,
+      "started_at": "2026-10-09T04:13:40Z",
+      "completed_at": "2026-10-09T04:13:49Z"
+    },
+    {
+      "name": "Run npm ci",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 4,
+      "started_at": "2026-10-09T04:13:49Z",
+      "completed_at": "2026-10-09T04:14:07Z"
+    },
+    {
+      "name": "Run npm test",
+      "status": "completed",
+      "conclusion": "failure",
+      "number": 5,
+      "started_at": "2026-10-09T04:14:07Z",
+      "completed_at": "2026-10-09T04:16:15Z"
+    },
+    {
+      "name": "Post Run actions/setup-node@v5",
+      "status": "completed",
+      "conclusion": "skipped",
+      "number": 9,
+      "started_at": "2026-10-09T04:16:15Z",
+      "completed_at": "2026-10-09T04:16:15Z"
+    },
+    {
+      "name": "Post Run actions/checkout@v5",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 10,
+      "started_at": "2026-10-09T04:16:15Z",
+      "completed_at": "2026-10-09T04:16:17Z"
+    },
+    {
+      "name": "Complete job",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 11,
+      "started_at": "2026-10-09T04:16:17Z",
+      "completed_at": "2026-10-09T04:16:17Z"
+    }
+  ]
+}

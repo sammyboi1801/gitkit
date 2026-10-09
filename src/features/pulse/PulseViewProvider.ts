@@ -27,6 +27,7 @@ import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/mess
 import type { Branch, CiStatus, PrState, RepoState, RepoSummary } from "../../shared/types";
 import { COMMIT_LOG_FORMAT, parseCommitLog, prDraft } from "../../github/pr";
 import { createPullRequest, newPullRequestUrl, readCi, readPullRequest, rerunFailedJobs } from "../../github/client";
+import { CI_LOG_SCHEME, CiLogProvider, openCiError, openCiLog } from "../ci/ciLog";
 import { openMergeEditor } from "../conflicts/mergeEditor";
 import { guardCommit } from "../guards/commitGuard";
 import { pickCleanup, pickOops } from "../oops/oops";
@@ -61,6 +62,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private pr: PrState | null = null;
   private lastRepos: RepoSummary[] = [];
   private ciCheckedAt = 0;
+  private readonly ciLogs = new CiLogProvider();
   private ciInFlight?: Promise<void>;
   private lastFetchAttempt = 0;
   private readonly fetchTimer: NodeJS.Timeout;
@@ -81,6 +83,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       this.scheduleRefresh();
     };
     this.disposables.push(
+      vscode.workspace.registerTextDocumentContentProvider(CI_LOG_SCHEME, this.ciLogs),
       watcher,
       watcher.onDidChange(onChange),
       watcher.onDidCreate(onChange),
@@ -363,6 +366,18 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
           setTimeout(() => void this.maybeCheckCi(true), 10_000);
           this.lastPosted = "";
           await this.refresh();
+        } catch (error) {
+          this.post({ type: "error", error: { command: "", message: describe(error) } });
+        }
+        return;
+      }
+      case "openCiLog":
+      case "openCiError": {
+        const failure = this.ci?.failures[message.failure];
+        if (!this.repo || !failure) return;
+        try {
+          if (message.type === "openCiLog") await openCiLog(this.ciLogs, this.repo, failure);
+          else if (failure.errors[message.error]) await openCiError(this.repo, failure.errors[message.error]);
         } catch (error) {
           this.post({ type: "error", error: { command: "", message: describe(error) } });
         }

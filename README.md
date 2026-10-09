@@ -63,6 +63,7 @@ GitKit adds a sidebar to VS Code that shows where your repository stands at a gl
 - **Update from main** in one click: it merges into published branches and rebases unpublished ones, after saving a backup.
 - **Team activity** such as _"Alex Chen added 2 commits to origin/main"_, read from your own fetch history.
 - **CI status** for your latest pushed commit, with **Re-run failed jobs**. Public repositories need no sign-in.
+- **Why CI failed**, without leaving VS Code: each failed job with the step it stopped at (matrix jobs that failed the same way are listed once), and the failing tests or lint errors GitHub reported. Click one to open that file at that line, or open the failed step's log in a tab with the cursor on the first error (GitHub shares logs only with signed-in users).
 - **Pull request readiness** in one line: _"PR #42 CI passing, review needed, 2 unresolved comments, merges cleanly"_. Without a PR, **Open a PR** drafts the title and description from your commits, then creates it, creates a draft, or opens GitHub's page pre-filled.
 - Background fetching every few minutes, only while VS Code is focused.
 
@@ -220,7 +221,7 @@ Example identity rules; the first matching rule applies:
 
 ## Privacy and security
 
-- GitKit runs your local `git`. It contacts the network only for `git fetch` and, when CI status is enabled, the GitHub API for your branch's check results and pull request. It creates a pull request only when you choose to.
+- GitKit runs your local `git`. It contacts the network only for `git fetch` and, when CI status is enabled, the GitHub API for your branch's check results, the errors and logs of failed checks, and its pull request. It creates a pull request only when you choose to.
 - Checkpoints stay in your repository under `refs/gitkit/`, are never pushed, and never touch your files, staging area or stashes.
 - There is no telemetry.
 - GitHub sign-in uses the account VS Code already manages, and is requested only when you choose **Sign in**.
