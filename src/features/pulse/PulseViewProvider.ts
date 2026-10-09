@@ -35,7 +35,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private ci: CiStatus | null = null;
   private lastRepos: RepoSummary[] = [];
   private ciCheckedAt = 0;
-  private ciChecking = false;
+  private ciInFlight?: Promise<void>;
   private lastFetchAttempt = 0;
   private readonly fetchTimer: NodeJS.Timeout;
   private readonly disposables: vscode.Disposable[] = [];
@@ -192,8 +192,13 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   /** Re-checks CI: every minute while checks run, every five minutes otherwise, only while focused. */
   private async maybeCheckCi(force = false, prompt = false): Promise<void> {
+    if (this.ciInFlight) {
+      if (!force) return;
+      // An explicit request (like Sign in) waits for the background check, then runs its own.
+      await this.ciInFlight.catch(() => {});
+    }
     const repo = this.repo;
-    if (!repo || this.ciChecking || !vscode.workspace.getConfiguration("gitkit").get<boolean>("ciStatus", true)) return;
+    if (!repo || !vscode.workspace.getConfiguration("gitkit").get<boolean>("ciStatus", true)) return;
     if (!force && (!vscode.window.state.focused || !this.view?.visible)) return;
     const interval = this.ci?.state === "pending" ? 60_000 : 300_000;
     // A push or fetch moved the remote branch: the old result is for an older commit.
@@ -203,14 +208,19 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const moved = !!this.ci && !!upstreamSha && this.ci.sha !== upstreamSha;
     if (!force && !moved && Date.now() - this.ciCheckedAt < interval) return;
 
-    this.ciChecking = true;
+    this.ciInFlight = (async () => {
+      try {
+        this.ci = await readCi(repo, prompt);
+      } catch {
+        this.ci = null; // Offline or GitHub unreachable: hide the row rather than nag.
+      } finally {
+        this.ciCheckedAt = Date.now();
+      }
+    })();
     try {
-      this.ci = await readCi(repo, prompt);
-    } catch {
-      this.ci = null; // Offline or GitHub unreachable: hide the row rather than nag.
+      await this.ciInFlight;
     } finally {
-      this.ciCheckedAt = Date.now();
-      this.ciChecking = false;
+      this.ciInFlight = undefined;
     }
     this.lastPosted = "";
     if (this.repo) this.postState({ kind: "repo", repo: { ...this.repo, ci: this.ci }, repos: this.lastRepos });
