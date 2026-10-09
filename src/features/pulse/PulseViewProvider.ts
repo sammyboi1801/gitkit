@@ -13,8 +13,9 @@ import {
 } from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
-import type { Branch, CiStatus, RepoState, RepoSummary } from "../../shared/types";
-import { readCi, rerunFailedJobs } from "../../github/client";
+import type { Branch, CiStatus, PrState, RepoState, RepoSummary } from "../../shared/types";
+import { COMMIT_LOG_FORMAT, parseCommitLog, prDraft } from "../../github/pr";
+import { createPullRequest, newPullRequestUrl, readCi, readPullRequest, rerunFailedJobs } from "../../github/client";
 import { openMergeEditor } from "../conflicts/mergeEditor";
 import { guardCommit } from "../guards/commitGuard";
 import { pickCleanup, pickOops } from "../oops/oops";
@@ -40,6 +41,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private fetching = false;
   private fetchError?: string;
   private ci: CiStatus | null = null;
+  /** The branch's pull request, refreshed with CI. */
+  private pr: PrState | null = null;
   private lastRepos: RepoSummary[] = [];
   private ciCheckedAt = 0;
   private ciInFlight?: Promise<void>;
@@ -155,9 +158,12 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         readRepo(selected),
         roots.length > 1 ? Promise.all(roots.map((r) => readSummary(r, repoLabel(r, folders)))) : [],
       ]);
-      // CI belongs to a commit; drop it once the branch points somewhere else.
-      if (this.ci && repo.status.upstream === null) this.ci = null;
-      this.repo = { ...repo, fetchError: this.fetchError, ci: this.ci };
+      // CI belongs to a commit and a PR to a remote branch; drop them once there's no remote branch.
+      if (repo.status.upstream === null) {
+        this.ci = null;
+        this.pr = null;
+      }
+      this.repo = this.withRemoteInfo(repo);
       this.lastRepos = repos;
       return { kind: "repo", repo: this.repo, repos };
     } catch (error) {
@@ -217,9 +223,14 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     this.ciInFlight = (async () => {
       try {
-        this.ci = await readCi(repo, prompt);
+        // Offline or GitHub unreachable: hide the rows rather than nag.
+        [this.ci, this.pr] = await Promise.all([
+          readCi(repo, prompt).catch(() => null),
+          readPullRequest(repo).catch(() => null),
+        ]);
       } catch {
-        this.ci = null; // Offline or GitHub unreachable: hide the row rather than nag.
+        this.ci = null;
+        this.pr = null;
       } finally {
         this.ciCheckedAt = Date.now();
       }
@@ -230,7 +241,11 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       this.ciInFlight = undefined;
     }
     this.lastPosted = "";
-    if (this.repo) this.postState({ kind: "repo", repo: { ...this.repo, ci: this.ci }, repos: this.lastRepos });
+    if (this.repo) {
+      // Keep the host's own copy current too: actions like "Open a PR" read it.
+      this.repo = this.withRemoteInfo(this.repo);
+      this.postState({ kind: "repo", repo: this.repo, repos: this.lastRepos });
+    }
   }
 
   /**
@@ -295,6 +310,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         // Only web links: the URL comes from the webview, so never open other schemes from it.
         if (/^https:\/\//.test(message.url)) await vscode.env.openExternal(vscode.Uri.parse(message.url));
         return;
+      case "createPr":
+        return this.createPr();
       case "rerunFailed": {
         if (!this.repo || !this.ci?.runId) return;
         try {
@@ -462,11 +479,101 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
   }
 
+  /** What the extension knows about the remote besides git: fetch errors, CI and the PR. */
+  private withRemoteInfo(repo: RepoState): RepoState {
+    return { ...repo, fetchError: this.fetchError, ci: this.ci, pr: this.pr };
+  }
+
+  /**
+   * Opens a pull request for the pushed branch: a title (pre-filled from the commits), then create,
+   * create as draft, or finish it on GitHub's own page. Nothing is sent before the last choice.
+   */
+  private async createPr(): Promise<void> {
+    const repo = this.repo;
+    if (!repo) return;
+    const pr = repo.pr;
+    if (!repo.status.upstream || !repo.base || pr?.kind !== "none") {
+      this.post({
+        type: "error",
+        error: { command: "", message: "Publish this branch first, then open a pull request for it." },
+      });
+      return;
+    }
+    const { head, base } = pr;
+    const log = await runGit(["log", COMMIT_LOG_FORMAT, `${repo.base.ref}..@{upstream}`], repo.root).then(
+      (r) => r.stdout,
+      () => "",
+    );
+    const commits = parseCommitLog(log);
+    if (commits.length === 0) {
+      this.post({
+        type: "error",
+        error: {
+          command: "",
+          message: `${head} has no pushed commits that aren't on ${base} yet, so there's nothing to review.`,
+        },
+      });
+      return;
+    }
+    const draft = prDraft(head, commits);
+    const title = await vscode.window.showInputBox({
+      title: "Pull request title",
+      prompt: `${head} → ${base}, ${commits.length} commit${commits.length === 1 ? "" : "s"}`,
+      value: draft.title,
+      validateInput: (v) => (v.trim() ? undefined : "A pull request needs a title."),
+    });
+    if (title === undefined) return;
+
+    const unpushed = repo.status.ahead;
+    const choice = await vscode.window.showQuickPick(
+      [
+        {
+          label: "$(git-pull-request-create) Create pull request",
+          detail: `Asks GitHub to open a PR from ${head} into ${base}`,
+          mode: "create",
+        },
+        {
+          label: "$(git-pull-request-draft) Create as draft",
+          detail: "Not ready for review yet; reviewers aren't notified",
+          mode: "draft",
+        },
+        {
+          label: "$(globe) Edit on GitHub first",
+          detail: "Opens GitHub's page with the title and description filled in",
+          mode: "web",
+        },
+      ] as const,
+      {
+        title: `Open a pull request: ${title}`,
+        placeHolder: unpushed
+          ? `${unpushed} local commit${unpushed === 1 ? " isn't" : "s aren't"} pushed and won't be included`
+          : undefined,
+      },
+    );
+    if (!choice) return;
+
+    const filled = { title: title.trim(), body: draft.body };
+    try {
+      if (choice.mode === "web") {
+        const url = await newPullRequestUrl(repo, base, filled);
+        if (url) await vscode.env.openExternal(vscode.Uri.parse(url));
+        return;
+      }
+      const created = await createPullRequest(repo, { ...filled, base, draft: choice.mode === "draft" });
+      void vscode.window
+        .showInformationMessage(`Opened pull request #${created.number}.`, "Open on GitHub")
+        .then((open) => open && vscode.env.openExternal(vscode.Uri.parse(created.url)));
+      await this.maybeCheckCi(true);
+    } catch (error) {
+      this.post({ type: "error", error: { command: "", message: describe(error) } });
+    }
+  }
+
   private async runAction(request: ActionRequest): Promise<void> {
     if (!this.repo || this.busy) return;
     // Re-read first: the file watcher refreshes after a short delay, and an action clicked right
     // after an edit must not be planned from the state before it.
-    this.repo = { ...(await readRepo(this.repo.root)), fetchError: this.fetchError, ci: this.ci };
+    this.repo = this.withRemoteInfo(await readRepo(this.repo.root));
     // Plan from the host's own state: never execute commands built by the webview.
     const result = planAction(request, this.repo);
     if (!result.ok) {

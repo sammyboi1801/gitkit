@@ -191,9 +191,15 @@ export const window = {
     harness.shown.push({ kind: "quickPick", message: options?.title ?? "", items: list });
     return nextAnswer(list);
   },
-  async showInputBox(options?: { title?: string; value?: string; validateInput?: (v: string) => string | undefined }) {
-    harness.shown.push({ kind: "inputBox", message: options?.title ?? "" });
-    const answer = nextAnswer() as string | undefined;
+  async showInputBox(options?: {
+    title?: string;
+    prompt?: string;
+    value?: string;
+    validateInput?: (v: string) => string | undefined;
+  }) {
+    harness.shown.push({ kind: "inputBox", message: options?.title ?? "", detail: options?.prompt });
+    // An answer function gets the pre-filled value, so `([value]) => value` accepts it.
+    const answer = nextAnswer([options?.value]) as string | undefined;
     if (answer !== undefined && options?.validateInput?.(answer)) return undefined;
     return answer;
   },

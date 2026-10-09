@@ -114,6 +114,34 @@ describe("Branch Map", () => {
       expect(within(strip()).getByText(/checking…/)).toBeTruthy();
     });
 
+    it("shows the branch's pull request, or a way to open one", async () => {
+      const pr = {
+        number: 42,
+        title: "t",
+        url: "https://github.com/octo/demo/pull/42",
+        draft: false,
+        base: "main",
+        review: "approved" as const,
+        unresolved: 0,
+        mergeable: "clean" as const,
+      };
+      await open(
+        repoState({ status: { branch: "feat/login", oid: "x" }, commits, pr: { kind: "open", pr, signedIn: true } }),
+      );
+      expect(within(strip()).getByRole("button", { name: "PR #42" })).toBeTruthy();
+      expect(within(strip()).getByText(/^ready to merge/)).toBeTruthy();
+
+      await update(
+        repoState({
+          status: { branch: "feat/login", oid: "x" },
+          commits,
+          pr: { kind: "none", head: "feat/login", base: "main" },
+        }),
+      );
+      await fireEvent.click(within(strip()).getByRole("button", { name: "Open a PR" }));
+      expect(lastSent()).toEqual({ type: "createPr" });
+    });
+
     it("says when the remote couldn't be reached", async () => {
       await open(repoState({ status: { branch: "feat/login", oid: "x" }, commits, fetchError: "offline" }));
       expect(within(strip()).getByText(/couldn't reach the remote/)).toBeTruthy();

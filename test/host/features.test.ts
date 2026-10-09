@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activate } from "../../src/extension";
-import { readCi, rerunFailedJobs } from "../../src/github/client";
+import { readCi, readPullRequest, rerunFailedJobs } from "../../src/github/client";
 import { readRepo } from "../../src/git/repo";
 import type { HostToStudio } from "../../src/shared/messages";
 import type { WorkflowModel } from "../../src/workflow/model";
@@ -408,6 +408,206 @@ describe("CI status", () => {
     harness.answers.push({ accessToken: "t" });
     await panel.send({ type: "signInGitHub" });
     expect(panel.repo().ci).toMatchObject({ state: "success", summary: "All 1 check passed" });
+  });
+});
+
+describe("pull requests", () => {
+  const BRANCH = "feat/health-endpoint";
+
+  /** A clone whose feature branch has two pushed commits on top of main, "on GitHub". */
+  function featureClone(): string {
+    const { work } = makeDivergedClone();
+    git(work, "stash", "-q", "--include-untracked");
+    git(work, "switch", "-q", "-c", BRANCH, "origin/main");
+    commit(work, "feat: add /health", { "health.txt": "ok\n" });
+    commit(work, "test: cover /health", { "health.test.txt": "ok\n" }, "Checks the status code.");
+    git(work, "push", "-q", "-u", "origin", BRANCH);
+    // Only now pretend it's GitHub: the pushes above went to the real (local) remote.
+    git(work, "remote", "set-url", "origin", "https://github.com/octo/demo.git");
+    return work;
+  }
+
+  type Route = (url: string, init?: RequestInit) => { status: number; body?: unknown } | undefined;
+  /** Fakes GitHub: each route answers the requests it knows; anything else is a test failure. */
+  function stubGitHub(...routes: Route[]) {
+    const calls: { url: string; method: string; body?: unknown }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      const answer = routes.map((r) => r(url, init)).find(Boolean);
+      if (!answer) throw new Error(`Unexpected GitHub request: ${init?.method ?? "GET"} ${url}`);
+      return new Response(answer.body === undefined ? null : JSON.stringify(answer.body), { status: answer.status });
+    });
+    return calls;
+  }
+  const noChecks: Route = (url) =>
+    url.includes("/check-runs") ? { status: 200, body: { check_runs: [] } } : undefined;
+  const graphql =
+    (nodes: unknown[]): Route =>
+    (url) =>
+      url.endsWith("/graphql")
+        ? { status: 200, body: { data: { repository: { pullRequests: { nodes } } } } }
+        : undefined;
+  const openPr = {
+    number: 42,
+    title: "feat: health endpoint",
+    url: "https://github.com/octo/demo/pull/42",
+    isDraft: false,
+    baseRefName: "main",
+    reviewDecision: "APPROVED",
+    mergeable: "MERGEABLE",
+    headRepositoryOwner: { login: "octo" },
+    reviewThreads: { nodes: [{ isResolved: false }] },
+  };
+
+  it("reads the branch's PR in one GraphQL query when signed in", async () => {
+    const work = featureClone();
+    harness.session = { accessToken: "t" };
+    const calls = stubGitHub(graphql([openPr]));
+    const state = await readPullRequest(await readRepo(work));
+    expect(state).toEqual({
+      kind: "open",
+      signedIn: true,
+      pr: expect.objectContaining({ number: 42, review: "approved", unresolved: 1, mergeable: "clean" }),
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      url: "https://api.github.com/graphql",
+      method: "POST",
+      body: { variables: { owner: "octo", repo: "demo", head: BRANCH } },
+    });
+  });
+
+  it("reads public repos without signing in, through REST", async () => {
+    const work = featureClone();
+    const pull = { number: 7, title: "t", html_url: "https://github.com/octo/demo/pull/7", base: { ref: "main" } };
+    const calls = stubGitHub((url) => {
+      if (url.includes("/pulls?head=")) return { status: 200, body: [pull] };
+      if (url.endsWith("/pulls/7")) return { status: 200, body: { ...pull, mergeable: false } };
+      if (url.includes("/pulls/7/reviews")) return { status: 200, body: [{ user: { login: "a" }, state: "APPROVED" }] };
+    });
+    const state = await readPullRequest(await readRepo(work));
+    expect(state).toMatchObject({
+      kind: "open",
+      signedIn: false,
+      pr: { number: 7, review: "approved", mergeable: "conflicts", unresolved: null },
+    });
+    expect(calls[0].url).toBe(
+      `https://api.github.com/repos/octo/demo/pulls?head=${encodeURIComponent(`octo:${BRANCH}`)}&state=open&per_page=1`,
+    );
+  });
+
+  it("says there's no PR yet, and says nothing on main, unpushed branches or errors", async () => {
+    const work = featureClone();
+    stubGitHub((url) => (url.includes("/pulls?head=") ? { status: 200, body: [] } : undefined));
+    expect(await readPullRequest(await readRepo(work))).toEqual({ kind: "none", head: BRANCH, base: "main" });
+
+    git(work, "switch", "-q", "-c", "local-only");
+    expect(await readPullRequest(await readRepo(work))).toBeNull();
+    git(work, "switch", "-q", "main");
+    expect(await readPullRequest(await readRepo(work))).toBeNull();
+
+    git(work, "switch", "-q", BRANCH);
+    stubGitHub(() => ({ status: 500 }));
+    expect(await readPullRequest(await readRepo(work))).toBeNull();
+  });
+
+  it("shows the PR in the panel with CI", async () => {
+    const work = featureClone();
+    harness.config["gitkit.ciStatus"] = true;
+    harness.session = { accessToken: "t" };
+    stubGitHub(noChecks, graphql([openPr]));
+    const panel = await openPanel(work);
+    await panel.send({ type: "signInGitHub" });
+    expect(panel.repo().pr).toMatchObject({ kind: "open", pr: { number: 42 } });
+  });
+
+  /** A panel on the feature branch that knows it has no PR yet. */
+  async function panelWithoutPr(...routes: Route[]) {
+    const work = featureClone();
+    harness.config["gitkit.ciStatus"] = true;
+    harness.session = { accessToken: "t" };
+    const calls = stubGitHub(...routes, noChecks, graphql([]));
+    const panel = await openPanel(work);
+    await panel.send({ type: "signInGitHub" });
+    expect(panel.repo().pr).toEqual({ kind: "none", head: BRANCH, base: "main" });
+    return { panel, calls };
+  }
+  const created: Route = (url, init) =>
+    url.endsWith("/repos/octo/demo/pulls") && init?.method === "POST"
+      ? { status: 201, body: { number: 43, html_url: "https://github.com/octo/demo/pull/43", base: { ref: "main" } } }
+      : undefined;
+
+  it("opens a PR with a title and description drafted from the pushed commits", async () => {
+    const { panel, calls } = await panelWithoutPr(created);
+    harness.answers.push(
+      ([value]: string[]) => value,
+      (items: { mode: string }[]) => items.find((i) => i.mode === "create"),
+    );
+    await panel.send({ type: "createPr" });
+
+    const title = harness.shown.find((s) => s.kind === "inputBox")!;
+    expect(title.detail).toBe(`${BRANCH} → main, 2 commits`);
+    expect(calls.find((c) => c.method === "POST" && c.url.endsWith("/pulls"))?.body).toEqual({
+      title: "feat: health endpoint",
+      body: "- feat: add /health\n- test: cover /health",
+      base: "main",
+      head: BRANCH,
+      draft: false,
+    });
+    expect(harness.shown.some((s) => s.kind === "info" && s.message === "Opened pull request #43.")).toBe(true);
+  });
+
+  it("creates drafts, and uses the title as edited", async () => {
+    const { panel, calls } = await panelWithoutPr(created);
+    harness.answers.push("My own title  ", (items: { mode: string }[]) => items.find((i) => i.mode === "draft"));
+    await panel.send({ type: "createPr" });
+    expect(calls.find((c) => c.method === "POST" && c.url.endsWith("/pulls"))?.body).toMatchObject({
+      title: "My own title",
+      draft: true,
+    });
+  });
+
+  it("can hand over to GitHub's own page instead, sending nothing", async () => {
+    const { panel, calls } = await panelWithoutPr();
+    harness.answers.push(
+      ([value]: string[]) => value,
+      (items: { mode: string }[]) => items.find((i) => i.mode === "web"),
+    );
+    await panel.send({ type: "createPr" });
+    expect(calls.some((c) => c.method === "POST" && !c.url.endsWith("/graphql"))).toBe(false);
+    const url = new URL(harness.opened.at(-1)!);
+    expect(url.pathname).toBe(`/octo/demo/compare/main...${BRANCH}`);
+    expect(url.searchParams.get("title")).toBe("feat: health endpoint");
+  });
+
+  it("sends nothing when the title is cancelled", async () => {
+    const { panel, calls } = await panelWithoutPr();
+    harness.answers.push(undefined);
+    await panel.send({ type: "createPr" });
+    expect(calls.some((c) => c.method === "POST" && !c.url.endsWith("/graphql"))).toBe(false);
+    expect(harness.shown.some((s) => s.kind === "quickPick")).toBe(false);
+  });
+
+  it("explains why GitHub refused", async () => {
+    const { panel } = await panelWithoutPr((url, init) =>
+      init?.method === "POST" && url.endsWith("/pulls")
+        ? {
+            status: 422,
+            body: {
+              message: "Validation Failed",
+              errors: [{ message: "A pull request already exists for octo:feat/health-endpoint." }],
+            },
+          }
+        : undefined,
+    );
+    harness.answers.push(
+      ([value]: string[]) => value,
+      (items: { mode: string }[]) => items.find((i) => i.mode === "create"),
+    );
+    await panel.send({ type: "createPr" });
+    expect(panel.posted("error").at(-1)?.error.message).toBe(
+      "GitHub didn't open the pull request: A pull request already exists for octo:feat/health-endpoint.",
+    );
   });
 });
 

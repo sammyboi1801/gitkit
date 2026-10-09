@@ -46,10 +46,10 @@ export function write(cwd: string, file: string, content: string): void {
 }
 
 /** Writes the files and commits them. */
-export function commit(cwd: string, message: string, files: Record<string, string> = {}): string {
+export function commit(cwd: string, message: string, files: Record<string, string> = {}, body?: string): string {
   for (const [file, content] of Object.entries(files)) write(cwd, file, content);
   git(cwd, "add", "-A");
-  git(cwd, "commit", "-q", "--allow-empty", "-m", message);
+  git(cwd, "commit", "-q", "--allow-empty", "-m", message, ...(body ? ["-m", body] : []));
   return git(cwd, "rev-parse", "HEAD").trim();
 }
 

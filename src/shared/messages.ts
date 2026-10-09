@@ -47,6 +47,7 @@ export type WebviewToHost =
   | { type: "signInGitHub" }
   | { type: "openUrl"; url: string }
   | { type: "rerunFailed" }
+  | { type: "createPr" }
   | { type: "cleanupBranches" };
 
 // --- Workflow Studio ------------------------------------------------------------------------

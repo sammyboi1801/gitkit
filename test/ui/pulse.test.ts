@@ -10,6 +10,7 @@ import History from "../../webview/pulse/History.svelte";
 import Remote from "../../webview/pulse/Remote.svelte";
 import Repos from "../../webview/pulse/Repos.svelte";
 import Stashes from "../../webview/pulse/Stashes.svelte";
+import type { CiStatus, PullRequest, RepoState } from "../../src/shared/types";
 import { commitOf, file, repoState } from "./state";
 import { sent } from "./setup";
 
@@ -150,6 +151,63 @@ describe("ConflictView", () => {
 });
 
 describe("Remote card", () => {
+  describe("pull request", () => {
+    const pull: PullRequest = {
+      number: 42,
+      title: "feat: health endpoint",
+      url: "https://github.com/octo/demo/pull/42",
+      draft: false,
+      base: "main",
+      review: "required",
+      unresolved: 2,
+      mergeable: "clean",
+    };
+    const success: CiStatus = { state: "success", sha: "s", summary: "", failed: [], url: "", runId: null };
+    const show = (pr: RepoState["pr"], ci: CiStatus | null = success) =>
+      render(Remote, {
+        props: {
+          repo: repoState({ status: { branch: "feat/x", upstream: "origin/feat/x" }, pr, ci }),
+          busy: null,
+          fetching: false,
+        },
+      });
+    const line = () => screen.getByRole("group", { name: /^Pull request/ });
+
+    it("reads as one sentence: what's done and what's missing", async () => {
+      show({ kind: "open", pr: pull, signedIn: true });
+      const parts = [...line().querySelectorAll(".pr-part")].map((p) => p.textContent);
+      expect(parts.join(" ")).toBe("CI passing, review needed, 2 unresolved comments, merges cleanly");
+      expect(within(line()).getByRole("button", { name: "PR #42" })).toBeTruthy();
+      expect(within(line()).queryByText(/ready to merge/)).toBeNull();
+      await fireEvent.click(within(line()).getByRole("button", { name: "PR #42" }));
+      expect(lastSent()).toEqual({ type: "openUrl", url: pull.url });
+    });
+
+    it("says when it's ready to merge", () => {
+      show({ kind: "open", pr: { ...pull, review: "approved", unresolved: 0 }, signedIn: true });
+      expect(within(line()).getByText(/^ready to merge/)).toBeTruthy();
+      expect(line().classList.contains("ready")).toBe(true);
+    });
+
+    it("offers sign-in when GitHub hid the review comments", async () => {
+      show({ kind: "open", pr: { ...pull, unresolved: null }, signedIn: false });
+      await fireEvent.click(within(line()).getByRole("button", { name: /sign in for comments/ }));
+      expect(lastSent()).toEqual({ type: "signInGitHub" });
+    });
+
+    it("offers to open one when the pushed branch has none", async () => {
+      show({ kind: "none", head: "feat/x", base: "main" });
+      expect(within(line()).getByText("No pull request into main yet")).toBeTruthy();
+      await fireEvent.click(within(line()).getByRole("button", { name: "Open a PR" }));
+      expect(lastSent()).toEqual({ type: "createPr" });
+    });
+
+    it("stays hidden when there's nothing to say", () => {
+      show(null);
+      expect(screen.queryByRole("group", { name: /^Pull request/ })).toBeNull();
+    });
+  });
+
   it("shows drift from main, the conflict forecast and the right update strategy", async () => {
     const repo = repoState({
       status: { branch: "feat/login", upstream: "origin/feat/login" },

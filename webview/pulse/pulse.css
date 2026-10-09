@@ -1497,3 +1497,73 @@ body {
     display: none;
   }
 }
+
+/* Pull request line (webview/shared/PrStatus.svelte), in the Remote card and the Branch Map. */
+
+.pr-status {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  min-width: 0;
+}
+
+.pr-icon {
+  color: var(--gk-muted);
+}
+
+.pr-status.ready .pr-icon {
+  color: var(--vscode-charts-green);
+}
+
+.pr-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--vscode-textLink-foreground);
+  font-weight: 600;
+}
+
+.pr-link:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.pr-link.muted {
+  font-weight: 400;
+  color: var(--gk-muted);
+}
+
+.pr-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.pr-part.tone-ok {
+  color: var(--vscode-charts-green);
+}
+
+.pr-part.tone-warn {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.pr-part.tone-bad {
+  color: var(--vscode-errorForeground);
+}
+
+.pr-part.tone-muted {
+  color: var(--gk-muted);
+}
+
+.remote-row.pr-row {
+  align-items: flex-start;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-size: 0.92em;
+}
+
+/* The sidebar is narrow: let the sentence wrap instead of running off the edge. */
+.remote-row.pr-row .pr-status {
+  flex: 1;
+}

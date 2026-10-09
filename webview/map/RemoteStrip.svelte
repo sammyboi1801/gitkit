@@ -3,6 +3,7 @@
   import type { RepoState } from "../../src/shared/types";
   import { ago, preview, suggestedSync } from "../pulse/util";
   import { send } from "../pulse/vscode";
+  import PrStatus from "../shared/PrStatus.svelte";
 
   // The remote at a glance, above the map: this branch vs its remote copy, vs main (with a
   // conflict forecast), CI for the last push, and when GitKit last checked.
@@ -97,6 +98,10 @@
           >
         {/if}
       </span>
+    {/if}
+
+    {#if repo.pr}
+      <span class="strip-item"><PrStatus {repo} {busy} {send} /></span>
     {/if}
 
     <span class="spacer"></span>

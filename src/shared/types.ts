@@ -128,7 +128,29 @@ export interface RepoState {
   activity: ActivityItem[];
   /** Set by the extension: GitHub checks for the latest pushed commit; null/undefined hides the row. */
   ci?: CiStatus | null;
+  /** Set by the extension: the branch's pull request, or how to open one; null/undefined hides it. */
+  pr?: PrState | null;
 }
+
+/** The open pull request for the current branch, as GitHub reports it. */
+export interface PullRequest {
+  number: number;
+  title: string;
+  url: string;
+  draft: boolean;
+  /** The branch it merges into, e.g. "main". */
+  base: string;
+  /** GitHub's review decision; null when the base branch doesn't require reviews, or when unknown. */
+  review: "approved" | "changes" | "required" | null;
+  /** Unresolved review threads; null when unknown (GitHub only shows them to signed-in users). */
+  unresolved: number | null;
+  mergeable: "clean" | "conflicts" | "unknown";
+}
+
+export type PrState =
+  | { kind: "open"; pr: PullRequest; signedIn: boolean }
+  /** No open PR for this pushed branch yet. */
+  | { kind: "none"; head: string; base: string };
 
 export type Operation = "merge" | "rebase" | "cherry-pick" | "revert";
 

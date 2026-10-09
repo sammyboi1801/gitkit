@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ActivityItem, RepoState } from "../../src/shared/types";
+  import PrStatus from "../shared/PrStatus.svelte";
   import { ago, preview } from "./util";
   import { send } from "./vscode";
 
@@ -173,6 +174,10 @@
           {/if}
         </span>
       </div>
+    {/if}
+
+    {#if repo.pr}
+      <div class="remote-row pr-row"><PrStatus {repo} {busy} {send} /></div>
     {/if}
 
     {#if repo.activity.length}
