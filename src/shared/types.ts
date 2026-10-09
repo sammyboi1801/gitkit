@@ -115,7 +115,7 @@ export interface RepoState {
   graph: BranchGraph;
   /** Commits on HEAD that aren't on any remote yet. */
   unpushed: string[];
-  /** Commits on the upstream that HEAD doesn't have yet. */
+  /** Commits on the remote that no local branch (or HEAD) has: fetched but not pulled. */
   incoming: string[];
   /** The branch work usually merges into (origin/main or similar), compared with HEAD. */
   base: BaseInfo | null;

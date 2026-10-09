@@ -95,9 +95,9 @@ export async function readRepo(root: string, options: { worktreeMaxAgeMs?: numbe
         root,
       ),
       read(["rev-list", "HEAD", "--not", "--remotes", `--max-count=${GRAPH_LIMIT}`], root),
-      status.upstream
-        ? read(["rev-list", "HEAD..@{upstream}", `--max-count=${GRAPH_LIMIT}`], root)
-        : Promise.resolve({ stdout: "" }),
+      // Every commit on the remote that you don't have in any local branch, not just your own branch's:
+      // teammates' new commits on main are drawn as "not pulled yet" too, as the legend says.
+      read(["rev-list", "--remotes", "--not", "--branches", "HEAD", `--max-count=${GRAPH_LIMIT}`], root),
     ]);
     commits = parseLog(logOut.stdout);
     unpushed = lines(unpushedOut.stdout);

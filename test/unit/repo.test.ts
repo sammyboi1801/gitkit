@@ -41,6 +41,22 @@ describe("readRepo", () => {
     expect(repo.activity[0]).toMatchObject({ ref: "origin/main", kind: "push", commits: 1, authors: ["Test"] });
   });
 
+  it("counts main's new commits on the remote as not pulled yet, even from another branch", async () => {
+    const { work, remote } = makeDivergedClone();
+    git(work, "stash", "-q", "--include-untracked");
+    git(work, "switch", "-q", "--no-track", "-c", "feat", "origin/main");
+    const other = join(work, "..", "other");
+    git(join(work, ".."), "clone", "-q", remote, other);
+    commit(other, "teammate on main");
+    git(other, "push", "-q", "origin", "HEAD:main");
+    git(work, "fetch", "-q");
+
+    const repo = await readRepo(work);
+    const subject = (hash: string) => repo.graph.commits.find((c) => c.hash === hash)?.subject;
+    expect(repo.status.upstream).toBeNull();
+    expect(repo.incoming.map(subject)).toEqual(["teammate on main"]);
+  });
+
   it("handles a repo with no commits yet", async () => {
     const empty = tempDir();
     git(empty, "init", "-q", "-b", "main");
