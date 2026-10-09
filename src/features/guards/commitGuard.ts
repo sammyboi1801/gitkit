@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { appendFile, readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
@@ -139,7 +140,17 @@ async function checkIdentity(repo: RepoState, rules: IdentityRule[]): Promise<bo
         )
       : null,
   ]);
-  const rule = matchIdentity(rules, url, repo.root);
+  // Compare real, full paths: Windows can report the same folder by its short 8.3 name
+  // (C:\Users\RUNNER~1\...) in one place and its long name in another.
+  const real = (p: string) => {
+    try {
+      return realpathSync.native(p);
+    } catch {
+      return p;
+    }
+  };
+  const resolved = rules.map((r) => (r.folder ? { ...r, folder: real(r.folder) } : r));
+  const rule = matchIdentity(resolved, url, real(repo.root));
   if (!rule || rule.email.toLowerCase() === email.toLowerCase()) return true;
 
   const use = `Use ${rule.email} Here`;

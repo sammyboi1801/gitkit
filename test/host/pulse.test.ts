@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { commit, git, initRepo, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
@@ -248,5 +248,22 @@ describe("Pulse panel: regressions", () => {
     expect(git(dir, "show", "--name-only", "--format=", "HEAD").trim()).toBe("app.ts");
     expect(status(dir)).toContain(" M .npmrc");
     expect(existsSync(join(dir, ".gitignore"))).toBe(false);
+  });
+});
+
+describe("Pulse panel: identity rules and path spellings", () => {
+  it("matches a folder rule written with a different path to the same folder", async () => {
+    // Windows reports some folders by a short 8.3 name in one place and the long name in another;
+    // a junction (an alias for a folder) reproduces the same mismatch on any machine.
+    const dir = makeRepo();
+    const alias = join(tempDir(), "alias");
+    symlinkSync(dir, alias, "junction");
+    harness.config["gitkit.identities"] = [{ folder: alias, email: "me@school.edu" }];
+    write(dir, "b.txt", "b\n");
+    const panel = await openPanel(dir);
+
+    harness.answers.push("Use me@school.edu Here");
+    await panel.send({ type: "action", request: { type: "commit", message: "as school" } });
+    expect(git(dir, "log", "-1", "--format=%ae").trim()).toBe("me@school.edu");
   });
 });
