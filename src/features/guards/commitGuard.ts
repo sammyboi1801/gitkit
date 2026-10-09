@@ -96,14 +96,21 @@ function describe(issue: GuardIssue): string {
 
 /** Keeps the flagged files out of this commit and out of future ones (.gitignore for new files). */
 async function leaveOut(repo: RepoState, plan: Plan, paths: string[]): Promise<string[][]> {
-  const untracked = paths.filter((p) => repo.status.files.find((f) => f.path === p)?.untracked);
-  if (untracked.length) await appendIgnores(repo.root, untracked);
+  const file = (p: string) => repo.status.files.find((f) => f.path === p);
+  // New files (untracked, or staged but never committed) get ignored, which keeps them out of
+  // this and every later commit. Files git already tracks can't be ignored that way.
+  const newFiles = paths.filter((p) => file(p)?.untracked || file(p)?.index === "A");
+  const tracked = paths.filter((p) => !newFiles.includes(p));
+  if (newFiles.length) await appendIgnores(repo.root, newFiles);
 
-  const staged = paths.filter((p) => repo.status.files.find((f) => f.path === p)?.index);
+  const staged = paths.filter((p) => file(p)?.index);
   const unstage = staged.length ? [["restore", "--staged", "--", ...staged]] : [];
-  // For "commit all", keep the files out of the add with exclude pathspecs.
+  // For "commit all", keep tracked files out of the add with exclude pathspecs. Newly ignored
+  // files must not be named: git refuses an add that mentions an ignored path, even to exclude it.
   const steps = plan.steps.map((args) =>
-    args[0] === "add" && args[1] === "-A" ? ["add", "-A", "--", ".", ...paths.map((p) => `:(exclude)${p}`)] : args,
+    args[0] === "add" && args[1] === "-A" && tracked.length
+      ? ["add", "-A", "--", ".", ...tracked.map((p) => `:(exclude)${p}`)]
+      : args,
   );
   return [...unstage, ...steps];
 }
