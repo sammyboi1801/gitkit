@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="media/screenshots/demo.gif" width="900" alt="GitKit in action: staging, committing and pushing, a teammate's new commits, the Branch Map, resolving a conflict, a new worktree and Workflow Studio" />
+  <img src="media/screenshots/banner.gif" width="900" alt="GitKit: the logo, then conflicts flagged before you merge, every branch on a map, and why a check failed" />
 </p>
 
 GitKit adds a panel to VS Code that tells you, in plain words, what's going on in your project: what you've changed, what's waiting to be pushed, what your teammates did, and whether merging will go smoothly. The everyday actions are one click away, and the scary ones come with a safety net.
