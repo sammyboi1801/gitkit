@@ -75,13 +75,14 @@ const css = Object.entries(THEME)
   .map(([k, v]) => `--vscode-${k}: ${v};`)
   .join("\n  ");
 
-function page(entry, messages) {
+function page(entry, messages, extraCss = "") {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<style>:root {\n  ${css}\n}\nbody { margin: 0; background: var(--vscode-editor-background); }</style>
+<style>:root {\n  ${css}\n}\nbody { margin: 0; background: var(--vscode-editor-background); }
+${extraCss}</style>
 <link rel="stylesheet" href="../../dist/webview/${entry}.css" />
 </head>
 <body>
@@ -172,6 +173,25 @@ repo.ci = {
   url: "https://github.com",
   runId: null,
 };
+repo.pr = {
+  kind: "open",
+  signedIn: true,
+  pr: {
+    number: 42,
+    title: "feat: remote status on the Branch Map",
+    url: "https://github.com",
+    draft: false,
+    base: "main",
+    review: "required",
+    unresolved: 2,
+    mergeable: "clean",
+  },
+};
 writeFileSync(join(out, "map.html"), page("map", [{ type: "state", state: { kind: "repo", repo } }]));
+// Headless browsers lay pages out at least ~500px wide, so the sidebar width is set on the app itself.
+writeFileSync(
+  join(out, "pulse.html"),
+  page("pulse", [{ type: "state", state: { kind: "repo", repo, repos: [] } }], "#app { width: 300px; }"),
+);
 
 console.log(`Previews written to ${out}`);
