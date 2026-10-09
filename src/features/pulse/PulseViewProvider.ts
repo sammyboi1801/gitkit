@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
 import { parseConflicts, resolveConflict, sideNames, type Resolution } from "../../git/conflicts";
 import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discover";
+import { realPath } from "../../git/paths";
 import {
   findWorkspaceRepo,
   predictConflicts,
@@ -737,7 +738,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (!agent) return;
     // The terminal may be in this window's repo, or in one of its worktrees opened by path.
     const candidates = [...(this.roots ?? []), ...(this.repo?.worktrees.map((w) => w.path) ?? [])];
-    const root = repoForPath(cwd, candidates);
+    // Compared as real paths: the terminal may report a junction, a symlink or an 8.3 short name.
+    const real = candidates.map(realPath);
+    const match = repoForPath(realPath(cwd), real);
+    const root = match === undefined ? undefined : candidates[real.indexOf(match)];
     if (!root) return;
     const key = pathKey(root);
     if (Date.now() - (this.lastAutoCheckpoint.get(key) ?? 0) < AUTO_CHECKPOINT_GAP_MS) return;

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { discoverRepos, pathKey } from "../../src/git/discover";
@@ -336,5 +336,15 @@ describe("discovering repos that have worktrees", () => {
     mkdirSync(other);
     initRepo(other);
     expect(keys(await discoverRepos([base], 2, noRoot))).toEqual(keys([app, join(app, "lib"), other]));
+  });
+});
+
+describe("realPath", () => {
+  it("resolves another name for a folder, even for a path inside it that doesn't exist yet", () => {
+    const target = tempDir();
+    const link = join(tempDir(), "link");
+    symlinkSync(target, link, "junction");
+    expect(realPath(link)).toBe(realPath(target));
+    expect(realPath(join(link, "missing", "deeper"))).toBe(join(realPath(target), "missing", "deeper"));
   });
 });

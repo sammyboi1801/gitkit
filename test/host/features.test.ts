@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activate } from "../../src/extension";
@@ -9,7 +9,7 @@ import type { WorkflowModel } from "../../src/workflow/model";
 import { DEFAULT_AGENTS } from "../../src/features/pulse/PulseViewProvider";
 import { listCheckpoints, readCheckpointState } from "../../src/git/checkpoints";
 import { formatCommand } from "../../src/git/format";
-import { samePath } from "../../src/git/paths";
+import { realPath, samePath } from "../../src/git/paths";
 import { commit, git, initRepo, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
 import { harness, Uri } from "../mocks/vscode";
 import { memento, openPanel } from "./helpers";
@@ -646,7 +646,8 @@ describe("worktrees", () => {
       harness.answers.push("agent/fix-login", "Create", undefined);
       await panel.send({ type: "newWorktree" });
 
-      const target = join(base, "app.worktrees", "agent-fix-login");
+      // Git (and so the extension) reports the long folder name; the temp dir may be an 8.3 short one.
+      const target = join(realPath(base), "app.worktrees", "agent-fix-login");
       expect(modal().message).toBe(`Create a worktree for agent/fix-login (new, from main) at ${target}?`);
       expect(modal().detail).toContain(formatCommand(["worktree", "add", "-b", "agent/fix-login", target, "main"]));
       expect(modal().detail).toContain(
@@ -889,6 +890,20 @@ describe("checkpoints", () => {
     await panel.provider.whenIdle();
     expect((await readCheckpointState(tree)).checkpoints.map((c) => c.reason)).toEqual(["before codex"]);
     expect((await readCheckpointState(app)).checkpoints).toEqual([]);
+  });
+
+  it("recognises the worktree however the terminal spells its folder (junction, symlink, short name)", async () => {
+    const app = makeRepo();
+    const tree = join(tempDir(), "agent");
+    git(app, "worktree", "add", "-q", "-b", "agent/x", tree);
+    write(tree, "agent.txt", "agent work\n");
+    // Another name for the same folder, like an 8.3 short path on Windows.
+    const link = join(tempDir(), "link");
+    symlinkSync(tree, link, "junction");
+    const panel = await openPanel(app);
+    terminal("codex", join(link, "src", "not-created-yet"));
+    await panel.provider.whenIdle();
+    expect((await readCheckpointState(tree)).checkpoints.map((c) => c.reason)).toEqual(["before codex"]);
   });
 
   it("does nothing outside this window's repos, or when turned off", async () => {
