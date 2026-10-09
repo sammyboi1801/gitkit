@@ -12,7 +12,7 @@ const created: string[] = [];
 // Registered once per test file that imports this module.
 afterEach(() => {
   // Windows can hold a file briefly after a process exits; retry instead of failing the test.
-  for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 25, retryDelay: 200 });
 });
 
 /**
