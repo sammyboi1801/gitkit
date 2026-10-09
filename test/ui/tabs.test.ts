@@ -91,6 +91,19 @@ describe("Branch Map", () => {
         repoState({ status: { branch: "feat/login", oid: "x" }, commits, base: { ...base, conflicts: [] } }),
       );
       expect(within(strip()).getByText("merges cleanly")).toBeTruthy();
+
+      // Mid-merge, the forecast is about the conflict you're in, and updating again makes no sense.
+      await update(
+        repoState({
+          status: { branch: "feat/login", oid: "x" },
+          commits,
+          operation: "merge",
+          base: { ...base, conflicts: ["app.ts"] },
+        }),
+      );
+      expect(within(strip()).queryByText(/would conflict/)).toBeNull();
+      expect(within(strip()).getByText("merge in progress")).toBeTruthy();
+      expect(within(strip()).queryByRole("button", { name: /main/ })).toBeNull();
     });
 
     it("shows CI for the last push and when the remote was last checked, with a way to check now", async () => {

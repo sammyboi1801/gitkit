@@ -73,19 +73,24 @@
           <span class="ok"><span class="codicon codicon-check"></span>up to date</span>
         {:else}
           <span class="pill in">{base.behind} new since you branched</span>
-          {#if base.conflicts && base.conflicts.length}
+          <!-- Mid-merge, the forecast is about the conflict you're already in. -->
+          {#if repo.operation}
+            <span class="muted">{repo.operation} in progress</span>
+          {:else if base.conflicts && base.conflicts.length}
             <span class="warn" title={base.conflicts.join("\n")}
               ><span class="codicon codicon-warning"></span>would conflict in {base.conflicts.join(", ")}</span
             >
           {:else}
             <span class="ok"><span class="codicon codicon-pass"></span>merges cleanly</span>
           {/if}
-          <button
-            class="small-button"
-            disabled={!update.ok || !!busy}
-            title={update.text}
-            onclick={() => run({ type: "updateFromBase" })}>{update.label || `Update from ${base.name}`}</button
-          >
+          {#if !repo.operation}
+            <button
+              class="small-button"
+              disabled={!update.ok || !!busy}
+              title={update.text}
+              onclick={() => run({ type: "updateFromBase" })}>{update.label || `Update from ${base.name}`}</button
+            >
+          {/if}
         {/if}
       </span>
     {/if}
