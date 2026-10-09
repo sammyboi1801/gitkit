@@ -578,7 +578,7 @@ describe("Workflow Studio", () => {
     const editor = screen.getByRole("dialog", { name: "Edit New job" });
     // It starts with the others, so it runs after nothing.
     expect(within(editor).queryByRole("button", { name: "Lint", pressed: true })).toBeNull();
-    expect(within(editor).getByRole("button", { name: /actions\/checkout@v5/ })).toBeTruthy();
+    expect(within(editor).getByRole("button", { name: /actions\/checkout@v7/ })).toBeTruthy();
     expect(within(editor).getByRole("button", { name: /Run a command/ })).toBeTruthy();
   });
 
@@ -592,9 +592,12 @@ describe("Workflow Studio", () => {
       within(editor)
         .getAllByRole("button", { expanded: false })
         .map((b) => b.textContent?.replace(/\s+/g, " ").trim());
-    expect(steps()).toEqual(["1 actions/checkout@v5", "2 actions/setup-node@v5", "3 npm ci", "4 npm test"]);
-    // The version matrix it had is kept.
-    expect(within(editor).getByText(/kept as is: strategy/)).toBeTruthy();
+    expect(steps()).toEqual(["1 actions/checkout@v7", "2 actions/setup-node@v7", "3 npm ci", "4 npm test"]);
+    // The version matrix it had is kept, and editable as a "Run for each" variable.
+    await fireEvent.click(within(editor).getByText("More options"));
+    expect((within(editor).getByRole("textbox", { name: "Values of node-version" }) as HTMLInputElement).value).toBe(
+      "22, 24",
+    );
 
     await fireEvent.click(within(editor).getByRole("button", { name: /npm test/ }));
     await fireEvent.input(within(editor).getByRole("textbox", { name: /^Command/ }), {
@@ -608,7 +611,7 @@ describe("Workflow Studio", () => {
 
     await fireEvent.click(within(editor).getByRole("button", { name: /Add a step/ }));
     await fireEvent.click(within(editor).getByRole("button", { name: "Set up Python" }));
-    expect(yamlText()).toContain("uses: actions/setup-python@v6");
+    expect(yamlText()).toContain("uses: actions/setup-python@v7");
     await fireEvent.click(within(editor).getByRole("button", { name: "Remove step 5" }));
     expect(yamlText()).not.toContain("setup-python");
   });
@@ -620,13 +623,13 @@ describe("Workflow Studio", () => {
     await fireEvent.click(screen.getByRole("button", { name: /Customize the steps/ }));
     const editor = screen.getByRole("dialog", { name: "Edit Lint" });
     const lintSteps = () => (parse(yamlText()).jobs.lint.steps as Record<string, unknown>[]).slice(0, 2);
-    await fireEvent.click(within(editor).getByRole("button", { name: /actions\/setup-node@v5/ }));
+    await fireEvent.click(within(editor).getByRole("button", { name: /actions\/setup-node@v7/ }));
     await fireEvent.input(within(editor).getByRole("textbox", { name: "Value of cache" }), {
       target: { value: "pnpm" },
     });
-    expect(lintSteps()[1]).toEqual({ uses: "actions/setup-node@v5", with: { "node-version": "lts/*", cache: "pnpm" } });
+    expect(lintSteps()[1]).toEqual({ uses: "actions/setup-node@v7", with: { "node-version": "lts/*", cache: "pnpm" } });
     await fireEvent.click(within(editor).getByRole("button", { name: "Remove input cache" }));
-    expect(lintSteps()[1]).toEqual({ uses: "actions/setup-node@v5", with: { "node-version": "lts/*" } });
+    expect(lintSteps()[1]).toEqual({ uses: "actions/setup-node@v7", with: { "node-version": "lts/*" } });
     await fireEvent.click(within(editor).getByRole("radio", { name: "Command" }));
     await fireEvent.input(within(editor).getByRole("textbox", { name: /^Command/ }), { target: { value: "make" } });
     expect(lintSteps()[1]).toEqual({ run: "make" });
@@ -694,11 +697,183 @@ describe("Workflow Studio", () => {
     await fireEvent.click(screen.getByRole("button", { name: /^deploy\b/ }));
     const editor = screen.getByRole("dialog", { name: "Edit deploy" });
     expect(within(editor).getByText("self-hosted, linux")).toBeTruthy();
-    expect(within(editor).getByText(/kept as is: environment/)).toBeTruthy();
+    expect((within(editor).getByPlaceholderText("production") as HTMLInputElement).value).toBe("production");
     expect(within(editor).getByRole("button", { name: "build", pressed: true })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
     expect(lastSent()).toMatchObject({ type: "save", model: { file: "docs.yml", rawOn: model.rawOn } });
+  });
+
+  describe("doing everything", () => {
+    const yaml = () => parse(yamlText());
+    /** Check every push, YAML shown, the given job's panel open (customized into steps if asked). */
+    const editJob = async (name: RegExp, title: string, customize = false) => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await fireEvent.click(screen.getByRole("button", { name }));
+      if (customize) await fireEvent.click(screen.getByRole("button", { name: /Customize the steps/ }));
+      return screen.getByRole("dialog", { name: `Edit ${title}` });
+    };
+    const open = async (scope: HTMLElement, summary: string) => {
+      const toggle = within(scope)
+        .getAllByText(summary)
+        .find((s) => !(s.parentElement as HTMLDetailsElement).open)!;
+      await fireEvent.click(toggle);
+    };
+
+    it("finds ready-made steps by searching, and says what to do when there's none", async () => {
+      const editor = await editJob(/^Test\b/, "Test", true);
+      await fireEvent.click(within(editor).getByRole("button", { name: /Add a step/ }));
+      const picker = within(screen.getByRole("group", { name: "Choose a step to add" }));
+      expect(picker.getByRole("heading", { name: "Set up a language" })).toBeTruthy();
+      await fireEvent.input(picker.getByRole("textbox", { name: "Search steps" }), {
+        target: { value: "docker push" },
+      });
+      expect(picker.getByRole("button", { name: "Build and push an image" })).toBeTruthy();
+      expect(picker.queryByRole("button", { name: "Set up Python" })).toBeNull();
+      // The action's own name finds it too.
+      await fireEvent.input(picker.getByRole("textbox", { name: "Search steps" }), { target: { value: "setup-java" } });
+      expect(picker.getByRole("button", { name: "Set up Java" })).toBeTruthy();
+      await fireEvent.input(picker.getByRole("textbox", { name: "Search steps" }), { target: { value: "terraform" } });
+      expect(picker.getByText(/No ready-made step for "terraform"/)).toBeTruthy();
+      await fireEvent.click(picker.getByRole("button", { name: "use an action" }));
+      expect(yaml().jobs.test.steps.at(-1)).toEqual({});
+    });
+
+    it("gives a job the access a step needs, and says so", async () => {
+      const editor = await editJob(/^Lint\b/, "Lint", true);
+      await fireEvent.click(within(editor).getByRole("button", { name: /Add a step/ }));
+      await fireEvent.click(within(editor).getByRole("button", { name: "Create a GitHub release" }));
+      expect(within(editor).getByRole("status").textContent).toMatch(
+        /That step needs contents \(write\): given to this job only\./,
+      );
+      expect(yaml().jobs.lint.permissions).toEqual({ contents: "write" });
+      expect(yaml().permissions).toEqual({ contents: "read" });
+    });
+
+    it("sets a step's environment, shell, timeout and failure handling", async () => {
+      const editor = await editJob(/^Test\b/, "Test", true);
+      await fireEvent.click(within(editor).getByRole("button", { name: /npm test/ }));
+      await open(editor, "More options");
+      const options = within(editor.querySelector(".step-options") as HTMLElement);
+      await fireEvent.click(options.getByRole("button", { name: /Add a variable/ }));
+      await fireEvent.input(options.getByRole("textbox", { name: "Environment variables: name" }), {
+        target: { value: "CI" },
+      });
+      await fireEvent.input(options.getByRole("textbox", { name: "Environment variables: value of CI" }), {
+        target: { value: "true" },
+      });
+      await fireEvent.change(options.getByRole("combobox", { name: /Shell/ }), { target: { value: "bash" } });
+      await fireEvent.input(options.getByRole("spinbutton", { name: /Stop after/ }), { target: { value: "5" } });
+      await fireEvent.click(options.getByRole("checkbox", { name: /Keep going if this step fails/ }));
+      expect(yaml().jobs.test.steps.at(-1)).toEqual({
+        run: "npm test",
+        env: { CI: true },
+        shell: "bash",
+        "timeout-minutes": 5,
+        "continue-on-error": true,
+      });
+      // Clearing a field removes it again.
+      await fireEvent.change(options.getByRole("combobox", { name: /Shell/ }), { target: { value: "" } });
+      expect(yaml().jobs.test.steps.at(-1).shell).toBeUndefined();
+    });
+
+    it("sets a job's condition, services, matrix, permissions and timeout", async () => {
+      const editor = await editJob(/^Lint\b/, "Lint", true);
+      await open(editor, "More options");
+      const options = within(editor.querySelector(".job-options") as HTMLElement);
+      await fireEvent.input(options.getByRole("textbox", { name: /Only run if/ }), {
+        target: { value: "github.ref == 'refs/heads/main'" },
+      });
+      await fireEvent.click(options.getByRole("button", { name: /Add a database or other service/ }));
+      await fireEvent.input(options.getByRole("textbox", { name: "Service name" }), { target: { value: "postgres" } });
+      await fireEvent.input(options.getByRole("textbox", { name: "Image of postgres" }), {
+        target: { value: "postgres:17" },
+      });
+      await fireEvent.input(options.getByRole("textbox", { name: "Ports of postgres" }), {
+        target: { value: "5432:5432" },
+      });
+      await fireEvent.click(
+        within(options.getByRole("group", { name: "Run for each" })).getByRole("button", { name: /Add a variable/ }),
+      );
+      await fireEvent.input(options.getByRole("textbox", { name: "Matrix variable" }), { target: { value: "os" } });
+      await fireEvent.input(options.getByRole("textbox", { name: "Values of os" }), {
+        target: { value: "ubuntu-latest, windows-latest" },
+      });
+      await fireEvent.change(options.getByRole("combobox", { name: "pull-requests permission" }), {
+        target: { value: "write" },
+      });
+      await fireEvent.input(options.getByRole("spinbutton", { name: /Stop after/ }), { target: { value: "20" } });
+
+      const lint = yaml().jobs.lint;
+      expect(lint.if).toBe("github.ref == 'refs/heads/main'");
+      expect(lint.services).toEqual({ postgres: { image: "postgres:17", ports: ["5432:5432"] } });
+      expect(lint.strategy).toEqual({ matrix: { os: ["ubuntu-latest", "windows-latest"] } });
+      expect(lint.permissions).toEqual({ "pull-requests": "write" });
+      expect(lint["timeout-minutes"]).toBe(20);
+    });
+
+    it("writes anything else into a job as YAML, and says what's wrong with invalid YAML", async () => {
+      const editor = await editJob(/^Lint\b/, "Lint");
+      await open(editor, "More options");
+      await open(editor, "Job settings as YAML");
+      const box = await within(editor).findByRole("textbox", { name: /^Everything set above/ });
+      await fireEvent.input(box, { target: { value: "outputs: [oops" } });
+      expect(within(editor).getByRole("alert").textContent).toMatch(/^Not applied yet:/);
+      await fireEvent.input(box, {
+        target: { value: "outputs:\n  version: ${{ steps.v.outputs.version }}\nenv:\n  A: '1'\n" },
+      });
+      expect(within(editor).queryByRole("alert")).toBeNull();
+      expect(yaml().jobs.lint.outputs).toEqual({ version: "${{ steps.v.outputs.version }}" });
+      // The fields follow what the YAML set.
+      expect(
+        (within(editor).getByRole("textbox", { name: "Environment variables: name" }) as HTMLInputElement).value,
+      ).toBe("A");
+    });
+
+    it("sets workflow-wide variables and the run name", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      const settings = within(screen.getByRole("region", { name: "More settings" }));
+      await fireEvent.click(settings.getByRole("button", { name: /Add a variable/ }));
+      await fireEvent.input(settings.getByRole("textbox", { name: "Environment variables: name" }), {
+        target: { value: "FORCE_COLOR" },
+      });
+      await fireEvent.input(settings.getByRole("textbox", { name: "Environment variables: value of FORCE_COLOR" }), {
+        target: { value: "1" },
+      });
+      await fireEvent.input(settings.getByRole("textbox", { name: /Name of each run/ }), {
+        target: { value: "CI for ${{ github.ref_name }}" },
+      });
+      expect(yaml().env).toEqual({ FORCE_COLOR: 1 });
+      expect(yaml()["run-name"]).toBe("CI for ${{ github.ref_name }}");
+      expect(Object.keys(yaml()).slice(0, 3)).toEqual(["name", "run-name", "on"]);
+    });
+
+    it("adds any other trigger as YAML from 'Add a trigger'", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await fireEvent.click(screen.getByRole("button", { name: /Add a trigger/ }));
+      await fireEvent.click(screen.getByRole("button", { name: /Something else/ }));
+      const box = await screen.findByRole("textbox", { name: /^When it runs/ });
+      await fireEvent.input(box, { target: { value: "release:\n  types: [published]\nworkflow_dispatch:\n" } });
+      expect(screen.getByText("on release, workflow_dispatch (kept as written)")).toBeTruthy();
+      expect(yaml().on).toEqual({ release: { types: ["published"] }, workflow_dispatch: null });
+      // Back to something the chips can show: chips again.
+      await fireEvent.input(box, { target: { value: "push:\n  branches: [main]\n" } });
+      expect(screen.getByRole("button", { name: "on pushes to main" })).toBeTruthy();
+    });
+
+    it("always shows the schedule's cron, and lets you type one", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Add a trigger/ }));
+      await fireEvent.click(screen.getByRole("button", { name: "On a schedule" }));
+      const cron = screen.getByRole("textbox", { name: /Cron expression/ }) as HTMLInputElement;
+      expect(cron.value).toMatch(/^\d+ \d+ /);
+      await fireEvent.input(cron, { target: { value: "15 3 * * *" } });
+      expect(screen.getByRole("button", { name: "every day at 03:15 UTC" })).toBeTruthy();
+      expect(screen.getByText(/^every day at 03:15 UTC\. Fields: minute hour/)).toBeTruthy();
+    });
   });
 
   it("shows files it can't read, with a way to open them and a way back", async () => {

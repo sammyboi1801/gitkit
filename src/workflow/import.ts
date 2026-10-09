@@ -26,10 +26,7 @@ export function importWorkflow(text: string, file: string): WorkflowModel {
     cancelSuperseded: false,
   };
 
-  const mapped = mapTriggers(on);
-  model.triggers = mapped ?? emptyTriggers();
-  // Keep the original unless Studio's version would come out exactly the same.
-  if (!mapped || !same(triggersYaml(model), normalizeOn(on))) model.rawOn = on;
+  applyOn(model, on);
 
   const extra: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
@@ -44,6 +41,17 @@ export function importWorkflow(text: string, file: string): WorkflowModel {
     model.jobs.push(importJob(id, raw ?? {}));
   }
   return model;
+}
+
+/**
+ * Sets a model's triggers from an `on:` value (from a file, or typed as YAML): as the builder's
+ * chips when they say exactly the same, otherwise kept as written.
+ */
+export function applyOn(model: WorkflowModel, on: unknown): void {
+  const mapped = mapTriggers(on);
+  model.triggers = mapped ?? emptyTriggers();
+  delete model.rawOn;
+  if (!mapped || !same(triggersYaml(model), normalizeOn(on))) model.rawOn = on;
 }
 
 function importJob(id: string, raw: Record<string, unknown>): Job {

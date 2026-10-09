@@ -175,7 +175,7 @@ describe("own steps", () => {
 
   it("starts new step jobs with a checkout and a command", () => {
     expect(newJob("steps", []).steps).toEqual([
-      { uses: "actions/checkout@v5" },
+      { uses: "actions/checkout@v7" },
       { name: "Run a command", run: "echo hello" },
     ]);
   });

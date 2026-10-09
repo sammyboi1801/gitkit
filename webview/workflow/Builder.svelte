@@ -2,9 +2,9 @@
   import { tick } from "svelte";
   import {
     RUNNERS,
-    STEP_PRESETS,
     TEMPLATES,
     WEEKDAYS,
+    addPreset,
     cronFor,
     describeSchedule,
     newJob,
@@ -22,6 +22,10 @@
     type Triggers,
     type WorkflowModel,
   } from "../../src/workflow/model";
+  import JobOptions from "./JobOptions.svelte";
+  import StepOptions from "./StepOptions.svelte";
+  import StepPicker from "./StepPicker.svelte";
+  import WorkflowSettings from "./WorkflowSettings.svelte";
 
   let {
     model = $bindable(),
@@ -57,6 +61,11 @@
   let addingStep = $state(false);
   /** The person chose "Custom" for the schedule, so the cron field shows even for a simple cron. */
   let customCron = $state(false);
+  /** Access the last added step needed, granted to its job: said once, under the steps. */
+  let granted: string[] = $state([]);
+  /** The "Triggers as YAML" box in More settings, opened by "Something else…". */
+  let triggersYamlOpen = $state(false);
+  let settingsCard: HTMLElement | undefined = $state();
 
   const FREQUENCIES: { value: Frequency; label: string }[] = [
     { value: "hourly", label: "Every hour" },
@@ -72,7 +81,20 @@
   /** Every five minutes, plus whatever odd minute the cron already uses. */
   const minutes = (current: number) =>
     [...new Set([...Array.from({ length: 12 }, (_, i) => i * 5), current])].sort((a, b) => a - b);
-  const KNOWN_STEP_KEYS = ["name", "run", "uses", "with", "if"];
+  // Keys the step editor has fields for; anything else is listed as kept as written.
+  const KNOWN_STEP_KEYS = [
+    "name",
+    "run",
+    "uses",
+    "with",
+    "if",
+    "id",
+    "env",
+    "working-directory",
+    "shell",
+    "timeout-minutes",
+    "continue-on-error",
+  ];
 
   const isOn = (key: TriggerKey) => (key === "manual" ? model.triggers.manual : model.triggers[key].enabled);
   const active = $derived(TRIGGERS.filter((t) => isOn(t.key)));
@@ -138,6 +160,7 @@
     if (job !== selected) {
       openStep = null;
       addingStep = false;
+      granted = [];
     }
     selected = job;
     await tick();
@@ -191,8 +214,22 @@
   const isAction = (s: Step) => s.uses !== undefined;
   /** Keys the step editor doesn't show; they're kept as written. */
   const otherKeys = (s: Step) => Object.keys(s).filter((k) => !KNOWN_STEP_KEYS.includes(k));
-  /** Job-level keys from a file (matrix, services, env...) that Studio keeps without editing. */
-  const keptKeys = (job: Job) => Object.keys(job.extra ?? {}).filter((k) => k !== "runs-on" && k !== "uses");
+  // Job keys that have a field under More options; any others are listed as kept as written.
+  const JOB_FIELDS = [
+    "runs-on",
+    "uses",
+    "env",
+    "if",
+    "strategy",
+    "services",
+    "timeout-minutes",
+    "continue-on-error",
+    "environment",
+    "container",
+    "defaults",
+    "permissions",
+  ];
+  const keptKeys = (job: Job) => Object.keys(job.extra ?? {}).filter((k) => !JOB_FIELDS.includes(k));
 
   /** Turns a ready-made job into its steps so each one can be edited. */
   async function customize(job: Job) {
@@ -203,9 +240,18 @@
   }
 
   function addStep(job: Job, preset: string) {
-    job.steps = [...(job.steps ?? []), structuredClone(STEP_PRESETS[preset].step)];
-    openStep = job.steps.length - 1;
+    const added = addPreset(job, preset, model.readOnlyPermissions);
+    openStep = added.first;
+    granted = added.granted;
     addingStep = false;
+  }
+
+  async function otherTriggers() {
+    addingTrigger = false;
+    triggersYamlOpen = true;
+    await tick();
+    settingsCard?.scrollIntoView?.({ block: "nearest" });
+    settingsCard?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
   }
 
   function moveStep(job: Job, i: number, by: number) {
@@ -304,6 +350,9 @@
           <span class="codicon codicon-lock chip-icon" aria-hidden="true"></span>
           <span class="trigger-chip">on {rawEvents.join(", ") || "custom events"} (kept as written)</span>
         </span>
+        <button class="add-chip" onclick={otherTriggers}>
+          <span class="codicon codicon-code"></span>Edit as YAML
+        </button>
         <button class="add-chip" onclick={() => (model.rawOn = undefined)}>
           <span class="codicon codicon-edit"></span>Replace with simple triggers
         </button>
@@ -328,7 +377,7 @@
           </button>
         </span>
       {/each}
-      {#if model.rawOn === undefined && TRIGGERS.some((t) => !isOn(t.key))}
+      {#if model.rawOn === undefined}
         <button class="add-chip" aria-expanded={addingTrigger} onclick={() => (addingTrigger = !addingTrigger)}>
           <span class="codicon codicon-add"></span>Add a trigger
         </button>
@@ -342,6 +391,10 @@
             <span class="codicon codicon-{t.icon}" aria-hidden="true"></span>{t.add}
           </button>
         {/each}
+        <button class="option" onclick={otherTriggers}>
+          <span class="codicon codicon-code" aria-hidden="true"></span>Something else (releases, issues, other
+          workflows…)
+        </button>
       </div>
     {/if}
 
@@ -430,13 +483,14 @@
               </label>
             {/if}
           </div>
-          {#if !spec}
-            <label class="field">
-              <span class="field-label">Cron expression</span>
-              <input class="mono short" bind:value={model.triggers.schedule.cron} />
-              <span class="field-hint">minute hour day month weekday, in UTC</span>
-            </label>
-          {/if}
+          <label class="field">
+            <span class="field-label">Cron expression</span>
+            <input class="mono short" spellcheck="false" bind:value={model.triggers.schedule.cron} />
+            <span class="field-hint"
+              >{describeSchedule(model.triggers.schedule.cron)}. Fields: minute hour day-of-month month day-of-week, in
+              UTC; * means every.</span
+            >
+          </label>
           <span class="field-hint">GitHub may start scheduled runs a few minutes late when it's busy.</span>
         {/if}
         <button class="done-link" onclick={() => (editingTrigger = null)}>Done</button>
@@ -518,6 +572,10 @@
       </span>
     </label>
   </section>
+
+  <div bind:this={settingsCard}>
+    <WorkflowSettings bind:model bind:triggersOpen={triggersYamlOpen} />
+  </div>
 
   {#if general.length}
     <ul class="problems" aria-label="Problems to fix">
@@ -761,6 +819,7 @@
                       <span class="field-label">Only if<span class="optional"> optional</span></span>
                       <input class="mono" bind:value={step.if} placeholder="github.ref == 'refs/heads/main'" />
                     </label>
+                    <StepOptions {step} />
                     {#if otherKeys(step).length}
                       <span class="field-hint"
                         >Also set in the file, kept as written: {otherKeys(step).join(", ")}.</span
@@ -771,14 +830,14 @@
               </li>
             {/each}
           </ol>
+          {#if granted.length}
+            <p class="notice" role="status">
+              <span class="codicon codicon-shield" aria-hidden="true"></span>
+              <span>That step needs {granted.join(", ")}: given to this job only.</span>
+            </p>
+          {/if}
           {#if addingStep}
-            <div class="step-presets" role="group" aria-label="Choose a step to add">
-              {#each Object.entries(STEP_PRESETS) as [key, preset] (key)}
-                <button class="option" onclick={() => addStep(job, key)}>
-                  <span class="codicon codicon-{preset.icon}" aria-hidden="true"></span>{preset.label}
-                </button>
-              {/each}
-            </div>
+            <StepPicker onpick={(key) => addStep(job, key)} oncancel={() => (addingStep = false)} />
           {:else}
             <button class="ghost-card" onclick={() => (addingStep = true)}
               ><span class="codicon codicon-add"></span>Add a step</button
@@ -797,7 +856,10 @@
       {#if keptKeys(job).length}
         <p class="notice kept">
           <span class="codicon codicon-lock" aria-hidden="true"></span>
-          <span>Also in this job, kept as is: {keptKeys(job).join(", ")}.</span>
+          <span
+            >Also in this job, kept as is: {keptKeys(job).join(", ")}. Edit them under More options → Job settings as
+            YAML.</span
+          >
         </p>
       {/if}
 
@@ -827,13 +889,10 @@
         </p>
       {/if}
 
-      <details class="advanced">
-        <summary>Advanced</summary>
-        <label class="field">
-          <span class="field-label">Id in the YAML</span>
-          <input class="mono" value={job.id} onchange={(e) => renameId(job, e.currentTarget.value.trim())} />
-        </label>
-      </details>
+      <!-- Keyed: its rows (matrix, services) are read once, from the job it was opened for. -->
+      {#key job}
+        <JobOptions {job} onrename={(id) => renameId(job, id)} />
+      {/key}
     </div>
 
     <div class="drawer-foot">

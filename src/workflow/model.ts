@@ -124,7 +124,7 @@ export const TEMPLATES: Template[] = [
     stack: "node",
     icon: "beaker",
     group: "check",
-    versionChoices: ["20", "22", "24"],
+    versionChoices: ["22", "24", "26"],
     description: "Run tests on each Node version.",
     matrixKey: "node-version",
     defaultVersions: ["22", "24"],
@@ -159,10 +159,10 @@ export const TEMPLATES: Template[] = [
     stack: "python",
     icon: "beaker",
     group: "check",
-    versionChoices: ["3.9", "3.10", "3.11", "3.12", "3.13"],
+    versionChoices: ["3.11", "3.12", "3.13", "3.14"],
     description: "Run pytest on each Python version.",
     matrixKey: "python-version",
-    defaultVersions: ["3.11", "3.12"],
+    defaultVersions: ["3.13", "3.14"],
     defaultId: "test",
     inputs: [
       {
@@ -191,10 +191,10 @@ export const TEMPLATES: Template[] = [
     stack: "go",
     icon: "beaker",
     group: "check",
-    versionChoices: ["1.21", "1.22", "1.23", "1.24"],
+    versionChoices: ["1.25", "1.26", "1.27"],
     description: "Run go test on each Go version.",
     matrixKey: "go-version",
-    defaultVersions: ["1.22", "1.23"],
+    defaultVersions: ["1.26", "1.27"],
     defaultId: "test",
     inputs: [{ key: "command", label: "Command", placeholder: "go test ./...", default: "go test ./..." }],
   },
@@ -287,50 +287,325 @@ export function newJob(id: TemplateId, existing: readonly Job[]): Job {
     needs: [],
     inputs: Object.fromEntries(t.inputs.map((i) => [i.key, i.default])),
   };
-  if (id === "steps") job.steps = [{ ...STEP_PRESETS.checkout.step }, { name: "Run a command", run: "echo hello" }];
+  if (id === "steps") job.steps = [{ uses: ACTIONS.checkout }, { name: "Run a command", run: "echo hello" }];
   return job;
 }
 
 // --- Steps ----------------------------------------------------------------------------------
 
+// Current major versions as of October 2026 (checked against each action's latest release).
 export const ACTIONS = {
-  checkout: "actions/checkout@v5",
-  node: "actions/setup-node@v5",
-  python: "actions/setup-python@v6",
-  go: "actions/setup-go@v6",
-  cache: "actions/cache@v4",
-  upload: "actions/upload-artifact@v4",
-  buildx: "docker/setup-buildx-action@v3",
-  dockerBuild: "docker/build-push-action@v6",
-  dockerLogin: "docker/login-action@v3",
-  dockerMeta: "docker/metadata-action@v5",
-  pagesConfigure: "actions/configure-pages@v5",
-  pagesUpload: "actions/upload-pages-artifact@v3",
-  pagesDeploy: "actions/deploy-pages@v4",
+  checkout: "actions/checkout@v7",
+  node: "actions/setup-node@v7",
+  python: "actions/setup-python@v7",
+  go: "actions/setup-go@v7",
+  java: "actions/setup-java@v6",
+  dotnet: "actions/setup-dotnet@v6",
+  ruby: "ruby/setup-ruby@v1",
+  bun: "oven-sh/setup-bun@v2",
+  pnpm: "pnpm/action-setup@v6",
+  cache: "actions/cache@v6",
+  upload: "actions/upload-artifact@v7",
+  download: "actions/download-artifact@v8",
+  buildx: "docker/setup-buildx-action@v4",
+  dockerBuild: "docker/build-push-action@v7",
+  dockerLogin: "docker/login-action@v4",
+  dockerMeta: "docker/metadata-action@v6",
+  pagesConfigure: "actions/configure-pages@v6",
+  pagesUpload: "actions/upload-pages-artifact@v5",
+  pagesDeploy: "actions/deploy-pages@v5",
 };
 
-/** Ready-made steps offered by "Add a step". */
-export const STEP_PRESETS: Record<string, { label: string; icon: string; step: Step }> = {
-  run: { label: "Run a command", icon: "terminal", step: { name: "Run a command", run: "" } },
-  action: { label: "Use an action", icon: "extensions", step: { uses: "", with: {} } },
-  checkout: { label: "Check out the code", icon: "repo-clone", step: { uses: ACTIONS.checkout } },
+export interface StepPreset {
+  label: string;
+  /** One line on what it's for, shown in the picker and searched. */
+  description: string;
+  icon: string;
+  group: (typeof STEP_GROUPS)[number];
+  /** Some presets are a few steps that only make sense together (Pages: configure, upload, deploy). */
+  steps: Step[];
+  /** Token access the steps need; granted to the job they're added to, not the whole workflow. */
+  permissions?: Record<string, "read" | "write">;
+}
+
+export const STEP_GROUPS = ["Basics", "Set up a language", "Files and speed", "Docker", "GitHub", "Publish"] as const;
+
+const GH_TOKEN = { GH_TOKEN: "${{ github.token }}" };
+
+/** Ready-made steps offered by "Add a step", by group. Everything is editable once added. */
+export const STEP_PRESETS: Record<string, StepPreset> = {
+  run: {
+    label: "Run a command",
+    description: "Any shell command, or several lines of them.",
+    icon: "terminal",
+    group: "Basics",
+    steps: [{ name: "Run a command", run: "" }],
+  },
+  script: {
+    label: "Run a script file",
+    description: "A script from the repository, like ./scripts/build.sh.",
+    icon: "file-code",
+    group: "Basics",
+    steps: [{ name: "Run a script", run: "./scripts/build.sh" }],
+  },
+  action: {
+    label: "Use an action",
+    description: "Any action from the GitHub Marketplace, with its inputs.",
+    icon: "extensions",
+    group: "Basics",
+    steps: [{ uses: "", with: {} }],
+  },
+  checkout: {
+    label: "Check out the code",
+    description: "Get the repository's files. Most jobs start with this.",
+    icon: "repo-clone",
+    group: "Basics",
+    steps: [{ uses: ACTIONS.checkout }],
+  },
+  "checkout-full": {
+    label: "Check out with full history",
+    description: "All commits and tags, for versioning, changelogs or blame.",
+    icon: "history",
+    group: "Basics",
+    steps: [{ uses: ACTIONS.checkout, with: { "fetch-depth": 0 } }],
+  },
+  "set-env": {
+    label: "Set a variable for later steps",
+    description: "Make a value available to every step after this one.",
+    icon: "symbol-variable",
+    group: "Basics",
+    steps: [{ name: "Set a variable", run: 'echo "NAME=value" >> "$GITHUB_ENV"' }],
+  },
+  summary: {
+    label: "Write to the run summary",
+    description: "Markdown shown on the run's page on GitHub.",
+    icon: "markdown",
+    group: "Basics",
+    steps: [{ name: "Write a summary", run: 'echo "### Done :rocket:" >> "$GITHUB_STEP_SUMMARY"' }],
+  },
   node: {
     label: "Set up Node.js",
+    description: "Install a Node.js version (latest LTS by default).",
     icon: "symbol-event",
-    step: { uses: ACTIONS.node, with: { "node-version": "lts/*" } },
+    group: "Set up a language",
+    steps: [{ uses: ACTIONS.node, with: { "node-version": "lts/*" } }],
+  },
+  pnpm: {
+    label: "Set up pnpm",
+    description: "Install pnpm, using the version in package.json's packageManager.",
+    icon: "package",
+    group: "Set up a language",
+    steps: [{ uses: ACTIONS.pnpm }],
+  },
+  bun: {
+    label: "Set up Bun",
+    description: "Install the Bun runtime.",
+    icon: "flame",
+    group: "Set up a language",
+    steps: [{ uses: ACTIONS.bun }],
   },
   python: {
     label: "Set up Python",
+    description: "Install a Python version.",
     icon: "symbol-namespace",
-    step: { uses: ACTIONS.python, with: { "python-version": "3.12" } },
+    group: "Set up a language",
+    steps: [{ uses: ACTIONS.python, with: { "python-version": "3.13" } }],
   },
-  go: { label: "Set up Go", icon: "symbol-method", step: { uses: ACTIONS.go, with: { "go-version": "stable" } } },
+  go: {
+    label: "Set up Go",
+    description: "Install the latest stable Go.",
+    icon: "symbol-method",
+    group: "Set up a language",
+    steps: [{ uses: ACTIONS.go, with: { "go-version": "stable" } }],
+  },
+  java: {
+    label: "Set up Java",
+    description: "Install a JDK (Temurin 25, the current LTS).",
+    icon: "coffee",
+    group: "Set up a language",
+    steps: [{ uses: ACTIONS.java, with: { distribution: "temurin", "java-version": "25" } }],
+  },
+  dotnet: {
+    label: "Set up .NET",
+    description: "Install the .NET SDK (10, the current LTS).",
+    icon: "symbol-class",
+    group: "Set up a language",
+    steps: [{ uses: ACTIONS.dotnet, with: { "dotnet-version": "10.x" } }],
+  },
+  ruby: {
+    label: "Set up Ruby",
+    description: "Install Ruby and run bundle install, cached.",
+    icon: "ruby",
+    group: "Set up a language",
+    steps: [{ uses: ACTIONS.ruby, with: { "ruby-version": "4.0", "bundler-cache": true } }],
+  },
+  rust: {
+    label: "Set up Rust",
+    description: "Install the stable Rust toolchain with rustup.",
+    icon: "gear",
+    group: "Set up a language",
+    steps: [{ name: "Set up Rust", run: "rustup toolchain install stable --profile minimal" }],
+  },
+  cache: {
+    label: "Cache files between runs",
+    description: "Reuse downloads like dependencies, so runs are faster.",
+    icon: "database",
+    group: "Files and speed",
+    steps: [
+      {
+        name: "Cache dependencies",
+        uses: ACTIONS.cache,
+        with: { path: "~/.npm", key: "${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}" },
+      },
+    ],
+  },
   upload: {
     label: "Save files from the run",
+    description: "Keep build output or reports, downloadable from the run's page.",
     icon: "cloud-upload",
-    step: { name: "Upload files", uses: ACTIONS.upload, with: { name: "output", path: "dist" } },
+    group: "Files and speed",
+    steps: [{ name: "Upload files", uses: ACTIONS.upload, with: { name: "output", path: "dist" } }],
+  },
+  download: {
+    label: "Use files from an earlier job",
+    description: "Download files another job saved, by name.",
+    icon: "cloud-download",
+    group: "Files and speed",
+    steps: [{ name: "Download files", uses: ACTIONS.download, with: { name: "output" } }],
+  },
+  "docker-login": {
+    label: "Log in to GitHub's registry",
+    description: "Sign in to ghcr.io with the run's own token, to push images.",
+    icon: "key",
+    group: "Docker",
+    steps: [
+      {
+        uses: ACTIONS.dockerLogin,
+        with: { registry: "ghcr.io", username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" },
+      },
+    ],
+    permissions: { packages: "write" },
+  },
+  "docker-build": {
+    label: "Build and push an image",
+    description: "Build the Dockerfile and push it to ghcr.io (log in first).",
+    icon: "package",
+    group: "Docker",
+    steps: [
+      { uses: ACTIONS.buildx },
+      {
+        uses: ACTIONS.dockerBuild,
+        with: { context: ".", push: true, tags: "ghcr.io/${{ github.repository }}:latest" },
+      },
+    ],
+    permissions: { packages: "write" },
+  },
+  release: {
+    label: "Create a GitHub release",
+    description: "A release for the pushed tag, with notes from the commits.",
+    icon: "tag",
+    group: "GitHub",
+    steps: [
+      { name: "Create the release", run: 'gh release create "$GITHUB_REF_NAME" --generate-notes', env: GH_TOKEN },
+    ],
+    permissions: { contents: "write" },
+  },
+  "pr-comment": {
+    label: "Comment on the pull request",
+    description: "Post a comment on the PR that triggered the run.",
+    icon: "comment",
+    group: "GitHub",
+    steps: [
+      {
+        name: "Comment on the pull request",
+        if: "github.event_name == 'pull_request'",
+        run: 'gh pr comment "${{ github.event.pull_request.number }}" --body "Build finished"',
+        env: GH_TOKEN,
+      },
+    ],
+    permissions: { "pull-requests": "write" },
+  },
+  label: {
+    label: "Label the issue or pull request",
+    description: "Add a label to the issue or PR that triggered the run.",
+    icon: "tag",
+    group: "GitHub",
+    steps: [
+      {
+        name: "Add a label",
+        run: 'gh issue edit "${{ github.event.issue.number || github.event.pull_request.number }}" --add-label "triage"',
+        env: GH_TOKEN,
+      },
+    ],
+    permissions: { issues: "write", "pull-requests": "write" },
+  },
+  pages: {
+    label: "Deploy a folder to GitHub Pages",
+    description: "Publish a folder as your site (turn Pages on with GitHub Actions as the source).",
+    icon: "globe",
+    group: "Publish",
+    steps: [
+      { uses: ACTIONS.pagesConfigure },
+      { uses: ACTIONS.pagesUpload, with: { path: "dist" } },
+      { id: "deployment", uses: ACTIONS.pagesDeploy },
+    ],
+    permissions: { pages: "write", "id-token": "write" },
+  },
+  "npm-publish": {
+    label: "Publish to npm",
+    description: "Publish the package with provenance (needs an NPM_TOKEN secret).",
+    icon: "package",
+    group: "Publish",
+    steps: [
+      { uses: ACTIONS.node, with: { "node-version": "lts/*", "registry-url": "https://registry.npmjs.org" } },
+      { run: "npm ci" },
+      {
+        name: "Publish",
+        run: "npm publish --provenance --access public",
+        env: { NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}" },
+      },
+    ],
+    permissions: { "id-token": "write" },
+  },
+  "pypi-publish": {
+    label: "Publish to PyPI",
+    description: "Build and upload with trusted publishing (no token to store).",
+    icon: "package",
+    group: "Publish",
+    steps: [
+      { uses: ACTIONS.python, with: { "python-version": "3.13" } },
+      { run: "python -m pip install build && python -m build" },
+      { name: "Publish", uses: "pypa/gh-action-pypi-publish@release/v1" },
+    ],
+    permissions: { "id-token": "write" },
   },
 };
+
+/**
+ * Adds a preset's steps to a job, plus the access they need, for that job only. Returns the index
+ * of the first added step and which permissions were granted, so the UI can say so.
+ */
+export function addPreset(job: Job, key: string, readOnlyDefault: boolean): { first: number; granted: string[] } {
+  const preset = STEP_PRESETS[key];
+  const first = job.steps?.length ?? 0;
+  job.steps = [...(job.steps ?? []), ...structuredClone(preset.steps)];
+  const granted: string[] = [];
+  if (preset.permissions) {
+    const extra = (job.extra ??= {});
+    // A job's permissions replace the workflow's, so keep read access to the code when granting more.
+    const current =
+      (extra.permissions as Record<string, string> | undefined) ?? (readOnlyDefault ? { contents: "read" } : {});
+    const merged: Record<string, string> = { ...current };
+    for (const [scope, level] of Object.entries(preset.permissions)) {
+      if (merged[scope] !== "write" && merged[scope] !== level) {
+        merged[scope] = level;
+        granted.push(`${scope} (${level})`);
+      }
+    }
+    if (granted.length) extra.permissions = merged;
+  }
+  return { first, granted };
+}
 
 /** The steps a template job generates; "steps" jobs return their own. */
 export function stepsFor(job: Job): Step[] {
@@ -352,14 +627,14 @@ export function stepsFor(job: Job): Step[] {
     case "python-lint":
       return [
         checkout,
-        { uses: ACTIONS.python, with: { "python-version": "3.12" } },
+        { uses: ACTIONS.python, with: { "python-version": "3.13" } },
         { run: "pip install ruff" },
         { run: input("command") },
       ];
     case "python-test":
       return [
         checkout,
-        { uses: ACTIONS.python, with: { "python-version": version("python-version") ?? "3.12", cache: "pip" } },
+        { uses: ACTIONS.python, with: { "python-version": version("python-version") ?? "3.13", cache: "pip" } },
         { run: input("install") },
         { run: input("command") },
       ];
