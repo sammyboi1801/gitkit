@@ -94,7 +94,7 @@ One menu for the problems people search for most:
 
 Before each commit, GitKit checks what you're about to save and warns you about:
 
-- **Passwords and keys** that look real (AWS, GitHub, Stripe, OpenAI and many more), with a jump to the exact line
+- **Keys and tokens** that look real: private keys, and AWS, GitHub, Slack, Google, Stripe, OpenAI and Anthropic keys, with a jump to the exact line
 - **Files that usually shouldn't be shared,** like `.env` files and very large files
 - **The wrong email address,** if you use different ones for work, school and personal projects
 
@@ -156,7 +156,7 @@ The ones you're most likely to change. Open VS Code's settings and search for **
 | `gitkit.newCommitAlerts`        | How to tell you about them: a pop-up and a count on the icon (`popup`, the default), `badge` for just the count, or `off`. |
 | `gitkit.ciStatus`               | Show your GitHub checks and pull request (on by default).                                                                  |
 | `gitkit.mainBranchColor`        | The color of the main branch's lane: `blue`, `green`, `purple`, `orange`, `red`, `yellow` or any color.                    |
-| `gitkit.commitGuard.enabled`    | Check commits for passwords, keys and files that shouldn't be shared (on by default).                                      |
+| `gitkit.commitGuard.enabled`    | Check commits for keys, tokens and files that shouldn't be shared (on by default).                                         |
 | `gitkit.identities`             | Which email to commit with for which projects, so work and personal don't get mixed up. See below.                         |
 | `gitkit.worktrees.setupCommand` | A command to run in each new worktree, such as `npm install`.                                                              |
 
