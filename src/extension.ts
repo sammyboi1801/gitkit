@@ -6,7 +6,11 @@ import { WorkflowStudioPanel } from "./features/workflow/WorkflowStudioPanel";
 import { PulseViewProvider } from "./features/pulse/PulseViewProvider";
 import { pathKey } from "./git/paths";
 
-export function activate(context: vscode.ExtensionContext): void {
+/**
+ * Returns the sidebar provider so the end-to-end tour (scripts/tour.mjs) can drive actions the way
+ * the webview does. It isn't a public API for other extensions.
+ */
+export function activate(context: vscode.ExtensionContext): { pulse: PulseViewProvider } {
   const pulse = new PulseViewProvider(context.extensionUri, context.workspaceState);
 
   context.subscriptions.push(
@@ -37,6 +41,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("gitkit.newWorktree", () => pulse.newWorktree()),
     vscode.commands.registerCommand("gitkit.checkpoint", () => pulse.checkpoint()),
   );
+  return { pulse };
 }
 
 export function deactivate(): void {}

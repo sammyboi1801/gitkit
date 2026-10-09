@@ -294,7 +294,8 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "sandbox": "node scripts/sandbox.mjs",
     "package": "vsce package --no-dependencies",
-    "test:integration": "node scripts/integration.mjs"
+    "test:integration": "node scripts/integration.mjs",
+    "tour": "node scripts/tour.mjs"
   },
   "dependencies": {
     "ajv": "^8.20.0",
