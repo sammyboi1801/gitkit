@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CommitDetails, GraphEdge, RepoState } from "../../src/shared/types";
+  import type { Commit, CommitDetails, GraphEdge, RepoState } from "../../src/shared/types";
   import CommitPanel from "../shared/CommitPanel.svelte";
   import { laneColor, laneTips, refColor } from "../shared/graph";
   import { relativeTime } from "./util";
@@ -23,6 +23,25 @@
   const tips = $derived(laneTips(graph));
 
   const laneAt = (i: number) => graph.lanes[graph.placement[i].lane];
+
+  // Your branch first, then other local branches, tags and remote copies: in a narrow sidebar only
+  // the first badge shows, with "+N" for the rest.
+  const RANK = { local: 1, tag: 2, remote: 3 } as const;
+  const ordered = (refs: Commit["refs"]) =>
+    [...refs].sort((a, b) => (a.isHead ? 0 : RANK[a.kind]) - (b.isHead ? 0 : RANK[b.kind]));
+  const laneBadge = (i: number) =>
+    (laneAt(i).kind === "merged" || laneAt(i).kind === "other") && tips.get(graph.placement[i].lane) === i;
+  const forkBadge = (hash: string) =>
+    !!repo.base && !repo.base.isCurrent && repo.base.behind > 0 && hash === repo.base.forkPoint;
+  /** Every badge's name on a commit row, in the order they're shown. */
+  function badgeNames(i: number): string[] {
+    const commit = graph.commits[i];
+    return [
+      ...ordered(commit.refs).map((r) => r.name),
+      ...(laneBadge(i) ? [laneAt(i).name] : []),
+      ...(forkBadge(commit.hash) ? ["you branched here"] : []),
+    ];
+  }
   const x = (i: number) => PAD + Math.min(laneAt(i).row, MAX_LANES - 1) * LANE;
   const y = (i: number) => i * ROW + ROW / 2;
 
@@ -104,6 +123,7 @@
           {@const lane = laneAt(i)}
           {@const isHead = commit.hash === repo.status.oid}
           {@const isIncoming = incoming.has(commit.hash)}
+          {@const names = badgeNames(i)}
           <li class="commit-item">
             <div
               class="commit"
@@ -118,25 +138,38 @@
               onkeydown={(e) => onKey(e, i)}
             >
               <span class="subject">{commit.subject}</span>
-              {#each commit.refs as ref (ref.kind + ref.name)}
+              {#each ordered(commit.refs) as ref, k (ref.kind + ref.name)}
                 {@const color = refColor(graph, ref)}
-                <span class="ref ref-{ref.kind}" class:ref-head={ref.isHead} style={color ? `--chip: ${color}` : ""}>
+                <span
+                  class="ref ref-{ref.kind}"
+                  class:ref-head={ref.isHead}
+                  class:extra={k > 0}
+                  style={color ? `--chip: ${color}` : ""}
+                >
                   {#if ref.kind === "remote"}<span class="codicon codicon-cloud"></span>{/if}
                   {#if ref.kind === "tag"}<span class="codicon codicon-tag"></span>{/if}
                   {ref.name}
                 </span>
               {/each}
-              {#if (lane.kind === "merged" || lane.kind === "other") && tips.get(graph.placement[i].lane) === i}
+              {#if laneBadge(i)}
                 <span
                   class="ref ref-lane"
+                  class:extra={commit.refs.length > 0}
                   style="--chip: {laneColor(lane.color)}"
                   title={lane.kind === "merged" ? `${lane.name}: merged, branch deleted` : lane.name}
                 >
                   {#if lane.kind === "merged"}<span class="codicon codicon-git-merge"></span>{/if}{lane.name}
                 </span>
               {/if}
-              {#if repo.base && !repo.base.isCurrent && repo.base.behind > 0 && commit.hash === repo.base.forkPoint}
-                <span class="ref ref-fork" title="Your branch split off {repo.base.name} here">you branched here</span>
+              {#if forkBadge(commit.hash)}
+                <span
+                  class="ref ref-fork"
+                  class:extra={names.length > 1}
+                  title="Your branch split off {repo.base?.name} here">you branched here</span
+                >
+              {/if}
+              {#if names.length > 1}
+                <span class="ref ref-more" title={names.slice(1).join(", ")}>+{names.length - 1}</span>
               {/if}
               <span class="time">{relativeTime(commit.time)}</span>
             </div>

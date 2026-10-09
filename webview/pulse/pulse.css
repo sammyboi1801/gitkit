@@ -5,6 +5,9 @@
   --gk-border: var(--vscode-widget-border, var(--vscode-panel-border, transparent));
   --gk-hover: var(--vscode-list-hoverBackground);
   --gk-muted: var(--vscode-descriptionForeground);
+  /* Incoming work (behind, to pull). charts.orange is too dim to read in some themes; git's own
+     "modified" colour is defined to be legible in every theme, light and high contrast included. */
+  --gk-incoming: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-editorWarning-foreground));
   --gk-mono: var(--vscode-editor-font-family);
 }
 
@@ -192,10 +195,15 @@ button.wide {
   font-size: 11px;
 }
 
+/* Buttons size to their content first (Push grows for its count), then share what's left, so
+   Pull, Push and Sync all fit in a narrow sidebar instead of one being squeezed to "P…". */
 .actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
   gap: 6px;
+}
+
+.actions > button {
+  flex: 1 1 auto;
 }
 
 .progress {
@@ -410,8 +418,8 @@ textarea::placeholder {
 }
 
 .commit .subject {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 40%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -468,8 +476,8 @@ textarea::placeholder {
   fill: var(--vscode-charts-green);
 }
 .lane-3 {
-  stroke: var(--vscode-charts-orange);
-  fill: var(--vscode-charts-orange);
+  stroke: var(--gk-incoming);
+  fill: var(--gk-incoming);
 }
 .lane-4 {
   stroke: var(--vscode-charts-red);
@@ -489,8 +497,11 @@ textarea::placeholder {
 }
 
 .ref {
-  flex: none;
+  /* Badges give way before the subject does: several on one commit used to squeeze it to "f…". */
+  flex: 0 1 auto;
+  min-width: 2.5em;
   max-width: 40%;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 0.8em;
@@ -828,7 +839,7 @@ button.primary .count-pill {
 }
 
 .pill.in {
-  color: var(--vscode-charts-orange);
+  color: var(--gk-incoming);
 }
 
 .divergence {
@@ -855,7 +866,7 @@ button.primary .count-pill {
 
 .track.theirs,
 .dot-theirs {
-  stroke: var(--vscode-charts-orange);
+  stroke: var(--gk-incoming);
 }
 
 .dot-mine {
@@ -863,7 +874,7 @@ button.primary .count-pill {
 }
 
 .dot-theirs {
-  fill: var(--vscode-charts-orange);
+  fill: var(--gk-incoming);
 }
 
 .fork {
@@ -937,7 +948,7 @@ button.primary .count-pill {
   color: var(--vscode-charts-blue);
 }
 .kind-fetch {
-  color: var(--vscode-charts-orange);
+  color: var(--gk-incoming);
 }
 .kind-forced {
   color: var(--vscode-editorWarning-foreground);
@@ -987,8 +998,8 @@ button.primary .count-pill {
 }
 
 .ref-fork {
-  border: 1px dashed var(--vscode-charts-orange);
-  color: var(--vscode-charts-orange);
+  border: 1px dashed var(--gk-incoming);
+  color: var(--gk-incoming);
 }
 
 /* Repository list (multi-repo workspaces) */
@@ -1023,7 +1034,7 @@ button.primary .count-pill {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  color: var(--vscode-charts-orange);
+  color: var(--gk-incoming);
   font-weight: 400;
 }
 
@@ -1097,7 +1108,7 @@ button.primary .count-pill {
 }
 
 .repo-badges .in {
-  color: var(--vscode-charts-orange);
+  color: var(--gk-incoming);
 }
 
 .repo-badges .changes {
@@ -1721,4 +1732,55 @@ body {
 
 .worktree-note.conflict {
   color: var(--vscode-errorForeground);
+}
+
+/* Pills can carry an arrow icon: "↑ 1 to push". */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pill .codicon,
+.repo-row .out .codicon,
+.repo-row .in .codicon {
+  font-size: 11px;
+}
+
+/* Header buttons keep their size; a long hint next to them shrinks instead. */
+.section-header-row > .icon-button,
+.worktrees-header > .icon-button,
+.worktrees-header > .small-button {
+  flex: none;
+}
+
+/* "+N" stands in for a commit's other badges when the sidebar is narrow; wide, they all show. */
+.commits {
+  container-type: inline-size;
+  container-name: commits;
+}
+
+.commit .ref-more {
+  display: none;
+  flex: none;
+  min-width: 0;
+  color: var(--gk-muted);
+  border-color: var(--gk-border);
+}
+
+@container commits (max-width: 440px) {
+  .commit .ref.extra {
+    display: none;
+  }
+
+  .commit .ref-more {
+    display: inline-block;
+  }
+}
+
+/* A long "last: …" hint shrinks instead of pushing the header's buttons out of view. */
+.section-header-row .section-toggle,
+.worktrees-header .section-toggle {
+  width: auto;
+  min-width: 0;
 }

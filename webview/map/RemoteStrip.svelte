@@ -45,8 +45,12 @@
       {:else if !status.ahead && !status.behind}
         <span class="ok"><span class="codicon codicon-check"></span>in sync</span>
       {:else}
-        {#if status.ahead}<span class="pill out">↑{status.ahead} to push</span>{/if}
-        {#if status.behind}<span class="pill in">↓{status.behind} to pull</span>{/if}
+        {#if status.ahead}<span class="pill out"
+            ><span class="codicon codicon-arrow-up" aria-hidden="true"></span>{status.ahead} to push</span
+          >{/if}
+        {#if status.behind}<span class="pill in"
+            ><span class="codicon codicon-arrow-down" aria-hidden="true"></span>{status.behind} to pull</span
+          >{/if}
       {/if}
       {#if next && nextPreview}
         <button

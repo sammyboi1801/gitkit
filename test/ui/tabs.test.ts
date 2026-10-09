@@ -59,8 +59,8 @@ describe("Branch Map", () => {
         }),
       );
       expect(within(strip()).getByText("origin/feat/login")).toBeTruthy();
-      expect(within(strip()).getByText("↑2 to push")).toBeTruthy();
-      expect(within(strip()).getByText("↓1 to pull")).toBeTruthy();
+      expect(within(strip()).getByText("2 to push")).toBeTruthy();
+      expect(within(strip()).getByText("1 to pull")).toBeTruthy();
       const sync = within(strip()).getByRole("button", { name: /Sync/ });
       expect(sync.getAttribute("title")).toMatch(/^git pull --rebase/);
       await fireEvent.click(sync);
@@ -185,7 +185,7 @@ describe("Branch Map", () => {
     await fireEvent.pointerEnter(flag("feat/login"));
     const tip = screen.getByRole("tooltip");
     expect(within(tip).getByText(/Branch · you're on it/)).toBeTruthy();
-    expect(within(tip).getByText("↑2 to push")).toBeTruthy();
+    expect(within(tip).getByText("2 to push")).toBeTruthy();
 
     await fireEvent.pointerLeave(flag("feat/login"));
     await fireEvent.pointerEnter(flag("main"));

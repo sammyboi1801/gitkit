@@ -702,8 +702,8 @@
             <span class="muted"
               >{repo.status.ahead || repo.status.behind
                 ? [
-                    repo.status.ahead ? `↑${repo.status.ahead} to push` : "",
-                    repo.status.behind ? `↓${repo.status.behind} to pull` : "",
+                    repo.status.ahead ? `${repo.status.ahead} to push` : "",
+                    repo.status.behind ? `${repo.status.behind} to pull` : "",
                   ]
                     .filter(Boolean)
                     .join(" · ")

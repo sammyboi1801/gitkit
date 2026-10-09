@@ -50,8 +50,12 @@
                     ><span class="codicon codicon-warning"></span>{repo.conflicts}</span
                   >
                 {/if}
-                {#if repo.ahead}<span class="out" title="{repo.ahead} to push">↑{repo.ahead}</span>{/if}
-                {#if repo.behind}<span class="in" title="{repo.behind} to pull">↓{repo.behind}</span>{/if}
+                {#if repo.ahead}<span class="out" title="{repo.ahead} to push"
+                    ><span class="codicon codicon-arrow-up" aria-hidden="true"></span>{repo.ahead}</span
+                  >{/if}
+                {#if repo.behind}<span class="in" title="{repo.behind} to pull"
+                    ><span class="codicon codicon-arrow-down" aria-hidden="true"></span>{repo.behind}</span
+                  >{/if}
                 {#if repo.changes}
                   <span class="changes" title="{repo.changes} changed file{repo.changes === 1 ? '' : 's'}"
                     >{repo.changes}</span

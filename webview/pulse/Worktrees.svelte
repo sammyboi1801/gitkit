@@ -17,8 +17,8 @@
   function details(w: WorktreeInfo): string[] {
     const parts: string[] = [];
     if (w.changes) parts.push(`${w.changes} uncommitted`);
-    if (w.ahead) parts.push(`↑${w.ahead}`);
-    if (w.behind) parts.push(`↓${w.behind} behind ${base}`);
+    if (w.ahead) parts.push(`${w.ahead} ahead`);
+    if (w.behind) parts.push(`${w.behind} behind ${base}`);
     return parts;
   }
 

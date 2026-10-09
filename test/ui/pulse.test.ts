@@ -201,8 +201,8 @@ describe("Worktrees", () => {
     expect(within(feature).getByText("feature/login")).toBeTruthy();
     expect(within(feature).getByText("app.worktrees/feature-login")).toBeTruthy();
     expect(within(feature).getByText("3 uncommitted")).toBeTruthy();
-    expect(within(feature).getByText("↑2")).toBeTruthy();
-    expect(within(feature).getByText("↓1 behind main")).toBeTruthy();
+    expect(within(feature).getByText("2 ahead")).toBeTruthy();
+    expect(within(feature).getByText("1 behind main")).toBeTruthy();
     expect(within(feature).getByText("2m ago")).toBeTruthy();
     expect(within(agent).getByText("detached at 1234567")).toBeTruthy();
     expect(within(agent).getByText("/elsewhere/agent")).toBeTruthy();
@@ -451,7 +451,7 @@ describe("Repositories list", () => {
 
   it("lists repos with their state and switches on click", async () => {
     render(Repos, { props: { repos, selected: "/w/api", busy: null } });
-    expect(screen.getByText("↓2")).toBeTruthy();
+    expect(screen.getByTitle("2 to pull")).toBeTruthy();
     expect(screen.getByTitle("1 conflicted")).toBeTruthy();
     await fireEvent.click(screen.getByText("packages/ui"));
     expect(lastSent()).toEqual({ type: "selectRepo", root: "/w/ui" });
@@ -569,6 +569,31 @@ describe("Undo timeline and saved changes", () => {
 });
 
 describe("Graph", () => {
+  it("puts your branch's badge first and folds the rest into +N for narrow sidebars", () => {
+    const commits = [
+      commitOf("c2", ["c1"], "Merge branch 'feat/search'", {
+        refs: [
+          { name: "v1.2.0", kind: "tag", isHead: false },
+          { name: "origin/main", kind: "remote", isHead: false },
+          { name: "main", kind: "local", isHead: true },
+        ],
+      }),
+      commitOf("c1", [], "first"),
+    ];
+    render(Graph, { props: { repo: repoState({ commits }), busy: null, details: null } });
+    const row = screen.getByText("Merge branch 'feat/search'").closest(".commit")!;
+    const badges = [...row.querySelectorAll(".ref")].map((b) => [b.textContent?.trim(), b.classList.contains("extra")]);
+    expect(badges).toEqual([
+      ["main", false],
+      ["v1.2.0", true],
+      ["origin/main", true],
+      ["+2", false],
+    ]);
+    expect(row.querySelector(".ref-more")?.getAttribute("title")).toBe("v1.2.0, origin/main");
+    // A single badge needs no "+N".
+    expect(screen.getByText("first").closest(".commit")!.querySelector(".ref-more")).toBeNull();
+  });
+
   it("draws commits with lane-coloured branch chips and opens details on click", async () => {
     const repo = repoState({ unpushed: ["c2"] });
     render(Graph, { props: { repo, busy: null, details: null } });
