@@ -187,6 +187,37 @@ repo.pr = {
     mergeable: "clean",
   },
 };
+// Sample worktrees, as if two agents were working in their own checkouts.
+if (!repo.worktrees.length) {
+  const now = Math.floor(Date.now() / 1000);
+  const tree = (path, branch, extra = {}) => ({
+    path,
+    branch,
+    head: repo.status.oid,
+    main: false,
+    bare: false,
+    locked: null,
+    prunable: null,
+    current: false,
+    changes: 0,
+    ahead: 0,
+    behind: 0,
+    lastActivity: null,
+    ...extra,
+  });
+  const parent = dirname(root);
+  repo.worktrees = [
+    tree(root, repo.status.branch, { main: true, current: true }),
+    tree(join(parent, "GitKit.worktrees", "agent-auth"), "agent/auth", {
+      changes: 7,
+      ahead: 3,
+      lastActivity: now - 40,
+      locked: "claude session",
+    }),
+    tree(join(parent, "GitKit.worktrees", "agent-docs"), "agent/docs", { ahead: 1, behind: 2, lastActivity: now - 3600 }),
+    tree(join(parent, "GitKit.worktrees", "old-spike"), "spike/graph", { prunable: "gitdir file points to non-existent location" }),
+  ];
+}
 writeFileSync(join(out, "map.html"), page("map", [{ type: "state", state: { kind: "repo", repo } }]));
 // Headless browsers lay pages out at least ~500px wide, so the sidebar width is set on the app itself.
 writeFileSync(
