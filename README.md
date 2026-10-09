@@ -46,13 +46,14 @@ GitKit adds a sidebar to VS Code that shows where your repository stands at a gl
 - **Update from main** in one click: it merges into published branches and rebases unpublished ones, after saving a backup.
 - **Team activity** such as _"Alex Chen added 2 commits to origin/main"_, read from your own fetch history.
 - **CI status** for your latest pushed commit, with **Re-run failed jobs**. Public repositories need no sign-in.
+- **Pull request readiness** in one line: _"PR #42 CI passing, review needed, 2 unresolved comments, merges cleanly"_. Without a PR, **Open a PR** drafts the title and description from your commits, then creates it, creates a draft, or opens GitHub's page pre-filled.
 - Background fetching every few minutes, only while VS Code is focused.
 
 ### Branch lanes and the Branch Map
 
 Each branch gets its own lane and color, with main always first, so branches visibly fork off and merge back. Merged branches stay visible after deletion, because GitKit recovers their names from merge messages. Hollow dots mark commits you haven't pushed; faded, dashed ones are on the remote but not yet pulled.
 
-The **Branch Map** opens the same view horizontally in an editor tab, and you can work in it directly:
+The **Branch Map** opens the same view horizontally in an editor tab, with a strip above it showing your branch against its remote copy, against main (with the conflict forecast), CI, the pull request, and worktrees that changed the same files. You can work in it directly:
 
 | Action          | How                                                                               |
 | --------------- | --------------------------------------------------------------------------------- |
@@ -62,6 +63,16 @@ The **Branch Map** opens the same view horizontally in an editor tab, and you ca
 | Navigate        | Scroll to zoom, drag to pan, arrow keys step through commits, `0` fits the window |
 | Long histories  | Quiet stretches fold into **+N** groups that expand on click                      |
 | Find work       | Search by message, author or hash; filter by person; hover a lane to isolate it   |
+
+### Worktrees and coding agents
+
+Run several agents (or tasks) side by side, each in its own folder on its own branch, without losing track of them:
+
+- **Every worktree, at a glance:** branch, folder, uncommitted files, distance from main and last activity, including worktrees made by the git CLI or by agent tools. Click one to open it in a new window.
+- **New worktree** from Pulse, the branch switcher or the Command Palette. It previews the exact `git worktree add`, can copy ignored files you list (like `.vscode/settings.json`; `.env` only if you add it) and runs a setup command such as `npm install` in a visible terminal.
+- **Agents stepping on each other:** _"agent/auth and agent/docs both changed auth.py"_, and when both have commits, whether merging them would conflict.
+- **Checkpoints:** a snapshot of a worktree's files, new files included, saved when a coding agent (`claude`, `codex`, `aider` and others) starts in a terminal, before removing a worktree with uncommitted work, or by hand. Restore one from the Undo list. Checkpoints never touch your files, staging area or stashes, leave out files over the commit guard's size limit, and only the newest 20 are kept.
+- **Safe clean-up:** removing a worktree warns about uncommitted files, leaves locked ones alone, and offers to delete the branch only if it's merged. Switching to a branch that's open in another worktree offers to open that worktree instead of failing.
 
 ### Conflict resolution
 
@@ -92,11 +103,12 @@ Before each commit, GitKit reviews the lines being added and warns about:
 
 Create GitHub Actions workflows without writing YAML. Studio starts from **what you want to automate**: checking every push, testing pull requests, publishing a Docker image, releasing on a version tag, deploying to GitHub Pages, running a scheduled job, or starting from scratch. Goals that fit your project are marked as recommended.
 
-- Triggers read as a sentence, _"CI runs on pushes to main and on pull requests"_, where each part is editable.
-- Jobs appear as a pipeline of cards. Choose Linux, Windows or macOS, toggle the versions to test, and set what runs after what.
+- Triggers read as a sentence, _"CI runs on pushes to main and on pull requests"_, where each part is editable. Schedules are picked from lists (every day at 06:00 UTC, every Monday…), with a custom cron for anything else.
+- Jobs appear as cards, left to right in the order they run. Choose Linux, Windows, macOS or any runner label, toggle the versions to test, and set what runs after what.
+- **Build your own steps:** commands, any Marketplace action with its inputs, conditions, reordering. Ready-made jobs can be turned into their steps with **Customize the steps**.
 - **Least privilege by default:** workflows get read-only access, and only the jobs that need more (such as publishing an image) receive it.
 - Problems are explained on the card they belong to; the generated YAML is one click away.
-- Existing workflows open as a plain-English summary. Workflows created in Studio remain editable in Studio.
+- **Any existing workflow opens as editable jobs.** What Studio doesn't show (matrices, services, path filters) is kept exactly as written.
 
 ### Multi-repository folders
 
@@ -133,19 +145,28 @@ All commands are available from the Command Palette under **GitKit**.
 | `GitKit: Oops: Fix a Mistake…`      | Undo, recover or clean up with guided fixes       |
 | `GitKit: Clean Up Merged Branches…` | Find and delete merged and squash-merged branches |
 | `GitKit: Open Workflow Studio`      | Create or review GitHub Actions workflows         |
+| `GitKit: New Worktree…`             | Work on a branch in its own folder                |
+| `GitKit: Save Checkpoint`           | Snapshot this worktree's files, new ones included |
 
 ## Settings
 
-| Setting                            | Default | Description                                                                                       |
-| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| `gitkit.autoFetchMinutes`          | `5`     | How often to check the remote while VS Code is focused. `0` disables it.                          |
-| `gitkit.mainBranchColor`           | `blue`  | Color of the main branch: `blue`, `green`, `purple`, `orange`, `red`, `yellow`, or any CSS color. |
-| `gitkit.repoScanDepth`             | `2`     | How many folder levels to search for repositories.                                                |
-| `gitkit.followActiveEditor`        | `true`  | Switch to the repository of the file you are editing.                                             |
-| `gitkit.commitGuard.enabled`       | `true`  | Check commits for secrets, sensitive files and large files.                                       |
-| `gitkit.commitGuard.maxFileSizeMB` | `10`    | File size, in MB, above which the commit guard warns.                                             |
-| `gitkit.identities`                | `[]`    | Expected commit email per remote or folder (see below).                                           |
-| `gitkit.ciStatus`                  | `true`  | Show GitHub check results for the latest pushed commit.                                           |
+| Setting                            | Default                  | Description                                                                                       |
+| ---------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------- |
+| `gitkit.autoFetchMinutes`          | `5`                      | How often to check the remote while VS Code is focused. `0` disables it.                          |
+| `gitkit.mainBranchColor`           | `blue`                   | Color of the main branch: `blue`, `green`, `purple`, `orange`, `red`, `yellow`, or any CSS color. |
+| `gitkit.repoScanDepth`             | `2`                      | How many folder levels to search for repositories.                                                |
+| `gitkit.followActiveEditor`        | `true`                   | Switch to the repository of the file you are editing.                                             |
+| `gitkit.commitGuard.enabled`       | `true`                   | Check commits for secrets, sensitive files and large files.                                       |
+| `gitkit.commitGuard.maxFileSizeMB` | `10`                     | File size, in MB, above which the commit guard warns.                                             |
+| `gitkit.identities`                | `[]`                     | Expected commit email per remote or folder (see below).                                           |
+| `gitkit.ciStatus`                  | `true`                   | Show GitHub check results and pull request status for the current branch.                         |
+| `gitkit.worktrees.location`        | `sibling`                | Where new worktrees go: next to the repo in `<repo>.worktrees/`, or `inside` it in `.worktrees/`. |
+| `gitkit.worktrees.setupCommand`    | `""`                     | Command to run in a new worktree, in a visible terminal, e.g. `npm install`.                      |
+| `gitkit.worktrees.copyFiles`       | `[]`                     | Ignored files to copy into new worktrees. `.env` is copied only if listed.                        |
+| `gitkit.checkpoints.onAgentStart`  | `true`                   | Save a checkpoint when a coding agent starts in a terminal.                                       |
+| `gitkit.checkpoints.agentCommands` | `["claude", "codex", …]` | Terminal commands that count as starting an agent.                                                |
+| `gitkit.checkpoints.keep`          | `20`                     | Checkpoints kept per worktree.                                                                    |
+| `gitkit.checkpoints.maxAgeDays`    | `30`                     | Checkpoints older than this are dropped.                                                          |
 
 Example identity rules; the first matching rule applies:
 
@@ -158,7 +179,8 @@ Example identity rules; the first matching rule applies:
 
 ## Privacy and security
 
-- GitKit runs your local `git`. It contacts the network only for `git fetch` and, when CI status is enabled, the GitHub API for your repository's check results.
+- GitKit runs your local `git`. It contacts the network only for `git fetch` and, when CI status is enabled, the GitHub API for your branch's check results and pull request. It creates a pull request only when you choose to.
+- Checkpoints stay in your repository under `refs/gitkit/`, are never pushed, and never touch your files, staging area or stashes.
 - There is no telemetry.
 - GitHub sign-in uses the account VS Code already manages, and is requested only when you choose **Sign in**.
 - Webviews run with a strict content security policy, and commands are executed without a shell, so branch and file names cannot inject commands.

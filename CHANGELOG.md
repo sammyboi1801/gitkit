@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Worktrees:** every worktree listed with its branch, uncommitted files, distance from main and last activity; create (with a setup command and copied files), open in a new window or this one, lock, remove and clean up. Branches open in another worktree are labelled everywhere, and switching or deleting them says where they're open.
+- **Agents side by side:** worktrees that changed the same files are flagged, with an in-memory forecast of whether their commits would conflict.
+- **Checkpoints** of a worktree's files (new files included), saved when a coding agent starts in a terminal, before removing a worktree with uncommitted work, or by hand; restorable from the Undo list. They never touch your files, staging area or stashes.
+- **Pull request readiness** in the Remote card and the Branch Map, and **Open a PR** with a title and description drafted from the commits.
+- **Branch Map:** remote status strip (upstream, main, CI, PR, last check), legend, readable remote flags, a lane for branches with no commits yet, hover details on branch flags, and tooltips that stay visible when the map is scrolled.
+- **Workflow Studio:** any workflow opens as editable jobs (keeping what Studio doesn't model), a steps editor for your own flows, schedules picked from lists, custom runner labels.
+- Command previews no longer quote revisions like `HEAD~1`.
+
 ## 0.1.0
 
 First release.
