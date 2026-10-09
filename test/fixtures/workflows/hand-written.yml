@@ -1,0 +1,39 @@
+# CI for the storefront. Keep this fast: under five minutes.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only unless a job says otherwise.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24] # the two LTS lines we support
+    steps:
+      - uses: actions/checkout@v7
+      # Cache is keyed on the lockfile.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: |
+          npm test -- --reporter=dot
+          npm run coverage
+
+  deploy:
+    name: 'Deploy to Pages'
+    needs: [test]
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/deploy-pages@v5 # needs pages: write

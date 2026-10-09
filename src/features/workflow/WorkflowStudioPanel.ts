@@ -5,8 +5,9 @@ import { parse } from "yaml";
 import type { HostToStudio, StudioToHost, WorkflowFile } from "../../shared/messages";
 import { suggestWorkflow, validate, type ProjectFacts, type WorkflowModel } from "../../workflow/model";
 import { importWorkflow } from "../../workflow/import";
+import { updateYaml } from "../../workflow/merge";
 import { schemaProblems } from "../../workflow/schema";
-import { explain, readModel, toYaml } from "../../workflow/yaml";
+import { explain, readModel, toYaml, workflowObject } from "../../workflow/yaml";
 import { renderWebviewHtml } from "../webviewHtml";
 
 /** "CI · on push, on pull requests · 3 jobs", or why the file couldn't be read. */
@@ -178,20 +179,26 @@ export class WorkflowStudioPanel {
     }
     const target = path.join(this.workflowsDir, model.file);
     const existing = await readFile(target, "utf8").catch(() => null);
+    let text = toYaml(model);
     if (existing !== null) {
       const embedded = readModel(existing);
       const handWritten = !embedded || embedded.editedByHand;
+      // A file someone wrote keeps their comments and layout: only what changed is edited.
+      const merged = handWritten ? updateYaml(existing, workflowObject(model)) : null;
+      if (merged !== null) text = merged;
       const choice = await vscode.window.showWarningMessage(
-        handWritten
-          ? `${model.file} was written or edited by hand. Saving rewrites it in Studio's layout: jobs, steps and settings are kept, but YAML comments and formatting are not. Replace it?`
-          : `Update ${model.file}?`,
+        merged !== null
+          ? `Update ${model.file}? Only what you changed is edited: its comments and formatting are kept.`
+          : handWritten
+            ? `${model.file} uses YAML anchors, so Studio can't edit it in place. Saving rewrites it in Studio's layout: jobs, steps and settings are kept, but comments and formatting are not. Replace it?`
+            : `Update ${model.file}?`,
         { modal: true },
-        handWritten ? "Replace" : "Update",
+        handWritten && merged === null ? "Replace" : "Update",
       );
       if (!choice) return;
     }
     await mkdir(this.workflowsDir, { recursive: true });
-    await writeFile(target, toYaml(model));
+    await writeFile(target, text);
     this.post({ type: "saved", file: model.file, files: await this.listWorkflows() });
 
     const relative = path.relative(this.root, target).replace(/\\/g, "/");

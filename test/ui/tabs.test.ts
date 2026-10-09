@@ -706,7 +706,7 @@ describe("Workflow Studio", () => {
     const model = importWorkflow(text, "docs.yml");
     await post({ type: "opened", file: "docs.yml", model, imported: true, explanation: explain(text) });
 
-    expect(screen.getByRole("note").textContent).toMatch(/but not its comments/);
+    expect(screen.getByRole("note").textContent).toMatch(/its comments and formatting stay/);
     expect(screen.getByText("on push, release (kept as written)")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Add a trigger/ })).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: /^deploy\b/ }));

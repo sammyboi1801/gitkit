@@ -2,3 +2,5 @@
 src/workflow/github-workflow.schema.json
 # Real GitHub responses for tests, kept in its own formatting.
 test/fixtures/github/
+# Hand-written workflows, kept exactly as people write them, for tests.
+test/fixtures/workflows/

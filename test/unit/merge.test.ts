@@ -1,0 +1,93 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { importWorkflow } from "../../src/workflow/import";
+import { updateYaml } from "../../src/workflow/merge";
+import type { WorkflowModel } from "../../src/workflow/model";
+import { workflowObject } from "../../src/workflow/yaml";
+
+const original = readFileSync(join(__dirname, "../fixtures/workflows/hand-written.yml"), "utf8");
+
+/** Opens the file in Studio, changes something, and saves it back. */
+function edit(change: (model: WorkflowModel) => void, text = original): string {
+  const model = importWorkflow(text, "ci.yml");
+  change(model);
+  const saved = updateYaml(text, workflowObject(model));
+  if (saved === null) throw new Error("not merged");
+  // However it's written, the saved file must mean exactly what the model says: opened again, it's
+  // the same workflow.
+  expect(workflowObject(importWorkflow(saved, "ci.yml"))).toEqual(workflowObject(model));
+  return saved;
+}
+
+/** Lines in `after` that aren't in `before`, and the other way round. */
+function diff(before: string, after: string) {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  return { added: b.filter((l) => !a.includes(l)), removed: a.filter((l) => !b.includes(l)) };
+}
+
+describe("updateYaml", () => {
+  it("leaves the file exactly as it was when nothing changed", () => {
+    expect(edit(() => {})).toBe(original);
+  });
+
+  it("changes only the line that changed, keeping comments, quotes and block scripts", () => {
+    const saved = edit((m) => {
+      m.jobs[0].steps![2].run = "npm ci --no-audit";
+    });
+    expect(diff(original, saved)).toEqual({
+      added: ["      - run: npm ci --no-audit"],
+      removed: ["      - run: npm ci"],
+    });
+    expect(saved).toContain("# CI for the storefront. Keep this fast: under five minutes.");
+    expect(saved).toContain("node: [22, 24] # the two LTS lines we support");
+    expect(saved).toContain("name: 'Deploy to Pages'");
+    expect(saved).toContain("run: |\n          npm test -- --reporter=dot");
+  });
+
+  it("adds a step in the middle without disturbing the steps around it or their comments", () => {
+    const saved = edit((m) => {
+      m.jobs[0].steps!.splice(3, 0, { name: "Lint", run: "npm run lint" });
+    });
+    expect(diff(original, saved).removed).toEqual([]);
+    expect(saved).toContain(
+      "      - run: npm ci\n      - name: Lint\n        run: npm run lint\n      - name: Unit tests",
+    );
+    expect(saved).toContain("      # Cache is keyed on the lockfile.\n      - uses: actions/setup-node@v7");
+  });
+
+  it("removes a job, and adds a condition where it belongs", () => {
+    const saved = edit((m) => {
+      m.jobs[1].extra = { ...m.jobs[1].extra, if: "github.ref == 'refs/heads/main'" };
+    });
+    expect(diff(original, saved)).toEqual({ added: ["    if: github.ref == 'refs/heads/main'"], removed: [] });
+
+    const without = edit((m) => {
+      m.jobs = m.jobs.filter((j) => j.id !== "deploy");
+    });
+    expect(without).not.toContain("deploy:");
+    expect(without).toContain("# Read-only unless a job says otherwise.");
+  });
+
+  it("keeps short forms that mean the same: needs: [test] and on: [push]", () => {
+    expect(edit(() => {})).toContain("needs: [test]");
+    const short =
+      "on: [push, pull_request]\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
+    expect(edit((m) => (m.name = "Checks"), short)).toBe(`name: Checks\n${short}`);
+  });
+
+  it("follows the file's own indentation", () => {
+    const four = "jobs:\n    a:\n        runs-on: ubuntu-latest\n        steps:\n        -   run: echo one\n";
+    const saved = edit((m) => m.jobs[0].steps!.push({ run: "echo two" }), `on: push\n${four}`);
+    expect(saved).toContain("    a:\n        runs-on: ubuntu-latest");
+    expect(saved).toMatch(/run: echo one\n\s+- run: echo two\n$/);
+  });
+
+  it("refuses files it can't edit safely, so the caller rewrites them instead", () => {
+    expect(
+      updateYaml("defaults: &d\n  run:\n    shell: bash\njobs:\n  a:\n    defaults: *d\n", { jobs: {} }),
+    ).toBeNull();
+    expect(updateYaml("jobs: [unclosed", { jobs: {} })).toBeNull();
+  });
+});

@@ -55,7 +55,8 @@ function cleanStep(step: Step): Step {
   return out;
 }
 
-export function toYaml(model: WorkflowModel): string {
+/** The workflow as plain data, in the key order people expect to read it. */
+export function workflowObject(model: WorkflowModel): Record<string, unknown> {
   const jobs: Record<string, unknown> = {};
   // Stage order reads top to bottom in the order things run.
   for (const id of stages(model.jobs).flat()) jobs[id] = jobYaml(model.jobs.find((j) => j.id === id)!);
@@ -72,8 +73,11 @@ export function toYaml(model: WorkflowModel): string {
     workflow.concurrency = { group: "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": true };
   }
   workflow.jobs = jobs;
+  return workflow;
+}
 
-  const doc = new Document(workflow);
+export function toYaml(model: WorkflowModel): string {
+  const doc = new Document(workflowObject(model));
   doc.commentBefore = ` ${HEADER}`;
   // Short lists of plain values read best inline: branches: [main], node-version: ["20", "22"].
   visit(doc, {
