@@ -102,9 +102,9 @@
             title={next.text}
             onclick={() => send({ type: "action", request: { type: "continueOperation" } })}
           >
-            <span class="codicon codicon-debug-continue"></span><span class="label"
-              >{left ? `Continue (${left} left)` : "Continue"}</span
-            >
+            <span class="codicon codicon-debug-continue"></span><span class="label">Continue</span>
+            <!-- A count instead of "(1 left)", which a narrow sidebar cuts off. -->
+            {#if left}<span class="left-pill" aria-hidden="true">{left}</span>{/if}
           </button>
           <button
             disabled={!abort.ok || !!busy}

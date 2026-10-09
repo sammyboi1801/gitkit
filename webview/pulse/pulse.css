@@ -990,6 +990,19 @@ button.primary .count-pill {
   gap: 6px;
 }
 
+/* How many conflicted files are left, on the (disabled) Continue button. */
+.left-pill {
+  flex: none;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  line-height: 16px;
+  text-align: center;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
 /* Small bits */
 
 .hint {
