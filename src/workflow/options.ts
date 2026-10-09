@@ -69,7 +69,8 @@ export function matrixRows(strategy: unknown): { name: string; values: string }[
  * exclude, object values, fail-fast). Returns the new strategy, or undefined if nothing is left.
  */
 export function withMatrix(strategy: unknown, rows: readonly { name: string; values: string }[]): Obj | undefined {
-  const next: Obj = isObj(strategy) ? structuredClone(strategy) : {};
+  // A JSON copy: strategy may be one of the webview's reactive proxies, which structuredClone refuses.
+  const next: Obj = isObj(strategy) ? (JSON.parse(JSON.stringify(strategy)) as Obj) : {};
   const old = isObj(next.matrix) ? next.matrix : {};
   const kept = Object.fromEntries(
     Object.entries(old).filter(([, v]) => !(Array.isArray(v) && v.every((x) => typeof x !== "object"))),

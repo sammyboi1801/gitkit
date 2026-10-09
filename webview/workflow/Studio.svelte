@@ -38,6 +38,12 @@
   const stacks = $derived(facts ? detectStacks(facts) : []);
   const problems = $derived(model ? validate(model) : []);
   const cautions = $derived(model ? warnings(model).length : 0);
+  /** The other workflows in the repo, by name, for "After another workflow". */
+  const workflowNames = $derived(
+    files
+      .filter((f) => f.file !== model?.file && f.summary !== "Couldn't read this file")
+      .map((f) => f.summary.split(" · ")[0]),
+  );
   const yaml = $derived(model ? toYaml(model).replace(/\n# gitkit-model: .*\n$/, "\n") : "");
 
   function pick(goal: Goal) {
@@ -182,7 +188,7 @@
   {:else if model}
     <div class="studio-body" class:with-yaml={showYaml}>
       <div class="studio-main">
-        <Builder bind:model {problems} {stacks} />
+        <Builder bind:model {problems} {stacks} {workflowNames} />
       </div>
       {#if showYaml}
         <aside class="yaml-pane" aria-label="Generated YAML">

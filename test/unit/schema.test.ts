@@ -4,6 +4,8 @@ import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import { STEP_PRESETS, TEMPLATES, addPreset, goals, newJob, type WorkflowModel } from "../../src/workflow/model";
 import { schemaProblems } from "../../src/workflow/schema";
+import { EVENTS } from "../../src/workflow/events";
+import { addVersionTags, newEventConfig, setFilter, withInputs, newInput } from "../../src/workflow/triggers";
 import { toYaml } from "../../src/workflow/yaml";
 
 const workflow = (jobs: WorkflowModel["jobs"]): WorkflowModel => ({
@@ -23,6 +25,21 @@ const workflow = (jobs: WorkflowModel["jobs"]): WorkflowModel => ({
 const asGitHubSeesIt = (model: WorkflowModel) => parse(toYaml(model));
 
 describe("GitHub's workflow schema", () => {
+  it("accepts every trigger as Studio starts it, and as its options set it", () => {
+    for (const { event } of EVENTS) {
+      const config = event === "workflow_run" ? { workflows: ["CI"], types: ["completed"] } : newEventConfig(event);
+      const model = { ...workflow([newJob("node-test", [])]), rawOn: { [event]: config } };
+      expect(schemaProblems(asGitHubSeesIt(model)), event).toEqual([]);
+    }
+    const rich = {
+      ...addVersionTags({ push: setFilter(null, "paths", "except", ["docs/**"]) }),
+      pull_request: { types: ["opened", "ready_for_review"], "branches-ignore": ["gh-pages"] },
+      schedule: [{ cron: "0 6 * * *" }, { cron: "0 9 * * 1", timezone: "Europe/London" }],
+      workflow_dispatch: { inputs: withInputs([{ ...newInput("choice"), name: "target", required: true }]) },
+    };
+    expect(schemaProblems(asGitHubSeesIt({ ...workflow([newJob("node-test", [])]), rawOn: rich }))).toEqual([]);
+  });
+
   it("accepts every job template Studio offers", () => {
     for (const t of TEMPLATES) {
       const job = newJob(t.id, []);

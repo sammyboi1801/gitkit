@@ -892,6 +892,7 @@ export function validate(model: WorkflowModel): Problem[] {
     problems.push({ message: "A schedule needs 5 cron fields: minute hour day month weekday." });
   }
   if (t.tags.enabled && !t.tags.pattern.trim()) problems.push({ message: "Give a tag pattern, like v*." });
+  if (model.rawOn !== undefined) problems.push(...triggerProblems(model.rawOn));
   if (model.jobs.length === 0) problems.push({ message: "Add at least one job." });
 
   const ids = new Set<string>();
@@ -924,6 +925,59 @@ export function validate(model: WorkflowModel): Problem[] {
 
   const cycle = findCycle(model.jobs);
   if (cycle) problems.push({ message: `These jobs wait on each other forever: ${cycle.join(" → ")}.` });
+  return problems;
+}
+
+const INPUT_NAME = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+/** What GitHub would reject in an `on:` block written with the trigger editor or by hand. */
+function triggerProblems(on: unknown): Problem[] {
+  const events: Record<string, unknown> =
+    typeof on === "string"
+      ? { [on]: null }
+      : Array.isArray(on)
+        ? Object.fromEntries(on.map((e) => [String(e), null]))
+        : on && typeof on === "object"
+          ? (on as Record<string, unknown>)
+          : {};
+  const problems: Problem[] = [];
+  const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+  for (const [event, config] of Object.entries(events)) {
+    const c = obj(config);
+    for (const filter of ["branches", "tags", "paths"]) {
+      if (c[filter] !== undefined && c[`${filter}-ignore`] !== undefined) {
+        problems.push({ message: `${event}: use ${filter} or ${filter}-ignore, not both.` });
+      }
+    }
+    if (event === "schedule") {
+      const entries = Array.isArray(config) ? config : [];
+      if (!entries.length) problems.push({ message: "Add a time to the schedule." });
+      if (
+        entries.some(
+          (s) =>
+            String(obj(s).cron ?? "")
+              .trim()
+              .split(/\s+/).length !== 5,
+        )
+      ) {
+        problems.push({ message: "A schedule needs 5 cron fields: minute hour day month weekday." });
+      }
+    }
+    if (event === "workflow_run" && !(Array.isArray(c.workflows) && c.workflows.length)) {
+      problems.push({ message: "Say which workflow this one runs after." });
+    }
+    if (event === "workflow_dispatch" || event === "workflow_call") {
+      for (const [name, input] of Object.entries(obj(c.inputs))) {
+        if (!INPUT_NAME.test(name)) {
+          problems.push({ message: `Input "${name}" can only use letters, numbers, - and _.` });
+        }
+        const i = obj(input);
+        if (i.type === "choice" && !(Array.isArray(i.options) && i.options.length)) {
+          problems.push({ message: `Input "${name}" is a choice: give it some options.` });
+        }
+      }
+    }
+  }
   return problems;
 }
 

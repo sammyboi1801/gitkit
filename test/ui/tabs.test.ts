@@ -527,8 +527,13 @@ describe("Workflow Studio", () => {
     expect(screen.getByRole("button", { name: "on pushes to main" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "on pull requests" })).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: "on pushes to main" }));
-    await fireEvent.input(screen.getByPlaceholderText("every branch"), { target: { value: "main, dev" } });
+    await fireEvent.input(screen.getByRole("textbox", { name: "Branches" }), { target: { value: "main, dev" } });
     expect(screen.getByRole("button", { name: "on pushes to main, dev" })).toBeTruthy();
+    // "All except" turns the same list into branches-ignore.
+    await fireEvent.change(screen.getByRole("combobox", { name: "Branches: only or except" }), {
+      target: { value: "except" },
+    });
+    expect(screen.getByRole("button", { name: "on pushes except to main, dev" })).toBeTruthy();
   });
 
   it("explains what's wrong instead of letting a broken workflow be saved", async () => {
@@ -707,8 +712,10 @@ describe("Workflow Studio", () => {
     await post({ type: "opened", file: "docs.yml", model, imported: true, explanation: explain(text) });
 
     expect(screen.getByRole("note").textContent).toMatch(/its comments and formatting stay/);
-    expect(screen.getByText("on push, release (kept as written)")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Add a trigger/ })).toBeNull();
+    // Every trigger opens as a chip with its own options, even ones the old chips couldn't show.
+    expect(screen.getByRole("button", { name: "on pushes that change docs/**" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "when a release is published" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Add a trigger/ })).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: /^deploy\b/ }));
     const editor = screen.getByRole("dialog", { name: "Edit deploy" });
     expect(within(editor).getByText("self-hosted, linux")).toBeTruthy();
@@ -918,18 +925,67 @@ describe("Workflow Studio", () => {
       expect(Object.keys(yaml()).slice(0, 3)).toEqual(["name", "run-name", "on"]);
     });
 
-    it("adds any other trigger as YAML from 'Add a trigger'", async () => {
+    const addTrigger = async (search: string, choice: string) => {
+      await fireEvent.click(screen.getByRole("button", { name: /Add a trigger/ }));
+      await fireEvent.input(screen.getByRole("textbox", { name: "Search triggers" }), { target: { value: search } });
+      await fireEvent.click(screen.getByRole("button", { name: choice }));
+    };
+
+    it("adds any GitHub event from 'Add a trigger', with its own options", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await addTrigger("release", "When a release is published");
+      expect(yaml().on.release).toEqual({ types: ["published"] });
+      expect(screen.getByRole("button", { name: "when a release is published" })).toBeTruthy();
+
+      const types = within(screen.getByRole("group", { name: "Activity types" }));
+      await fireEvent.click(types.getByRole("button", { name: "pre-released" }));
+      expect(yaml().on.release).toEqual({ types: ["published", "prereleased"] });
+      expect(screen.getByRole("button", { name: "on releases (published, pre-released)" })).toBeTruthy();
+
+      await addTrigger("comment", "On issue and pull request comments");
+      expect(yaml().on.issue_comment).toBeNull();
+      await fireEvent.click(
+        within(screen.getByRole("group", { name: "Activity types" })).getByRole("button", { name: "edited" }),
+      );
+      expect(yaml().on.issue_comment).toEqual({ types: ["created", "deleted"] });
+    });
+
+    it("sets pull request types and file filters, writing only what isn't GitHub's default", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await fireEvent.click(screen.getByRole("button", { name: "on pull requests" }));
+      const types = within(screen.getByRole("group", { name: "Activity types" }));
+      expect(screen.getByText("GitHub's default. Pick others to change it.")).toBeTruthy();
+      await fireEvent.click(types.getByRole("button", { name: "marked ready for review" }));
+      expect(yaml().on.pull_request.types).toEqual(["opened", "synchronize", "reopened", "ready_for_review"]);
+      await fireEvent.click(types.getByRole("button", { name: "marked ready for review" }));
+      expect(yaml().on.pull_request).toBeNull();
+
+      await fireEvent.input(screen.getByRole("textbox", { name: "Only when these files change" }), {
+        target: { value: "src/**, package.json" },
+      });
+      expect(yaml().on.pull_request).toEqual({ paths: ["src/**", "package.json"] });
+      expect(screen.getByRole("button", { name: "on pull requests that change src/**, package.json" })).toBeTruthy();
+    });
+
+    it("adds version tags to pushes, and several schedules in any timezone", async () => {
       await startWith(/Check every push/);
       await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
       await fireEvent.click(screen.getByRole("button", { name: /Add a trigger/ }));
-      await fireEvent.click(screen.getByRole("button", { name: /Something else/ }));
-      const box = await screen.findByRole("textbox", { name: /^When it runs/ });
-      await fireEvent.input(box, { target: { value: "release:\n  types: [published]\nworkflow_dispatch:\n" } });
-      expect(screen.getByText("on release, workflow_dispatch (kept as written)")).toBeTruthy();
-      expect(yaml().on).toEqual({ release: { types: ["published"] }, workflow_dispatch: null });
-      // Back to something the chips can show: chips again.
-      await fireEvent.input(box, { target: { value: "push:\n  branches: [main]\n" } });
-      expect(screen.getByRole("button", { name: "on pushes to main" })).toBeTruthy();
+      await fireEvent.click(screen.getByRole("button", { name: "When a version tag is pushed" }));
+      expect(yaml().on.push).toEqual({ branches: ["main"], tags: ["v*"] });
+      expect(screen.getByRole("button", { name: "on pushes to main and on tags like v*" })).toBeTruthy();
+
+      await fireEvent.click(screen.getByRole("button", { name: /Add a trigger/ }));
+      await fireEvent.click(screen.getByRole("button", { name: "On a schedule" }));
+      await fireEvent.click(screen.getByRole("button", { name: /Add another schedule/ }));
+      const second = within(screen.getByRole("group", { name: "Schedule 2" }));
+      await fireEvent.change(second.getByRole("combobox", { name: "Timezone" }), {
+        target: { value: "Europe/London" },
+      });
+      expect(yaml().on.schedule).toEqual([{ cron: "0 6 * * *" }, { cron: "0 18 * * 5", timezone: "Europe/London" }]);
+      expect(screen.getByRole("button", { name: "every day at 06:00 UTC +1 more" })).toBeTruthy();
     });
 
     it("always shows the schedule's cron, and lets you type one", async () => {
@@ -941,6 +997,49 @@ describe("Workflow Studio", () => {
       await fireEvent.input(cron, { target: { value: "15 3 * * *" } });
       expect(screen.getByRole("button", { name: "every day at 03:15 UTC" })).toBeTruthy();
       expect(screen.getByText(/^every day at 03:15 UTC\. Fields: minute hour/)).toBeTruthy();
+    });
+
+    it("gives the Run button inputs: text, a choice, yes or no", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await fireEvent.click(screen.getByRole("button", { name: "with a Run button" }));
+      await fireEvent.click(screen.getByRole("button", { name: /Add an input/ }));
+      await fireEvent.input(screen.getByRole("textbox", { name: "Input name" }), { target: { value: "target" } });
+      await fireEvent.change(screen.getByRole("combobox", { name: "Kind of target" }), { target: { value: "choice" } });
+      await fireEvent.change(screen.getByRole("combobox", { name: "Default of target" }), {
+        target: { value: "staging" },
+      });
+      await fireEvent.click(screen.getByRole("checkbox", { name: "Required" }));
+      expect(yaml().on.workflow_dispatch).toEqual({
+        inputs: { target: { required: true, type: "choice", default: "staging", options: ["staging", "production"] } },
+      });
+      expect(screen.getByRole("button", { name: "with a Run button (1 input)" })).toBeTruthy();
+    });
+
+    it("makes a workflow reusable, and runs one after another workflow", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await addTrigger("another workflow calls", "When another workflow calls it");
+      await fireEvent.click(screen.getByRole("button", { name: /Add a secret/ }));
+      await fireEvent.input(screen.getByRole("textbox", { name: "Secret name" }), { target: { value: "NPM_TOKEN" } });
+      expect(yaml().on.workflow_call).toEqual({ secrets: { NPM_TOKEN: null } });
+
+      await addTrigger("after", "After another workflow");
+      await fireEvent.input(screen.getByRole("combobox", { name: "After which workflows" }), {
+        target: { value: "CI" },
+      });
+      expect(yaml().on.workflow_run).toEqual({ workflows: ["CI"], types: ["completed"] });
+      expect(screen.getByRole("button", { name: "after CI completes" })).toBeTruthy();
+    });
+
+    it("still takes the whole on: block as YAML, for anything at all", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await open(document.body, "All triggers as YAML");
+      const box = await screen.findByRole("textbox", { name: /^When it runs/ });
+      await fireEvent.input(box, { target: { value: "release:\n  types: [published]\nworkflow_dispatch:\n" } });
+      expect(yaml().on).toEqual({ release: { types: ["published"] }, workflow_dispatch: null });
+      expect(screen.getByRole("button", { name: "when a release is published" })).toBeTruthy();
     });
   });
 

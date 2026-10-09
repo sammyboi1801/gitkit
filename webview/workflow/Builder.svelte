@@ -3,49 +3,41 @@
   import {
     RUNNERS,
     TEMPLATES,
-    WEEKDAYS,
     addPreset,
     jobLook,
-    cronFor,
-    describeSchedule,
     newJob,
-    scheduleSpec,
     stages,
     template,
     toOwnSteps,
-    type Frequency,
     type Job,
     type Problem,
-    type ScheduleSpec,
     type Stack,
     type Step,
     type Template,
-    type Triggers,
     type WorkflowModel,
   } from "../../src/workflow/model";
   import { describeCondition } from "../../src/workflow/conditions";
+  import { describeEvent, eventSpec, normalizeOn } from "../../src/workflow/events";
+  import { applyOn } from "../../src/workflow/import";
   import { setPath } from "../../src/workflow/options";
+  import { addEvent, addVersionTags, removeEvent } from "../../src/workflow/triggers";
   import { mainBranch, warnings } from "../../src/workflow/warnings";
+  import { triggersYaml } from "../../src/workflow/yaml";
   import ConditionField from "./ConditionField.svelte";
   import JobOptions from "./JobOptions.svelte";
   import StepOptions from "./StepOptions.svelte";
   import StepPicker from "./StepPicker.svelte";
+  import TriggerEditor from "./TriggerEditor.svelte";
+  import TriggerPicker from "./TriggerPicker.svelte";
   import WorkflowSettings from "./WorkflowSettings.svelte";
 
   let {
     model = $bindable(),
     problems,
     stacks,
-  }: { model: WorkflowModel; problems: Problem[]; stacks: Stack[] } = $props();
+    workflowNames = [],
+  }: { model: WorkflowModel; problems: Problem[]; stacks: Stack[]; workflowNames?: string[] } = $props();
 
-  type TriggerKey = "push" | "pullRequest" | "tags" | "schedule" | "manual";
-  const TRIGGERS: { key: TriggerKey; add: string; icon: string }[] = [
-    { key: "push", add: "When code is pushed", icon: "repo-push" },
-    { key: "pullRequest", add: "On pull requests", icon: "git-pull-request" },
-    { key: "tags", add: "When a version tag is pushed", icon: "tag" },
-    { key: "schedule", add: "On a schedule", icon: "watch" },
-    { key: "manual", add: "With a Run button on GitHub", icon: "play" },
-  ];
   const GROUPS: { id: Template["group"]; label: string }[] = [
     { id: "check", label: "Check the code" },
     { id: "build", label: "Build" },
@@ -53,7 +45,8 @@
     { id: "other", label: "Anything else" },
   ];
 
-  let editingTrigger: TriggerKey | null = $state(null);
+  /** The event whose options are open under the chips. */
+  let editingEvent: string | null = $state(null);
   let addingTrigger = $state(false);
   /** Where a new job goes: the ids it should run after (empty: at the start). Null when closed. */
   let addingJobAfter: string[] | null = $state(null);
@@ -64,28 +57,11 @@
   /** The step whose fields are showing in the job panel. */
   let openStep: number | null = $state(null);
   let addingStep = $state(false);
-  /** The person chose "Custom" for the schedule, so the cron field shows even for a simple cron. */
-  let customCron = $state(false);
   /** Access the last added step needed, granted to its job: said once, under the steps. */
   let granted: string[] = $state([]);
-  /** The "Triggers as YAML" box in More settings, opened by "Something else…". */
+  /** The "All triggers as YAML" box in More settings. */
   let triggersYamlOpen = $state(false);
-  let settingsCard: HTMLElement | undefined = $state();
 
-  const FREQUENCIES: { value: Frequency; label: string }[] = [
-    { value: "hourly", label: "Every hour" },
-    { value: "daily", label: "Every day" },
-    { value: "weekly", label: "Every week" },
-    { value: "monthly", label: "Every month" },
-  ];
-  const HOURS = Array.from({ length: 24 }, (_, h) => h);
-  const DAYS = Array.from({ length: 28 }, (_, d) => d + 1);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const ordinal = (d: number) =>
-    `${d}${d % 10 === 1 && d !== 11 ? "st" : d % 10 === 2 && d !== 12 ? "nd" : d % 10 === 3 && d !== 13 ? "rd" : "th"}`;
-  /** Every five minutes, plus whatever odd minute the cron already uses. */
-  const minutes = (current: number) =>
-    [...new Set([...Array.from({ length: 12 }, (_, i) => i * 5), current])].sort((a, b) => a - b);
   // Keys the step editor has fields for; anything else is listed as kept as written.
   const KNOWN_STEP_KEYS = [
     "name",
@@ -101,8 +77,27 @@
     "continue-on-error",
   ];
 
-  const isOn = (key: TriggerKey) => (key === "manual" ? model.triggers.manual : model.triggers[key].enabled);
-  const active = $derived(TRIGGERS.filter((t) => isOn(t.key)));
+  // Triggers are edited as the `on:` block itself, one event at a time, so every event GitHub has
+  // works the same way; applyOn keeps Studio's own record of them in step.
+  const on = $derived(normalizeOn(triggersYaml(model)));
+  const events = $derived(Object.keys(on));
+  const updateOn = (next: Record<string, unknown>) => applyOn(model, next);
+  function pickTrigger(choice: string) {
+    if (choice === "version-tags") {
+      updateOn(addVersionTags(on));
+      editingEvent = "push";
+    } else {
+      updateOn(addEvent(on, choice, branch));
+      editingEvent = choice;
+    }
+    addingTrigger = false;
+  }
+  function dropTrigger(event: string) {
+    updateOn(removeEvent(on, event));
+    if (editingEvent === event) editingEvent = null;
+  }
+  const hasTags = $derived(!!on.push && typeof on.push === "object" && ("tags" in on.push || "tags-ignore" in on.push));
+
   const columns = $derived(stages(model.jobs).map((ids) => ids.map((id) => model.jobs.find((j) => j.id === id)!)));
   const problemsFor = (job: Job) => problems.filter((p) => p.job === job.id);
   // Warnings don't block saving: the workflow is valid, it just probably doesn't do what was meant.
@@ -113,36 +108,6 @@
     job.extra = setPath(job.extra ? { ...job.extra } : undefined, ["if"], condition);
   };
   const general = $derived(problems.filter((p) => !p.job));
-
-  function chipText(key: TriggerKey, t: Triggers): string {
-    switch (key) {
-      case "push":
-        return t.push.branches.length ? `on pushes to ${t.push.branches.join(", ")}` : "on every push";
-      case "pullRequest":
-        return t.pullRequest.branches.length
-          ? `on pull requests into ${t.pullRequest.branches.join(", ")}`
-          : "on pull requests";
-      case "tags":
-        return `on tags like ${t.tags.pattern}`;
-      case "schedule":
-        return describeSchedule(t.schedule.cron);
-      case "manual":
-        return "with a Run button";
-    }
-  }
-
-  function setTrigger(key: TriggerKey, on: boolean) {
-    if (key === "manual") model.triggers.manual = on;
-    else model.triggers[key].enabled = on;
-    editingTrigger = on && key !== "manual" ? key : null;
-    addingTrigger = false;
-  }
-
-  const list = (value: string) =>
-    value
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
 
   // The project's own stack first, then everything else; search narrows by name or description.
   function templatesIn(group: Template["group"]): Template[] {
@@ -258,14 +223,6 @@
     addingStep = false;
   }
 
-  async function otherTriggers() {
-    addingTrigger = false;
-    triggersYamlOpen = true;
-    await tick();
-    settingsCard?.scrollIntoView?.({ block: "nearest" });
-    settingsCard?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
-  }
-
   function moveStep(job: Job, i: number, by: number) {
     const steps = [...(job.steps ?? [])];
     [steps[i], steps[i + by]] = [steps[i + by], steps[i]];
@@ -308,38 +265,13 @@
 
   const isCustomRunner = (job: Job) => !RUNNERS.some((r) => r.value === job.runsOn);
 
-  // --- Schedule ---
-
-  const DEFAULT_SPEC: ScheduleSpec = { frequency: "daily", minute: 0, hour: 6, weekday: 1, day: 1 };
-
-  function setSchedule(patch: Partial<ScheduleSpec>) {
-    const spec = scheduleSpec(model.triggers.schedule.cron) ?? DEFAULT_SPEC;
-    model.triggers.schedule.cron = cronFor({ ...spec, ...patch });
-  }
-
-  function setFrequency(value: string) {
-    customCron = value === "custom";
-    if (!customCron) setSchedule({ frequency: value as Frequency });
-  }
-
-  // --- Triggers kept from a file ---
-
-  /** Event names in triggers Studio kept as written, e.g. ["push", "release"]. */
-  const rawEvents = $derived.by(() => {
-    const on = model.rawOn;
-    if (on === undefined) return [];
-    if (typeof on === "string") return [on];
-    if (Array.isArray(on)) return on.map(String);
-    return on && typeof on === "object" ? Object.keys(on) : [];
-  });
-
   function onKey(event: KeyboardEvent) {
     if (event.key !== "Escape") return;
     // Close the innermost thing that's open.
     if (addingJobAfter) addingJobAfter = null;
     else if (selected) selected = null;
     else {
-      editingTrigger = null;
+      editingEvent = null;
       addingTrigger = false;
     }
   }
@@ -354,159 +286,51 @@
     <h3 id="when-heading" class="sr-only">When it runs</h3>
     <div class="trigger-row">
       <span class="runs-label">Runs</span>
-      {#if model.rawOn !== undefined}
-        <span
-          class="chip-group kept"
-          title="These triggers use options the builder doesn't show, so they're saved exactly as written."
-        >
-          <span class="codicon codicon-lock chip-icon" aria-hidden="true"></span>
-          <span class="trigger-chip">on {rawEvents.join(", ") || "custom events"} (kept as written)</span>
-        </span>
-        <button class="add-chip" onclick={otherTriggers}>
-          <span class="codicon codicon-code"></span>Edit as YAML
-        </button>
-        <button class="add-chip" onclick={() => (model.rawOn = undefined)}>
-          <span class="codicon codicon-edit"></span>Replace with simple triggers
-        </button>
-      {/if}
-      {#each model.rawOn === undefined ? active : [] as t (t.key)}
-        <span class="chip-group" class:active={editingTrigger === t.key}>
-          <span class="codicon codicon-{t.icon} chip-icon" aria-hidden="true"></span>
+      {#each events as event (event)}
+        {@const spec = eventSpec(event)}
+        {@const words = describeEvent(event, on[event])}
+        <span class="chip-group" class:active={editingEvent === event}>
+          <span class="codicon codicon-{spec?.icon ?? 'zap'} chip-icon" aria-hidden="true"></span>
           <button
             class="trigger-chip"
-            aria-expanded={t.key === "manual" ? undefined : editingTrigger === t.key}
-            disabled={t.key === "manual"}
-            onclick={() => (editingTrigger = editingTrigger === t.key ? null : t.key)}
+            aria-expanded={editingEvent === event}
+            title={spec ? `${spec.label} (${event})` : event}
+            onclick={() => {
+              editingEvent = editingEvent === event ? null : event;
+              addingTrigger = false;
+            }}>{words}</button
           >
-            {chipText(t.key, model.triggers)}
-          </button>
-          <button
-            class="chip-remove"
-            aria-label="Remove: {chipText(t.key, model.triggers)}"
-            onclick={() => setTrigger(t.key, false)}
-          >
+          <button class="chip-remove" aria-label="Remove: {words}" onclick={() => dropTrigger(event)}>
             <span class="codicon codicon-close"></span>
           </button>
         </span>
       {/each}
-      {#if model.rawOn === undefined}
-        <button class="add-chip" aria-expanded={addingTrigger} onclick={() => (addingTrigger = !addingTrigger)}>
-          <span class="codicon codicon-add"></span>Add a trigger
-        </button>
-      {/if}
+      <button
+        class="add-chip"
+        aria-expanded={addingTrigger}
+        onclick={() => {
+          addingTrigger = !addingTrigger;
+          editingEvent = null;
+        }}
+      >
+        <span class="codicon codicon-add"></span>Add a trigger
+      </button>
     </div>
 
     {#if addingTrigger}
-      <div class="trigger-options" role="group" aria-label="Add a trigger">
-        {#each TRIGGERS.filter((t) => !isOn(t.key)) as t (t.key)}
-          <button class="option" onclick={() => setTrigger(t.key, true)}>
-            <span class="codicon codicon-{t.icon}" aria-hidden="true"></span>{t.add}
-          </button>
-        {/each}
-        <button class="option" onclick={otherTriggers}>
-          <span class="codicon codicon-code" aria-hidden="true"></span>Something else (releases, issues, other
-          workflows…)
-        </button>
-      </div>
+      <TriggerPicker used={events} {hasTags} onpick={pickTrigger} oncancel={() => (addingTrigger = false)} />
     {/if}
 
-    {#if editingTrigger}
-      <div class="trigger-editor">
-        {#if editingTrigger === "push"}
-          <label class="field">
-            <span class="field-label">Branches</span>
-            <input
-              class="mono"
-              placeholder="every branch"
-              value={model.triggers.push.branches.join(", ")}
-              oninput={(e) => (model.triggers.push.branches = list(e.currentTarget.value))}
-            />
-            <span class="field-hint">Comma-separated. Leave empty to run on every branch.</span>
-          </label>
-        {:else if editingTrigger === "pullRequest"}
-          <label class="field">
-            <span class="field-label">Into branches</span>
-            <input
-              class="mono"
-              placeholder="any branch"
-              value={model.triggers.pullRequest.branches.join(", ")}
-              oninput={(e) => (model.triggers.pullRequest.branches = list(e.currentTarget.value))}
-            />
-            <span class="field-hint">Leave empty for pull requests into any branch.</span>
-          </label>
-        {:else if editingTrigger === "tags"}
-          <label class="field">
-            <span class="field-label">Tag pattern</span>
-            <input class="mono short" bind:value={model.triggers.tags.pattern} />
-            <span class="field-hint"><code>v*</code> matches v1.0, v2.3.1 and so on.</span>
-          </label>
-        {:else if editingTrigger === "schedule"}
-          {@const spec = customCron ? null : scheduleSpec(model.triggers.schedule.cron)}
-          <div class="schedule-row">
-            <label class="field">
-              <span class="field-label">How often</span>
-              <select value={spec?.frequency ?? "custom"} onchange={(e) => setFrequency(e.currentTarget.value)}>
-                {#each FREQUENCIES as f (f.value)}<option value={f.value}>{f.label}</option>{/each}
-                <option value="custom">Custom (cron)</option>
-              </select>
-            </label>
-            {#if spec?.frequency === "weekly"}
-              <label class="field">
-                <span class="field-label">On</span>
-                <select value={spec.weekday} onchange={(e) => setSchedule({ weekday: Number(e.currentTarget.value) })}>
-                  {#each WEEKDAYS as day, i (day)}<option value={i}>{day}</option>{/each}
-                </select>
-              </label>
-            {:else if spec?.frequency === "monthly"}
-              <label class="field">
-                <span class="field-label">On the</span>
-                <select value={spec.day} onchange={(e) => setSchedule({ day: Number(e.currentTarget.value) })}>
-                  {#each DAYS as d (d)}<option value={d}>{ordinal(d)}</option>{/each}
-                </select>
-              </label>
-            {/if}
-            {#if spec && spec.frequency !== "hourly"}
-              <div class="field">
-                <span class="field-label" id="time-label">At (UTC)</span>
-                <span class="time" role="group" aria-labelledby="time-label">
-                  <select
-                    aria-label="Hour"
-                    value={spec.hour}
-                    onchange={(e) => setSchedule({ hour: Number(e.currentTarget.value) })}
-                  >
-                    {#each HOURS as h (h)}<option value={h}>{pad(h)}</option>{/each}
-                  </select>
-                  :
-                  <select
-                    aria-label="Minute"
-                    value={spec.minute}
-                    onchange={(e) => setSchedule({ minute: Number(e.currentTarget.value) })}
-                  >
-                    {#each minutes(spec.minute) as m (m)}<option value={m}>{pad(m)}</option>{/each}
-                  </select>
-                </span>
-              </div>
-            {:else if spec}
-              <label class="field">
-                <span class="field-label">At minute</span>
-                <select value={spec.minute} onchange={(e) => setSchedule({ minute: Number(e.currentTarget.value) })}>
-                  {#each minutes(spec.minute) as m (m)}<option value={m}>:{pad(m)}</option>{/each}
-                </select>
-              </label>
-            {/if}
-          </div>
-          <label class="field">
-            <span class="field-label">Cron expression</span>
-            <input class="mono short" spellcheck="false" bind:value={model.triggers.schedule.cron} />
-            <span class="field-hint"
-              >{describeSchedule(model.triggers.schedule.cron)}. Fields: minute hour day-of-month month day-of-week, in
-              UTC; * means every.</span
-            >
-          </label>
-          <span class="field-hint">GitHub may start scheduled runs a few minutes late when it's busy.</span>
-        {/if}
-        <button class="done-link" onclick={() => (editingTrigger = null)}>Done</button>
-      </div>
+    {#if editingEvent && editingEvent in on}
+      {#key editingEvent}
+        <TriggerEditor
+          event={editingEvent}
+          config={on[editingEvent]}
+          {workflowNames}
+          onchange={(config) => updateOn({ ...on, [editingEvent!]: config })}
+          ondone={() => (editingEvent = null)}
+        />
+      {/key}
     {/if}
   </section>
 
@@ -596,9 +420,7 @@
     </label>
   </section>
 
-  <div bind:this={settingsCard}>
-    <WorkflowSettings bind:model bind:triggersOpen={triggersYamlOpen} />
-  </div>
+  <WorkflowSettings bind:model bind:triggersOpen={triggersYamlOpen} />
 
   {#if general.length}
     <ul class="problems" aria-label="Problems to fix">

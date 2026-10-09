@@ -60,13 +60,13 @@
   {/key}
 
   <details class="advanced" bind:open={triggersOpen}>
-    <summary>Triggers as YAML (releases, issues, other workflows…)</summary>
+    <summary>All triggers as YAML</summary>
     {#if triggersOpen}
       <YamlBox
         label="When it runs"
         value={triggersYaml(model)}
         onapply={(v) => applyOn(model, v ?? {})}
-        hint="Any event GitHub supports, with filters like paths or types. Ones the chips above can show become chips again."
+        hint="The whole on: block. Every trigger above can also be set up with its own options."
       />
     {/if}
   </details>

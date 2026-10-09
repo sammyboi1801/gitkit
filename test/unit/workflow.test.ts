@@ -66,6 +66,25 @@ describe("validate", () => {
       "A schedule needs 5 cron fields: minute hour day month weekday.",
     );
   });
+
+  it("catches what GitHub would reject in any trigger, not just the simple ones", () => {
+    const messages = (on: unknown) => validate({ ...structuredClone(node), rawOn: on }).map((p) => p.message);
+    expect(messages({ push: { branches: ["main"], "branches-ignore": ["dev"] } })).toContain(
+      "push: use branches or branches-ignore, not both.",
+    );
+    expect(messages({ schedule: [{ cron: "0 6 * * *" }, { cron: "nightly" }] })).toContain(
+      "A schedule needs 5 cron fields: minute hour day month weekday.",
+    );
+    expect(messages({ schedule: [] })).toContain("Add a time to the schedule.");
+    expect(messages({ workflow_run: { types: ["completed"] } })).toContain("Say which workflow this one runs after.");
+    expect(
+      messages({ workflow_dispatch: { inputs: { "my env": { type: "string" }, target: { type: "choice" } } } }),
+    ).toEqual([
+      'Input "my env" can only use letters, numbers, - and _.',
+      'Input "target" is a choice: give it some options.',
+    ]);
+    expect(messages({ release: { types: ["published"] }, workflow_dispatch: null })).toEqual([]);
+  });
 });
 
 describe("stages", () => {
