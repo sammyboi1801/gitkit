@@ -25,6 +25,9 @@ const write = (file: string, text: string) => writeFileSync(join(repo, file), te
 
 // --- Dialogs ----------------------------------------------------------------------------------
 
+/** VS Code's own, before the tour scripts the dialogs: for a step that shows a real pop-up. */
+const realShowInformationMessage = vscode.window.showInformationMessage;
+
 type Answer = string | undefined | ((items: unknown[]) => unknown);
 const answers: Answer[] = [];
 let dialogs: string[] = [];
@@ -563,6 +566,74 @@ describe("GitKit tour", () => {
         await refresh();
       }
     });
+
+    await step(
+      "new-commits",
+      "A teammate pushes while you work: a pop-up, and a count on GitKit's icon",
+      async (result) => {
+        await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(join(repo, "src", "checkout.js")));
+        await vscode.commands.executeCommand("workbench.view.explorer");
+        // Left behind (Windows can hold its files a while); the next tour starts from a clean folder.
+        const teammate = join(dirname(repo), "teammate-2");
+        execFileSync("git", ["clone", "-q", env.TOUR_REMOTE, teammate]);
+        gitIn(
+          teammate,
+          "-c",
+          "user.name=Priya Patel",
+          "-c",
+          "user.email=priya@acme.dev",
+          "commit",
+          "-q",
+          "--allow-empty",
+          "-m",
+          "feat: gift cards",
+        );
+        gitIn(teammate, "push", "-q", "origin", "HEAD:main");
+
+        // The real pop-up this time, so it's in the screenshot; it's left for the user to dismiss.
+        const w = vscode.window as unknown as Record<string, unknown>;
+        const scripted = w.showInformationMessage;
+        w.showInformationMessage = realShowInformationMessage;
+        const settings = vscode.workspace.getConfiguration("gitkit");
+        // Checks the remote again right away (a couple of seconds after the last check).
+        await settings.update("autoFetchMinutes", 0.02, vscode.ConfigurationTarget.Global);
+        const view = (pulse as unknown as { view?: vscode.WebviewView }).view;
+        try {
+          // GitKit checks the remote only while VS Code is focused, and the tour may be running in the background.
+          if (!vscode.window.state.focused) {
+            await run("powershell", [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-File",
+              env.TOUR_CAPTURE,
+              "-Exe",
+              env.TOUR_CODE_EXE,
+              "-Focus",
+            ]);
+            await sleep(1000);
+          }
+          if (!vscode.window.state.focused) {
+            result.note =
+              "VS Code couldn't be brought into focus, so GitKit (rightly) didn't check; host tests cover the alerts.";
+            return;
+          }
+          await waitFor(() => view?.badge?.value === 1, "the count on GitKit's icon");
+          check(
+            view?.badge?.tooltip === "1 new commit from others",
+            `the badge says what it counts: ${view?.badge?.tooltip}`,
+          );
+          await screenshot("new-commits-popup");
+        } finally {
+          await settings.update("autoFetchMinutes", 0, vscode.ConfigurationTarget.Global);
+          w.showInformationMessage = scripted;
+        }
+        await vscode.commands.executeCommand("workbench.view.extension.gitkit");
+        await waitFor(() => view?.badge === undefined, "the count to clear once GitKit is open");
+        await vscode.commands.executeCommand("notifications.clearAll");
+      },
+    );
 
     for (const [theme, slug] of [
       ["Default Light Modern", "light"],
