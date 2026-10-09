@@ -151,6 +151,7 @@ export const harness = {
     this.focused = true;
     this.session = undefined;
     this.terminals = [];
+    openTerminals.splice(0);
     this.commands.clear();
     // Disposing resets the panels' singletons, so each test opens fresh ones.
     this.panels.splice(0).forEach((p) => p.dispose());
@@ -172,6 +173,9 @@ export const harness = {
     return webview;
   },
 };
+
+const openTerminals: { name: string; dispose(): void }[] = [];
+const closedTerminal = new Emitter<unknown>();
 
 function nextAnswer(items?: unknown[]): unknown {
   const answer = harness.answers.shift();
@@ -221,14 +225,28 @@ export const window = {
     return harness.shellExecutions.event;
   },
   createTerminal(options: { name: string; cwd: string }) {
-    const terminal = { name: options.name, cwd: options.cwd, sent: [] as string[], shown: false };
-    harness.terminals.push(terminal);
-    return {
-      show: () => void (terminal.shown = true),
-      sendText: (text: string) => void terminal.sent.push(text),
-      dispose() {},
+    const record = { name: options.name, cwd: options.cwd, sent: [] as string[], shown: false };
+    harness.terminals.push(record);
+    const terminal = {
+      name: options.name,
+      creationOptions: { cwd: options.cwd },
+      shellIntegration: undefined,
+      show: () => void (record.shown = true),
+      sendText: (text: string) => void record.sent.push(text),
+      dispose() {
+        const i = openTerminals.indexOf(terminal);
+        if (i === -1) return;
+        openTerminals.splice(i, 1);
+        closedTerminal.fire(terminal);
+      },
     };
+    openTerminals.push(terminal);
+    return terminal;
   },
+  get terminals() {
+    return [...openTerminals];
+  },
+  onDidCloseTerminal: (listener: (t: unknown) => void) => closedTerminal.event(listener),
   setStatusBarMessage: (text: string) => {
     harness.shown.push({ kind: "status", message: text });
     return new Disposable();

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +7,7 @@ import { readCi, readPullRequest, rerunFailedJobs } from "../../src/github/clien
 import { readRepo } from "../../src/git/repo";
 import type { HostToStudio } from "../../src/shared/messages";
 import type { WorkflowModel } from "../../src/workflow/model";
-import { DEFAULT_AGENTS } from "../../src/features/pulse/PulseViewProvider";
+import { DEFAULT_AGENTS, explainFailure } from "../../src/features/pulse/PulseViewProvider";
 import { listCheckpoints, readCheckpointState } from "../../src/git/checkpoints";
 import { formatCommand } from "../../src/git/format";
 import { realPath, samePath } from "../../src/git/paths";
@@ -213,6 +214,26 @@ describe("conflicts", () => {
     await panel.send({ type: "action", request: { type: "continueOperation" } });
     expect(panel.repo().operation).toBeNull();
     expect(git(dir, "log", "-1", "--format=%P").trim().split(" ")).toHaveLength(2);
+  });
+
+  it("pauses on a conflict without calling it an error, but reports real failures", async () => {
+    const dir = makeRepo();
+    git(dir, "switch", "-q", "-c", "feat/label");
+    commit(dir, "theirs", { "a.txt": "incoming\n" });
+    git(dir, "switch", "-q", "main");
+    commit(dir, "ours", { "a.txt": "mine\n" });
+    const panel = await openPanel(dir);
+
+    harness.answers.push("Merge into main");
+    await panel.send({ type: "action", request: { type: "mergeBranch", branch: "feat/label" } });
+    expect(panel.repo().operation).toBe("merge");
+    expect(panel.posted("error")).toEqual([]);
+
+    // Not a conflict: git refuses outright, and that is an error worth showing.
+    harness.answers.push("Abort");
+    await panel.send({ type: "action", request: { type: "abortOperation" } });
+    await panel.send({ type: "action", request: { type: "switch", branch: "no-such-branch" } });
+    expect(panel.posted("error").at(-1)?.error.command).toBe("git switch no-such-branch");
   });
 
   it("aborts back to exactly how things were", async () => {
@@ -788,6 +809,48 @@ describe("worktrees", () => {
       expect(harness.shown.some((s) => s.message.includes("feature/login is merged into main"))).toBe(true);
       expect(git(app, "branch", "--list", "feature/login")).toBe("");
       expect(panel.repo().worktrees).toEqual([]);
+    });
+
+    it("closes terminals open in the worktree first, since Windows can't delete a folder in use", async () => {
+      const { app, feature } = repoWithWorktree();
+      const { window } = await import("../mocks/vscode");
+      const agent = window.createTerminal({ name: "agent", cwd: join(feature, "src") });
+      window.createTerminal({ name: "elsewhere", cwd: app });
+      const panel = await openPanel(app);
+      harness.answers.push("Remove worktree", undefined);
+      await panel.send({ type: "action", request: { type: "removeWorktree", path: panel.repo().worktrees[1].path } });
+
+      const warning = harness.shown.find((s) => s.kind === "warning")!;
+      expect(warning.message).toMatch(/The terminal open there \(agent\) will be closed first\.$/);
+      expect(window.terminals.map((t) => t.name)).toEqual(["elsewhere"]);
+      expect(existsSync(feature)).toBe(false);
+      void agent;
+    });
+
+    it("counts the worktree as removed when only its emptied folder is still in use", async () => {
+      const { app, feature } = repoWithWorktree();
+      // A process standing in the folder, like a shell that hasn't finished exiting. On Windows
+      // that blocks deleting the folder itself (not its files); elsewhere nothing is blocked.
+      const shell = spawn(process.execPath, ["-e", "setTimeout(() => {}, 8000)"], { cwd: feature, stdio: "ignore" });
+      try {
+        const panel = await openPanel(app);
+        harness.answers.push("Remove worktree", "Delete Branch");
+        await panel.send({ type: "action", request: { type: "removeWorktree", path: panel.repo().worktrees[1].path } });
+        expect(panel.posted("error")).toEqual([]);
+        expect(git(app, "worktree", "list")).not.toContain("feature-login");
+        // Removal worked, so the merged branch is offered for deletion as usual.
+        expect(git(app, "branch", "--list", "feature/login")).toBe("");
+      } finally {
+        shell.kill();
+      }
+    });
+
+    it("explains a folder in use in plain words", () => {
+      const locked = new Error("error: failed to delete 'C:/w/agent': Permission denied");
+      expect(explainFailure(["worktree", "remove", "C:/w/agent"], locked)).toMatch(
+        /^Couldn't delete the worktree's folder: a program is still using it/,
+      );
+      expect(explainFailure(["push"], locked)).toBe("error: failed to delete 'C:/w/agent': Permission denied");
     });
 
     it("keeps an unmerged branch without asking", async () => {

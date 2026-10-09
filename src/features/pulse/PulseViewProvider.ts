@@ -1,10 +1,11 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
 import { parseConflicts, resolveConflict, sideNames, type Resolution } from "../../git/conflicts";
 import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discover";
-import { realPath } from "../../git/paths";
+import { realPath, samePath } from "../../git/paths";
 import {
   findWorkspaceRepo,
   predictConflicts,
@@ -14,7 +15,13 @@ import {
   readSummary,
 } from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
-import { filesToCopy, newWorktreePath, withWorktreesExcluded, type WorktreeLocation } from "../../git/worktrees";
+import {
+  filesToCopy,
+  newWorktreePath,
+  readWorktrees,
+  withWorktreesExcluded,
+  type WorktreeLocation,
+} from "../../git/worktrees";
 import { agentCommand, createCheckpoint, type CheckpointOptions, type CheckpointResult } from "../../git/checkpoints";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, CiStatus, PrState, RepoState, RepoSummary } from "../../shared/types";
@@ -862,11 +869,16 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       return;
     }
     const { plan } = result;
+    // Windows can't delete a folder a terminal is standing in, and agents usually run in one.
+    const terminals = request.type === "removeWorktree" ? terminalsIn(request.path) : [];
     if (plan.confirm) {
       const detail = plan.steps.map(formatCommand).join("\n");
       const forecast = await this.mergeForecast(request, this.repo.root);
+      const closing = terminals.length
+        ? ` ${terminals.length === 1 ? "The terminal" : `The ${terminals.length} terminals`} open there (${terminals.map((t) => t.name).join(", ")}) will be closed first.`
+        : "";
       const choice = await vscode.window.showWarningMessage(
-        plan.confirm + forecast,
+        plan.confirm + forecast + closing,
         { modal: true, detail },
         plan.label,
       );
@@ -888,6 +900,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     ) {
       return;
     }
+    if (terminals.length) await closeTerminals(terminals);
     const worked = await this.run(plan.label, steps, this.repo.root);
     if (worked && removed?.branch && removed.prunable === null) await this.offerBranchCleanup(removed.branch);
   }
@@ -896,24 +909,54 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private async run(label: string, steps: string[][], cwd: string): Promise<boolean> {
     this.busy = true;
     this.post({ type: "busy", label });
-    let failed = false;
+    let failure: { args: string[]; error: unknown } | undefined;
     try {
       for (const args of steps) {
         try {
           await runGit(args, cwd);
         } catch (error) {
-          failed = true;
-          this.post({ type: "error", error: { command: formatCommand(args), message: describe(error) } });
+          // Windows locks a folder while anything has a file open in it, often only for a moment
+          // (an indexer, antivirus, a shell still exiting): removing a worktree gets one more try.
+          if (args[0] === "worktree" && args[1] === "remove" && isLocked(error)) {
+            // Git deletes the files and its record of the worktree first, then the folder itself,
+            // which fails while a process (a shell still exiting) has it as its working folder. If
+            // git no longer lists the worktree, it is removed: the empty folder goes once released.
+            const folder = args[args.length - 1];
+            const listed = await readWorktrees(cwd).then(
+              (all) => all.some((w) => samePath(w.path, folder)),
+              () => true,
+            );
+            if (!listed) {
+              void rm(folder, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }).catch(() => {});
+              continue;
+            }
+            await new Promise((r) => setTimeout(r, 1500));
+            try {
+              await runGit(args, cwd);
+              continue;
+            } catch (retry) {
+              failure = { args, error: retry };
+              break;
+            }
+          }
+          failure = { args, error };
           break;
         }
       }
-      if (!failed && steps.some((args) => args[0] === "fetch" || args[0] === "pull")) this.fetchError = undefined;
+      if (!failure && steps.some((args) => args[0] === "fetch" || args[0] === "pull")) this.fetchError = undefined;
     } finally {
       this.busy = false;
       this.post({ type: "busy", label: null });
       await this.refresh();
     }
-    return !failed;
+    // A merge, rebase or cherry-pick that stops on conflicts "fails" in git's terms, but it's an
+    // expected outcome with its own banner (resolve, then Continue or Abort), not an error.
+    const paused = !!this.repo?.operation && !!this.repo.status.files.some((f) => f.conflicted);
+    if (failure && !paused) {
+      const { args, error } = failure;
+      this.post({ type: "error", error: { command: formatCommand(args), message: explainFailure(args, error) } });
+    }
+    return !failure;
   }
 
   /** Lets another webview (the Branch Map) receive the same live state as the sidebar. */
@@ -959,6 +1002,49 @@ function askBranchName(title: string): Thenable<string | undefined> {
     validateInput: (value) =>
       !value.trim() || isValidBranchName(value.trim()) ? undefined : "Not a valid branch name",
   });
+}
+
+/** VS Code terminals whose working folder is inside `folder`. */
+function terminalsIn(folder: string): vscode.Terminal[] {
+  const inside = realPath(folder);
+  return vscode.window.terminals.filter((t) => {
+    const options = t.creationOptions as vscode.TerminalOptions;
+    const cwd =
+      t.shellIntegration?.cwd?.fsPath ?? (typeof options.cwd === "string" ? options.cwd : options.cwd?.fsPath);
+    return !!cwd && repoForPath(realPath(cwd), [inside]) !== undefined;
+  });
+}
+
+/** Closes terminals and waits (briefly) for their shells to exit and let go of the folder. */
+async function closeTerminals(terminals: vscode.Terminal[]): Promise<void> {
+  const open = new Set(terminals);
+  const closed = new Promise<void>((resolve) => {
+    const listener = vscode.window.onDidCloseTerminal((t) => {
+      open.delete(t);
+      if (open.size === 0) {
+        listener.dispose();
+        resolve();
+      }
+    });
+  });
+  terminals.forEach((t) => t.dispose());
+  await Promise.race([closed, new Promise((r) => setTimeout(r, 3000))]);
+  // The shell process can outlive its terminal by a moment.
+  await new Promise((r) => setTimeout(r, 500));
+}
+
+/** Whether git failed because something else had the files open. */
+function isLocked(error: unknown): boolean {
+  return /permission denied|resource busy|used by another process/i.test(describe(error));
+}
+
+/** Git's error, or a plain explanation for failures people can fix themselves. */
+export function explainFailure(args: readonly string[], error: unknown): string {
+  const message = describe(error);
+  if (args[0] === "worktree" && args[1] === "remove" && isLocked(error)) {
+    return "Couldn't delete the worktree's folder: a program is still using it, like a terminal, an editor or an agent. Close it and try again; the worktree is still there.";
+  }
+  return message;
 }
 
 function describe(error: unknown): string {
