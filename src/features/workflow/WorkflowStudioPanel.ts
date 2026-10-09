@@ -1,9 +1,11 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { parse } from "yaml";
 import type { HostToStudio, StudioToHost, WorkflowFile } from "../../shared/messages";
 import { suggestWorkflow, validate, type ProjectFacts, type WorkflowModel } from "../../workflow/model";
 import { importWorkflow } from "../../workflow/import";
+import { schemaProblems } from "../../workflow/schema";
 import { explain, readModel, toYaml } from "../../workflow/yaml";
 import { renderWebviewHtml } from "../webviewHtml";
 
@@ -159,6 +161,20 @@ export class WorkflowStudioPanel {
     if (problems.length) {
       this.post({ type: "error", message: problems[0].message });
       return;
+    }
+    // GitHub's own schema catches what Studio's checks can't, like a typo in a YAML box. It can lag
+    // behind new GitHub features, so it warns instead of refusing.
+    const schemaIssues = schemaProblems(parse(toYaml(model)));
+    if (schemaIssues.length) {
+      const choice = await vscode.window.showWarningMessage(
+        `GitHub would likely reject ${model.file}: it doesn't match the workflow schema.`,
+        { modal: true, detail: schemaIssues.map((p) => `• ${p}`).join("\n") },
+        "Save Anyway",
+      );
+      if (choice !== "Save Anyway") {
+        this.post({ type: "error", message: `Not saved. ${schemaIssues[0]}` });
+        return;
+      }
     }
     const target = path.join(this.workflowsDir, model.file);
     const existing = await readFile(target, "utf8").catch(() => null);

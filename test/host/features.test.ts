@@ -436,6 +436,31 @@ describe("Workflow Studio", () => {
     expect(workflowFile(file)).toEqual(expected && { root: join("/", ...expected.root), name: expected.name });
   });
 
+  it("checks against GitHub's schema before saving, and saves only if asked to anyway", async () => {
+    const dir = makeRepo();
+    const { studio, posted } = await openStudio(dir);
+    await studio.webview.send({ type: "ready" });
+    const suggestion = posted("init").at(-1)!.suggestion;
+    // A typo in "Job settings as YAML" that Studio's own checks can't know about.
+    const model: WorkflowModel = {
+      ...suggestion,
+      jobs: suggestion.jobs.map((j, i) => (i === 0 ? { ...j, extra: { "timeout-minute": 5 } } : j)),
+    };
+    const file = join(dir, ".github", "workflows", "ci.yml");
+
+    harness.answers.push(undefined);
+    await studio.webview.send({ type: "save", model });
+    const warning = harness.shown.find((s) => s.kind === "warning")!;
+    expect(warning.message).toBe("GitHub would likely reject ci.yml: it doesn't match the workflow schema.");
+    expect(warning.detail).toContain('GitHub doesn\'t know "timeout-minute"');
+    expect(existsSync(file)).toBe(false);
+    expect(posted("error").at(-1)?.message).toMatch(/^Not saved\. jobs › .*timeout-minute/);
+
+    harness.answers.push("Save Anyway");
+    await studio.webview.send({ type: "save", model });
+    expect(readFileSync(file, "utf8")).toContain("timeout-minute: 5");
+  });
+
   it("refuses to save an invalid workflow", async () => {
     const dir = makeRepo();
     const { studio, posted } = await openStudio(dir);
