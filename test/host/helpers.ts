@@ -40,7 +40,8 @@ export interface Panel {
 /** Opens the Pulse panel on the given workspace folders and waits for the first state. */
 export async function openPanel(...folders: string[]): Promise<Panel> {
   harness.folders = folders;
-  const provider = new PulseViewProvider(Uri.file("/extension"), memento() as never);
+  // The fake Uri stands in for the real one at runtime; tell the type checker so.
+  const provider = new PulseViewProvider(Uri.file("/extension") as never, memento() as never);
   providers.push(provider);
   const webview = harness.resolveView(provider);
   const panel: Panel = {
