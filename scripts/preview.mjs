@@ -116,7 +116,7 @@ ${extraCss}</style>
       return;
     }
     const want = steps[i++].toLowerCase();
-    const target = [...document.querySelectorAll("button, [role=button]")].find((el) =>
+    const target = [...document.querySelectorAll("button, [role=button], summary")].find((el) =>
       ((el.getAttribute("aria-label") ?? "") + " " + el.textContent).toLowerCase().includes(want),
     );
     target?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
