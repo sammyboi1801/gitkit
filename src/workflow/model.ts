@@ -274,6 +274,35 @@ export const TEMPLATES: Template[] = [
 
 export const template = (id: TemplateId): Template => TEMPLATES.find((t) => t.id === id)!;
 
+// What a job looks like on its card when it has no template (imported, or its own steps): read
+// from its name first, then from what its steps run. First match wins.
+const LOOKS: [RegExp, string, Template["group"]][] = [
+  [/\b(lint|eslint|ruff|prettier|fmt|format|style)\b/, "checklist", "check"],
+  [/\b(test|tests|pytest|vitest|jest|mocha|spec|e2e)\b/, "beaker", "check"],
+  [/\b(docker|image|container|ghcr|build-push)\b/, "package", "ship"],
+  [/\b(deploy|pages|deploy-pages)\b/, "globe", "ship"],
+  [/\b(release|publish|npm publish|pypi|upload to)\b/, "rocket", "ship"],
+  [/\b(build|compile|bundle|tsc|vite build|make)\b/, "tools", "build"],
+];
+
+/** The icon and colour group for a job's card. */
+export function jobLook(job: Job): { icon: string; group: Template["group"] } {
+  if (job.template !== "steps") {
+    const t = template(job.template);
+    return { icon: t.icon, group: t.group };
+  }
+  const name = `${job.id} ${job.name}`.toLowerCase().replace(/[-_]/g, " ");
+  const steps = (job.steps ?? [])
+    .map((s) => `${s.name ?? ""} ${s.run ?? ""} ${s.uses ?? ""}`)
+    .join(" ")
+    .toLowerCase();
+  for (const text of [name, steps]) {
+    const found = LOOKS.find(([pattern]) => pattern.test(text));
+    if (found) return { icon: found[1], group: found[2] };
+  }
+  return { icon: "list-ordered", group: "other" };
+}
+
 export function newJob(id: TemplateId, existing: readonly Job[]): Job {
   const t = template(id);
   let jobId = t.defaultId;

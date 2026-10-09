@@ -5,6 +5,7 @@
     TEMPLATES,
     WEEKDAYS,
     addPreset,
+    jobLook,
     cronFor,
     describeSchedule,
     newJob,
@@ -517,17 +518,17 @@
         {#each columns as column, c (c)}
           <ol class="stage" aria-label="Step {c + 1}{c === 0 ? ', starts right away' : ', after the previous step'}">
             {#each column as job (job)}
-              {@const t = template(job.template)}
+              {@const look = jobLook(job)}
               {@const issues = problemsFor(job)}
               <li>
                 <button
-                  class="job-card group-{t.group}"
+                  class="job-card group-{look.group}"
                   class:selected={selected === job}
                   class:problem={issues.length > 0}
                   aria-pressed={selected === job}
                   onclick={() => edit(selected === job ? null : job)}
                 >
-                  <span class="job-icon codicon codicon-{t.icon}" aria-hidden="true"></span>
+                  <span class="job-icon codicon codicon-{look.icon}" aria-hidden="true"></span>
                   <span class="job-body">
                     <span class="job-name">{job.name}</span>
                     <span class="job-meta">{meta(job)}</span>
@@ -629,9 +630,10 @@
 {#if selected}
   {@const job = selected}
   {@const t = template(job.template)}
+  {@const look = jobLook(job)}
   <div class="drawer" role="dialog" aria-label="Edit {job.name}" bind:this={drawer}>
     <div class="drawer-head">
-      <span class="job-icon codicon codicon-{t.icon} group-{t.group}" aria-hidden="true"></span>
+      <span class="job-icon codicon codicon-{look.icon} group-{look.group}" aria-hidden="true"></span>
       <div class="drawer-title">
         <h2>{job.name}</h2>
         <p class="field-hint">{t.description}</p>

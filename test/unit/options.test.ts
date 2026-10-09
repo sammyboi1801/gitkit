@@ -6,6 +6,7 @@ import {
   STEP_GROUPS,
   STEP_PRESETS,
   addPreset,
+  jobLook,
   newJob,
   validate,
   type Step,
@@ -197,5 +198,31 @@ describe("ready-made steps", () => {
     const yaml = parse(toYaml(workflow({ jobs: [other] })));
     expect(yaml.permissions).toEqual({ contents: "read" });
     expect(yaml.jobs.job.permissions).toEqual({ contents: "read", pages: "write", "id-token": "write" });
+  });
+});
+
+describe("jobLook", () => {
+  const job = (id: string, name: string, runs: string[] = [], uses: string[] = []) => ({
+    ...newJob("steps", []),
+    id,
+    name,
+    steps: [...runs.map((run) => ({ run })), ...uses.map((u) => ({ uses: u }))],
+  });
+
+  it.each([
+    [job("lint", "Lint"), "checklist", "check"],
+    [job("unit", "Unit tests"), "beaker", "check"],
+    [job("ci", "CI", ["npx vitest run"]), "beaker", "check"],
+    [job("build", "Build", ["npm ci && npm run build"], ["actions/upload-pages-artifact@v5"]), "tools", "build"],
+    [job("deploy", "Deploy to Pages", [], ["actions/deploy-pages@v5"]), "globe", "ship"],
+    [job("image", "Image", [], ["docker/build-push-action@v7"]), "package", "ship"],
+    [job("publish", "Publish", ["npm publish"]), "rocket", "ship"],
+    [job("misc", "Misc", ["echo hi"]), "list-ordered", "other"],
+  ])("%#: reads what a job does from its name, then its steps", (j, icon, group) => {
+    expect(jobLook(j)).toEqual({ icon, group });
+  });
+
+  it("uses the template's own look for ready-made jobs", () => {
+    expect(jobLook(newJob("node-test", []))).toEqual({ icon: "beaker", group: "check" });
   });
 });
