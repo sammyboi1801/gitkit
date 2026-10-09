@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A clearer paused merge:** one instruction instead of two, conflicts right under it (ahead of the Remote card), and Continue shows how many files are left. Pull, Push and Sync are off until the merge is finished or aborted, the outdated conflict forecast is hidden, and Open in the merge editor leads each conflicted file while Keep both is the quieter choice.
 - **New commits from teammates are announced:** when a background check finds that someone pushed to your branch or to main, a pop-up says who and how many (with Pull when it would just fast-forward), and a count appears on the GitKit icon until you look. `gitkit.newCommitAlerts` chooses a pop-up, only the count, or nothing. Background checks now also run while the GitKit panel is hidden.
 - **Why CI failed:** under the CI row, each failed job with the step it stopped at and the errors GitHub reported (failing tests, lint errors), linked to their file and line. The failed step's log opens in a read-only tab with the cursor on the first error.
 - Turning off `gitkit.ciStatus` now hides the CI and pull request rows right away, instead of leaving the last results.
