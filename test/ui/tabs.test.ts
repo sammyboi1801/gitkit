@@ -132,35 +132,100 @@ describe("Branch Map", () => {
 });
 
 describe("Workflow Studio", () => {
-  const suggestion = suggestWorkflow({ files: ["package.json"], npmScripts: { lint: "eslint .", test: "vitest" } });
-  const init = { type: "init", repoName: "demo", suggestion, files: [{ file: "release.yml", byGitKit: false }] };
+  const facts = { files: ["package.json"], npmScripts: { lint: "eslint .", test: "vitest" }, defaultBranch: "main" };
+  const init = {
+    type: "init",
+    repoName: "demo",
+    facts,
+    suggestion: suggestWorkflow(facts),
+    files: [{ file: "release.yml", byGitKit: false, summary: "Release · manually from the Actions tab · 1 job" }],
+  };
+  const yamlText = () => document.querySelector(".yaml")?.textContent ?? "";
+  const startWith = async (goal: RegExp) => {
+    render(Studio);
+    await post(init);
+    await fireEvent.click(screen.getByRole("button", { name: goal }));
+  };
 
-  it("starts from the suggestion and previews the YAML live", async () => {
+  it("starts by asking what to automate, recommending what fits the project", async () => {
     render(Studio);
     expect(sent[0]).toEqual({ type: "ready" });
     await post(init);
-    expect(screen.getByDisplayValue("CI")).toBeTruthy();
-    expect(document.querySelector(".yaml")?.textContent).toContain("npm run lint");
-
-    await fireEvent.input(screen.getByDisplayValue("CI"), { target: { value: "Checks" } });
-    expect(document.querySelector(".yaml")?.textContent).toContain("name: Checks");
+    expect(screen.getByRole("heading", { name: "What do you want to automate?" })).toBeTruthy();
+    const check = screen.getByRole("button", { name: /Check every push/ });
+    expect(within(check).getByText("Recommended for this project")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Deploy a site to GitHub Pages/ })).toBeTruthy();
   });
 
-  it("blocks saving while there are problems, and saves the model when fixed", async () => {
+  it("lists existing workflows in plain English and opens them", async () => {
     render(Studio);
     await post(init);
-    for (const trash of screen.getAllByTitle("Remove job")) await fireEvent.click(trash);
-    expect(screen.getByText("Add at least one job.")).toBeTruthy();
-    expect((screen.getByRole("button", { name: /Save ci\.yml/ }) as HTMLButtonElement).disabled).toBe(true);
-
-    await fireEvent.click(screen.getByRole("button", { name: /Add job/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /Save ci\.yml/ }));
-    const saved = lastSent() as { type: string; model: { jobs: unknown[] } };
-    expect(saved.type).toBe("save");
-    expect(saved.model.jobs).toHaveLength(1);
+    await fireEvent.click(screen.getByRole("button", { name: /release\.yml/ }));
+    expect(lastSent()).toEqual({ type: "open", file: "release.yml" });
   });
 
-  it("shows hand-written workflows in plain English", async () => {
+  it("describes when it runs as a sentence of editable chips", async () => {
+    await startWith(/Check every push/);
+    expect(screen.getByRole("button", { name: "on pushes to main" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "on pull requests" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "on pushes to main" }));
+    await fireEvent.input(screen.getByPlaceholderText("every branch"), { target: { value: "main, dev" } });
+    expect(screen.getByRole("button", { name: "on pushes to main, dev" })).toBeTruthy();
+  });
+
+  it("explains what's wrong instead of letting a broken workflow be saved", async () => {
+    await startWith(/Check every push/);
+    for (const name of [/Remove: on pushes/, /Remove: on pull requests/, /Remove: with a Run button/]) {
+      await fireEvent.click(screen.getByRole("button", { name }));
+    }
+    expect(screen.getByText("Pick at least one trigger, or the workflow never runs.")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toMatch(/1 thing to fix/);
+    expect((screen.getByRole("button", { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(screen.getByRole("button", { name: /Add a trigger/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "On pull requests" }));
+    expect(screen.getByRole("status").textContent).toMatch(/Ready to save/);
+  });
+
+  it("adds a job after another from a menu of plain-English choices", async () => {
+    await startWith(/Check every push/);
+    await fireEvent.click(screen.getByRole("button", { name: /Add a job after Lint/ }));
+    const picker = screen.getByRole("group", { name: "Choose a job to add" });
+    await fireEvent.click(within(picker).getByRole("button", { name: /Build \(Node\)/ }));
+    const editor = screen.getByRole("region", { name: "Edit Build" });
+    expect(within(editor).getByRole("button", { name: "Lint", pressed: true })).toBeTruthy();
+  });
+
+  it("edits a job with toggles instead of free text, and shows the YAML on demand", async () => {
+    await startWith(/Check every push/);
+    expect(document.querySelector(".yaml")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Test\b.*Test \(Node\)/ }));
+    const editor = screen.getByRole("region", { name: "Edit Test" });
+    await fireEvent.click(within(editor).getByRole("button", { name: "24" }));
+    await fireEvent.click(within(editor).getByRole("radio", { name: "Windows" }));
+    expect(yamlText()).toContain('node-version: ["20", "22", "24"]');
+    expect(yamlText()).toContain("runs-on: windows-latest");
+  });
+
+  it("saves under the chosen file name", async () => {
+    await startWith(/Check every push/);
+    await fireEvent.input(screen.getByRole("textbox", { name: "File name" }), { target: { value: "checks.yml" } });
+    await fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    const saved = lastSent() as { type: string; model: { file: string; jobs: unknown[] } };
+    expect(saved).toMatchObject({ type: "save", model: { file: "checks.yml" } });
+    expect(saved.model.jobs).toHaveLength(2);
+  });
+
+  it("says which jobs get extra access, and that it's only those jobs", async () => {
+    await startWith(/Publish a Docker image/);
+    // Job cards are toggle buttons; "Add a job after…" is a plain one.
+    await fireEvent.click(screen.getByRole("button", { name: /^Publish Docker image/, pressed: false }));
+    expect(screen.getByText(/This job gets extra access: packages \(write\)/)).toBeTruthy();
+  });
+
+  it("shows hand-written workflows in plain English, with a way back", async () => {
     render(Studio);
     await post(init);
     const explanation = explain(
@@ -170,5 +235,7 @@ describe("Workflow Studio", () => {
     expect(screen.getByText(/runs manually from the Actions tab/)).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: /Open the file/ }));
     expect(lastSent()).toEqual({ type: "openFile", file: "release.yml" });
+    await fireEvent.click(screen.getByRole("button", { name: /All workflows/ }));
+    expect(screen.getByRole("heading", { name: "What do you want to automate?" })).toBeTruthy();
   });
 });
