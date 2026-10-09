@@ -217,6 +217,15 @@ if (!repo.worktrees.length) {
     tree(join(parent, "GitKit.worktrees", "agent-docs"), "agent/docs", { ahead: 1, behind: 2, lastActivity: now - 3600 }),
     tree(join(parent, "GitKit.worktrees", "old-spike"), "spike/graph", { prunable: "gitdir file points to non-existent location" }),
   ];
+  // Both agents touched the same files; their commits would conflict in one.
+  repo.worktreeOverlaps = [
+    {
+      a: repo.worktrees[1].path,
+      b: repo.worktrees[2].path,
+      files: ["src/git/repo.ts", "README.md"],
+      conflicts: ["src/git/repo.ts"],
+    },
+  ];
 }
 writeFileSync(join(out, "map.html"), page("map", [{ type: "state", state: { kind: "repo", repo } }]));
 // Headless browsers lay pages out at least ~500px wide, so the sidebar width is set on the app itself.
