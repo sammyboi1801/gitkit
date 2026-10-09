@@ -526,6 +526,64 @@ describe("GitKit tour", () => {
       );
     });
 
+    await step(
+      "studio-everything",
+      "Workflow Studio: a demanding hand-written workflow, every part editable",
+      async () => {
+        write(
+          ".github/workflows/release.yml",
+          [
+            "# Release pipeline: tags publish, and a manual run can pick where.",
+            "name: Release",
+            "on:",
+            "  push:",
+            "    tags: [v*]",
+            "  pull_request:",
+            "    paths: [src/**]",
+            "  schedule:",
+            "    - cron: '0 9 * * 1'",
+            "      timezone: Europe/London",
+            "  workflow_dispatch:",
+            "    inputs:",
+            "      target:",
+            "        type: choice",
+            "        options: [staging, production]",
+            "        default: staging",
+            "  release:",
+            "    types: [published]",
+            "jobs:",
+            "  build:",
+            "    name: Build",
+            "    runs-on: [self-hosted, linux]",
+            "    steps:",
+            "      - uses: actions/checkout@v7",
+            "      - run: npm ci && npm run build",
+            "  publish:",
+            "    name: Publish image",
+            "    needs: build",
+            "    runs-on: ubuntu-latest",
+            "    environment: production",
+            "    steps:",
+            "      - uses: docker/build-push-action@v7",
+            "        with:",
+            "          push: true",
+            "  notify:",
+            "    name: Tell the team",
+            "    needs: publish",
+            "    if: always()",
+            "    uses: ./.github/workflows/notify.yml",
+            "    secrets: inherit",
+            "",
+          ].join("\n"),
+        );
+        await vscode.commands.executeCommand(
+          "gitkit.openWorkflowStudio",
+          vscode.Uri.file(join(repo, ".github", "workflows", "release.yml")),
+        );
+        await waitFor(() => tabLabels().includes("Workflow Studio"), "the Studio tab");
+      },
+    );
+
     await step("ci-failed", "CI failed: which step, the failing tests, and the step's log", async () => {
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
       const restore = fakeGitHub();
