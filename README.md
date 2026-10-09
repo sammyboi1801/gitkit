@@ -1,104 +1,153 @@
-# GitKit
+<p align="center">
+  <img src="media/icon.png" width="112" alt="GitKit logo" />
+</p>
 
-**Everyday git and GitHub, made visual and safe.** GitKit is a sidebar for VS Code that shows where your repo stands at a glance, lets you commit, push and sync in a click, and makes the scary parts of git (rebases, conflicts, undo) feel safe.
+<h1 align="center">GitKit</h1>
 
-Every button shows the exact `git` command it will run before it runs it. Nothing happens behind your back.
+<p align="center">
+  <strong>Everyday git and GitHub in VS Code, made visual and safe.</strong>
+</p>
 
-## What you get
+<p align="center">
+  <a href="https://github.com/sammyboi1801/gitkit/actions/workflows/ci.yml"><img src="https://github.com/sammyboi1801/gitkit/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license" /></a>
+  <img src="https://img.shields.io/badge/VS%20Code-1.95%2B-007ACC.svg" alt="VS Code 1.95 or newer" />
+</p>
 
-### Pulse: your repo at a glance
+<p align="center">
+  <a href="#features">Features</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#settings">Settings</a> ·
+  <a href="#privacy-and-security">Privacy</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
 
-- **One sentence on where you stand:** _"1 commit ready to push"_, _"3 new commits on the remote"_, _"Diverged: 2 to push, 1 to pull. Sync replays yours on top"_.
-- **Pull, Push and Sync**, with the one that makes sense right now highlighted. Pull only fast-forwards, so you never get a surprise merge commit.
-- **Changes with line counts** (`+12 −3`) for every file, stage and unstage in a click, and a commit box that commits everything when nothing is staged.
-- **Discard is undoable.** Discarded changes go to a stash, and _Saved changes_ lets you restore them.
-- **Switch branches** from a list showing what each branch is ahead or behind by, which are local only, and which had their remote branch deleted.
+---
 
-### Remote: know what's coming before you merge
+GitKit adds a sidebar to VS Code that shows where your repository stands at a glance, puts committing, pushing and syncing one click away, and makes the riskier parts of git (rebases, conflicts, undoing mistakes) safe and understandable.
 
-- **How far your branch and main have drifted apart** since you branched, drawn as a small fork.
-- **Conflict forecast.** GitKit test-merges in memory, without touching your files, and tells you _"would conflict in app.py"_ or _"merges cleanly"_ before you do anything.
-- **Update from main** in one click. It merges into branches you've already published and rebases ones you haven't, after saving a backup.
-- **Activity:** _"Alex Chen added 2 commits to origin/main · 20m ago"_, read from your own fetch history. No sign-in needed.
-- **CI status** for your latest pushed commit, with **Re-run failed jobs**. Public repos need no sign-in.
-- Checks the remote quietly every few minutes, and only while you're looking.
+**Nothing happens behind your back.** Every action shows the exact `git` command it will run, actions that change history ask first, and discarded work is kept so it can be restored.
+
+## Features
+
+### Repository status
+
+- **A one-sentence summary** of where you stand: _"1 commit ready to push"_, _"3 new commits on the remote"_, _"Diverged: 2 to push, 1 to pull"_.
+- **Pull, Push and Sync**, with the right one highlighted. Pull only fast-forwards, so it never creates a surprise merge commit.
+- **Changes with line counts** (`+12 −3`) per file, one-click staging, and a commit box that commits everything when nothing is staged.
+- **Undoable discard:** discarded changes are saved as a stash and can be restored from _Saved changes_.
+- **Branch switcher** showing what each branch is ahead or behind by, which exist only locally, and which lost their remote branch.
+
+### Remote awareness
+
+- **Drift from main:** how many commits your branch and main have each gained since you branched.
+- **Conflict forecast:** GitKit test-merges in memory, without touching your files, and reports _"would conflict in app.py"_ or _"merges cleanly"_ before you do anything.
+- **Update from main** in one click: it merges into published branches and rebases unpublished ones, after saving a backup.
+- **Team activity** such as _"Alex Chen added 2 commits to origin/main"_, read from your own fetch history.
+- **CI status** for your latest pushed commit, with **Re-run failed jobs**. Public repositories need no sign-in.
+- Background fetching every few minutes, only while VS Code is focused.
 
 ### Branch lanes and the Branch Map
 
-- **Every branch gets its own lane and colour**, and main is always the first, straight one. Branches visibly fork off and merge back.
-- **Merged branches stay visible** even after they're deleted: GitKit recovers their names from merge messages.
-- Hollow dots are commits you haven't pushed; faded, dashed ones are on the remote but not pulled yet.
+Each branch gets its own lane and color, with main always first, so branches visibly fork off and merge back. Merged branches stay visible after deletion, because GitKit recovers their names from merge messages. Hollow dots mark commits you haven't pushed; faded, dashed ones are on the remote but not yet pulled.
 
-The **Branch Map** opens the same picture horizontally in an editor tab, like a whiteboard diagram, and you can work in it directly:
+The **Branch Map** opens the same view horizontally in an editor tab, and you can work in it directly:
 
-- **Drag one branch onto another** to merge or rebase. Before anything runs, the confirmation tells you whether the merge would conflict.
-- **Click a branch name** for _Switch to_, _Merge into current_, _Rebase current onto_, _New branch from here_ or _Delete_. **Right-click a commit** for _Revert_, _Cherry-pick_, _New branch from here_ or _Copy hash_.
-- **Long histories fit:** quiet stretches fold into **+N** (click to open), and **Fit** zooms the whole thing into the window.
-- **See who did what:** every commit shows its author's initials, and the **People** row highlights one person's commits.
-- **Find commits** by message, author or hash. Hover a lane to pick out one branch; arrow keys step through commits.
+| Action          | How                                                                               |
+| --------------- | --------------------------------------------------------------------------------- |
+| Merge or rebase | Drag one branch onto another; the confirmation forecasts conflicts first          |
+| Branch actions  | Click a branch name: switch, merge, rebase, branch from here, delete              |
+| Commit actions  | Right-click a commit: revert, cherry-pick, branch from here, copy hash            |
+| Navigate        | Scroll to zoom, drag to pan, arrow keys step through commits, `0` fits the window |
+| Long histories  | Quiet stretches fold into **+N** groups that expand on click                      |
+| Find work       | Search by message, author or hash; filter by person; hover a lane to isolate it   |
 
-### Conflicts, explained
+### Conflict resolution
 
-When a merge or rebase stops, GitKit shows each clash as **Yours** against **Incoming** in plain words, with _Keep yours_, _Keep incoming_, _Keep both_, or _Open in the merge editor_. During a rebase the labels change to **Upstream** and **Your commit**, because git's "ours" and "theirs" swap meaning there. Then press **Continue**, or **Abort** to put everything back.
+When a merge or rebase stops, each conflict is shown as **Yours** against **Incoming**, with _Keep yours_, _Keep incoming_, _Keep both_ and _Open in the merge editor_. During a rebase the labels become **Upstream** and **Your commit**, because git's "ours" and "theirs" swap meaning there. Resolutions go through the editor, so they can be undone with Ctrl+Z. Finish with **Continue**, or **Abort** to return to exactly where you started.
 
 ### Oops: fix a mistake
 
-One menu for the things everyone searches for:
+A single menu for the problems people most often search for:
 
-- Undo my last commit (keep the changes); if it's already pushed, GitKit offers a safe revert instead
-- Change the last commit's message, or add forgotten changes to it
-- I committed to the wrong branch
+- Undo the last commit and keep its changes (or revert it safely if it's already pushed)
+- Reword the last commit, or add forgotten changes to it
+- Move commits made on the wrong branch to a new one
 - Recover a deleted branch
-- Get back changes I discarded
-- Stop tracking a file but keep it on disk (and ignore it)
-- Clean up branches that are already merged, **including squash-merged ones**
-- Go back in time through an **undo timeline** of commits, merges, rebases and resets. Undo is itself undoable.
+- Restore discarded changes
+- Stop tracking a file while keeping it on disk
+- Delete merged branches, **including squash-merged ones**
+- Step back through an **undo timeline** of commits, merges, rebases and resets; undo is itself undoable
 
 ### Commit guard
 
-Before each commit, GitKit checks what you're about to add, and offers a fix when it finds something:
+Before each commit, GitKit reviews the lines being added and warns about:
 
-- **Likely secrets** (AWS, GitHub, Slack, Stripe, Google, OpenAI and Anthropic keys, private keys): _Show me_ jumps to the line.
-- **Files that shouldn't be committed** (`.env`, keys, credential files) and **huge files**: _Leave those out_ unstages them and ignores new ones.
-- **The wrong email for this repo**, using your rules in `gitkit.identities`. Handy if you have a work or school address and a personal one.
+- **Likely secrets**, including AWS, GitHub, Slack, Stripe, Google, OpenAI and Anthropic keys and private keys, with a jump to the exact line.
+- **Files that rarely belong in a repository**, such as `.env` files, keys, credentials and very large files, with an option to leave them out and ignore them.
+- **The wrong identity** for the repository, based on your `gitkit.identities` rules, for anyone who uses separate work, school and personal addresses.
 
 ### Workflow Studio
 
-Build GitHub Actions workflows without writing YAML. It starts with **what you want to automate**:
+Create GitHub Actions workflows without writing YAML. Studio starts from **what you want to automate**: checking every push, testing pull requests, publishing a Docker image, releasing on a version tag, deploying to GitHub Pages, running a scheduled job, or starting from scratch. Goals that fit your project are marked as recommended.
 
-- _Check every push_, _Test pull requests_, _Publish a Docker image_, _Release when I tag a version_, _Deploy a site to GitHub Pages_, _Run something on a schedule_, or start from scratch. Goals that fit your project are marked as recommended.
-- **Triggers read as a sentence**, _"CI runs on pushes to main and on pull requests"_, and each part is a chip you click to change.
-- **Jobs are cards in a pipeline**, left to right in the order they run. Add a job after any step, pick Linux, Windows or macOS, and toggle the versions to test on.
-- **Least privilege by default:** read-only access, and jobs that need more (publishing an image, creating a release) get it for that job only. Studio tells you which ones.
-- Plain-English problems on the card they belong to, and the YAML whenever you want to see it.
-- Existing workflows open in plain English; ones made in Studio can be edited visually again.
+- Triggers read as a sentence, _"CI runs on pushes to main and on pull requests"_, where each part is editable.
+- Jobs appear as a pipeline of cards. Choose Linux, Windows or macOS, toggle the versions to test, and set what runs after what.
+- **Least privilege by default:** workflows get read-only access, and only the jobs that need more (such as publishing an image) receive it.
+- Problems are explained on the card they belong to; the generated YAML is one click away.
+- Existing workflows open as a plain-English summary. Workflows created in Studio remain editable in Studio.
 
-### Many repos in one folder
+### Multi-repository folders
 
-Open a parent folder and GitKit finds every repo inside it, a couple of levels deep. Each one gets a row in **Repositories** with its branch, ahead/behind count, changes and conflicts. GitKit follows the file you're editing, and keeps a separate commit draft for each repo.
+Open a parent folder and GitKit discovers every repository inside it. Each appears under **Repositories** with its branch, ahead/behind count, changes and conflicts. GitKit follows the file you are editing and keeps a separate commit draft per repository.
 
 ## Getting started
 
-1. Install GitKit and open a folder that contains a git repository.
-2. Click the **GitKit** icon in the activity bar.
-3. That's it. The icons at the top of the panel open **Oops**, the **Branch Map** and **Workflow Studio**.
+### Requirements
 
-Requires git 2.38 or newer, for the conflict forecast and merged-branch detection.
+- VS Code 1.95 or newer
+- git 2.38 or newer (used for the conflict forecast and merged-branch detection)
+
+### Installation
+
+Until GitKit is published on the Marketplace, install it from a `.vsix` package:
+
+1. Build the package with `npm install` and `npm run package`, or download it from a release.
+2. In VS Code, open the Extensions view, choose **…** → **Install from VSIX…**, and select `gitkit-<version>.vsix`.
+
+### First steps
+
+1. Open a folder that contains a git repository.
+2. Select the **GitKit** icon in the activity bar.
+3. Use the icons at the top of the panel to open **Oops**, the **Branch Map** and **Workflow Studio**.
+
+## Commands
+
+All commands are available from the Command Palette under **GitKit**.
+
+| Command                             | Description                                       |
+| ----------------------------------- | ------------------------------------------------- |
+| `GitKit: Refresh`                   | Re-read every repository in the workspace         |
+| `GitKit: Open Branch Map`           | Open the interactive branch diagram               |
+| `GitKit: Oops: Fix a Mistake…`      | Undo, recover or clean up with guided fixes       |
+| `GitKit: Clean Up Merged Branches…` | Find and delete merged and squash-merged branches |
+| `GitKit: Open Workflow Studio`      | Create or review GitHub Actions workflows         |
 
 ## Settings
 
-| Setting                            | Default | What it does                                                                                                 |
-| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `gitkit.autoFetchMinutes`          | `5`     | How often to check the remote while VS Code is focused. `0` turns it off.                                    |
-| `gitkit.mainBranchColor`           | `blue`  | Colour of main/master in the graph: `blue`, `green`, `purple`, `orange`, `red`, `yellow`, or any CSS colour. |
-| `gitkit.repoScanDepth`             | `2`     | How deep to look for repositories inside the opened folder.                                                  |
-| `gitkit.followActiveEditor`        | `true`  | Switch to the repository of the file you're editing.                                                         |
-| `gitkit.commitGuard.enabled`       | `true`  | Check commits for secrets, sensitive files and large files.                                                  |
-| `gitkit.commitGuard.maxFileSizeMB` | `10`    | Size above which a file gets a warning.                                                                      |
-| `gitkit.identities`                | `[]`    | Which email to commit with, by remote or folder. See below.                                                  |
-| `gitkit.ciStatus`                  | `true`  | Show GitHub check results for the latest pushed commit.                                                      |
+| Setting                            | Default | Description                                                                                       |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `gitkit.autoFetchMinutes`          | `5`     | How often to check the remote while VS Code is focused. `0` disables it.                          |
+| `gitkit.mainBranchColor`           | `blue`  | Color of the main branch: `blue`, `green`, `purple`, `orange`, `red`, `yellow`, or any CSS color. |
+| `gitkit.repoScanDepth`             | `2`     | How many folder levels to search for repositories.                                                |
+| `gitkit.followActiveEditor`        | `true`  | Switch to the repository of the file you are editing.                                             |
+| `gitkit.commitGuard.enabled`       | `true`  | Check commits for secrets, sensitive files and large files.                                       |
+| `gitkit.commitGuard.maxFileSizeMB` | `10`    | File size, in MB, above which the commit guard warns.                                             |
+| `gitkit.identities`                | `[]`    | Expected commit email per remote or folder (see below).                                           |
+| `gitkit.ciStatus`                  | `true`  | Show GitHub check results for the latest pushed commit.                                           |
 
-Example `gitkit.identities`:
+Example identity rules; the first matching rule applies:
 
 ```json
 "gitkit.identities": [
@@ -107,23 +156,26 @@ Example `gitkit.identities`:
 ]
 ```
 
-## Privacy
+## Privacy and security
 
-GitKit runs your local `git` and talks to the network only for `git fetch` and, if CI status is on, the GitHub API for your repo's check results. It has no telemetry. Signing in to GitHub uses the account VS Code already manages, and GitKit only asks when you click **Sign in**.
+- GitKit runs your local `git`. It contacts the network only for `git fetch` and, when CI status is enabled, the GitHub API for your repository's check results.
+- There is no telemetry.
+- GitHub sign-in uses the account VS Code already manages, and is requested only when you choose **Sign in**.
+- Webviews run with a strict content security policy, and commands are executed without a shell, so branch and file names cannot inject commands.
 
-## Development
+## Contributing
 
-```
+```bash
 npm install
-npm run check             # typecheck, lint, tests, build
-npm run test:integration  # smoke test inside a real VS Code (downloads it once)
+npm run check             # typecheck, lint, unit and component tests, build
+npm run test:integration  # smoke test inside a real VS Code (downloaded once)
 npm run watch             # rebuild on change
 ```
 
-Tests run on throwaway git repos with no global git config, so they behave the same on every machine. Extension-side code is driven through a scriptable fake of the VS Code API, and webview components render in jsdom.
+Press **F5** to launch GitKit against a throwaway sandbox repository, or choose **Run GitKit (multi-repo folder)** to try several repositories at once. `npm run sandbox -- --reset` rebuilds the sandboxes.
 
-Press **F5** to launch GitKit on a throwaway sandbox repository, or pick **Run GitKit (multi-repo folder)** to try it on several repos at once. `npm run sandbox -- --reset` rebuilds the sandboxes.
+Tests run on temporary repositories with no global git configuration, so they behave identically on every machine. Extension code is exercised through a scriptable fake of the VS Code API, webview components are rendered in jsdom, and CI runs the suite on Linux and Windows plus a smoke test inside VS Code.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) © Sam Selvaraj
