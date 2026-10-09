@@ -9,6 +9,17 @@ export function preview(request: ActionRequest, repo: RepoState): { ok: boolean;
   return { ok: true, text: result.plan.steps.map(formatCommand).join(" && "), label: result.plan.label };
 }
 
+/** The one remote action that makes sense right now, or null when there's nothing to send or get. */
+export function suggestedSync(repo: RepoState): "push" | "pull" | "sync" | null {
+  const { status } = repo;
+  if (!status.branch || repo.remotes.length === 0) return null;
+  if (!status.upstream) return "push";
+  if (status.ahead && status.behind) return "sync";
+  if (status.behind) return "pull";
+  if (status.ahead) return "push";
+  return null;
+}
+
 /** One plain-English sentence describing where the repo stands. */
 export function summarize(repo: RepoState): { text: string; icon: string; tone: string } {
   const { status } = repo;

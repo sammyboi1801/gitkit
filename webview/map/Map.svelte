@@ -9,6 +9,7 @@
   import { ago, headAncestors, preview } from "../pulse/util";
   import { send } from "../pulse/vscode";
   import Menu from "./Menu.svelte";
+  import RemoteStrip from "./RemoteStrip.svelte";
   import type { MenuItem } from "./menu";
   import { initials, matches, people } from "./people";
 
@@ -33,12 +34,15 @@
 
   let view = $state<PulseState>({ kind: "loading" });
   let busy: string | null = $state(null);
+  let fetching = $state(false);
   let error: ActionError | null = $state(null);
   let details: CommitDetails | null = $state(null);
   let zoom = $state(1);
   let selected: string | null = $state(null);
   let hovered: { commit: Commit; x: number; y: number } | null = $state(null);
   let hoveredLane: number | null = $state(null);
+  /** The branch or tag flag under the pointer; its tooltip wins over the commit's. */
+  let hoveredFlag: { name: string; kind: string; branch: string | null; x: number; y: number } | null = $state(null);
   let search = $state("");
   let person: string | null = $state(null);
   let compactChoice: boolean | null = $state(null);
@@ -89,6 +93,49 @@
       return node ? [{ lane, node, laneIndex }] : [];
     });
   });
+
+  // Branch flags sit centred above their commit; on a busy row a long name would run into the
+  // next commit's flags, so each gets the room up to its nearest flagged neighbour on that row.
+  const flagRoom = $derived.by(() => {
+    const room = new Map<string, number>();
+    if (!graph) return room;
+    const rows = new Map<number, CommitNode[]>();
+    for (const node of commitNodes) {
+      if (!commitOf(node).refs.length) continue;
+      const row = laneOf(node).row;
+      rows.set(row, [...(rows.get(row) ?? []), node]);
+    }
+    for (const nodes of rows.values()) {
+      nodes.sort((a, b) => a.column - b.column);
+      nodes.forEach((node, i) => {
+        const gaps = [nodes[i - 1], nodes[i + 1]].filter(Boolean).map((n) => Math.abs(n.column - node.column) * col);
+        room.set(commitOf(node).hash, gaps.length ? Math.min(...gaps) - 6 : Infinity);
+      });
+    }
+    return room;
+  });
+
+  /** The label shortened with "…" to fit `room` pixels (flags are about 6.4px a character plus padding). */
+  function clip(label: string, room: number): string {
+    const max = Math.floor((room - 12) / 6.4);
+    return label.length <= max ? label : `${label.slice(0, Math.max(max - 1, 2))}…`;
+  }
+
+  /**
+   * Where a tooltip for the point (px, py) goes. It's positioned inside the scrolling canvas, so it
+   * already moves with the map: these are content coordinates, with no scroll offset. Kept inside
+   * the map sideways, and flipped above the point when there's no room below.
+   */
+  function tipStyle(px: number, py: number): string {
+    const HALF = 170;
+    const left = Math.max(HALF, Math.min(px * zoom, baseWidth * zoom - HALF));
+    const below = (py + R + 30) * zoom;
+    const above = (py - R - 34) * zoom;
+    const bottom = Math.max(baseHeight * zoom, scroller?.clientHeight ?? 0);
+    return below + 90 > bottom && above > 90
+      ? `left: ${left}px; top: ${above}px; transform: translate(-50%, -100%)`
+      : `left: ${left}px; top: ${below}px`;
+  }
 
   const laneOf = (node: DisplayNode) => graph!.lanes[node.lane];
   const x = (node: DisplayNode) => LEFT + node.column * col;
@@ -325,7 +372,8 @@
       } else if (message.type === "busy") {
         busy = message.label;
         if (busy) error = null;
-      } else if (message.type === "error") error = message.error;
+      } else if (message.type === "fetching") fetching = message.active;
+      else if (message.type === "error") error = message.error;
       else if (message.type === "commitDetails") details = message.details;
       else if (message.type === "config") applyMainColor(message.mainBranchColor);
     };
@@ -412,6 +460,8 @@
       </button>
     </header>
 
+    <RemoteStrip {repo} {busy} {fetching} />
+
     {#if team.length > 1}
       <div class="people" role="group" aria-label="Filter by author">
         <span class="muted">People</span>
@@ -452,7 +502,6 @@
       tabindex="0"
       role="application"
       aria-label="Branch map. Arrow keys move between commits, Escape closes."
-      onscroll={() => (hovered = null)}
       class:panning={!!pan}
       onpointerdown={startPan}
       onkeydown={onCanvasKey}
@@ -557,7 +606,8 @@
               <!-- Branch and tag flags above the commit they point at, stacked if several. -->
               {#each commit.refs as ref, k (ref.kind + ref.name)}
                 {@const chip = refColor(graph, ref) ?? "var(--vscode-charts-yellow)"}
-                {@const label = ref.kind === "tag" ? `🏷 ${ref.name}` : ref.name}
+                {@const full = ref.kind === "tag" ? `🏷 ${ref.name}` : ref.name}
+                {@const label = clip(full, flagRoom.get(commit.hash) ?? Infinity)}
                 {@const w = label.length * 6.4 + 12}
                 {@const branch = ref.kind === "local" && localBranches.has(ref.name) ? ref.name : null}
                 <g
@@ -575,9 +625,11 @@
                   onpointerdown={(e) => branch && startDrag(e, branch)}
                   onpointerenter={() => {
                     if (drag && branch && drag.branch !== branch) drag = { ...drag, over: branch };
+                    hoveredFlag = { name: ref.name, kind: ref.kind, branch, x: x(node), y: y(node) };
                   }}
                   onpointerleave={() => {
                     if (drag && drag.over === branch) drag = { ...drag, over: null };
+                    hoveredFlag = null;
                   }}
                 >
                   <rect width={w} height="16" rx="3" style="--chip: {chip}" />
@@ -589,13 +641,36 @@
         {/each}
       </svg>
 
-      {#if hovered && !drag?.active}
-        {@const scrollLeft = scroller?.scrollLeft ?? 0}
-        {@const scrollTop = scroller?.scrollTop ?? 0}
-        <div
-          class="tooltip"
-          style="left: {hovered.x * zoom - scrollLeft}px; top: {(hovered.y + R + 30) * zoom - scrollTop}px"
-        >
+      {#if hoveredFlag && !drag?.active}
+        {@const f = hoveredFlag}
+        {@const isCurrent = f.branch !== null && f.branch === current}
+        <div class="tooltip" role="tooltip" style={tipStyle(f.x, f.y)}>
+          <b class="mono">{f.name}</b>
+          <span class="muted"
+            >{f.kind === "tag" ? "Tag" : f.kind === "remote" ? "On the remote" : "Branch"}{isCurrent
+              ? " · you're on it"
+              : ""}</span
+          >
+          {#if isCurrent && repo.status.upstream}
+            <span class="muted"
+              >{repo.status.ahead || repo.status.behind
+                ? [
+                    repo.status.ahead ? `↑${repo.status.ahead} to push` : "",
+                    repo.status.behind ? `↓${repo.status.behind} to pull` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : `in sync with ${repo.status.upstream}`}</span
+            >
+          {:else if isCurrent}
+            <span class="muted">Not on the remote yet</span>
+          {/if}
+          {#if f.branch}
+            <span class="muted hint-line">Click for actions · drag onto another branch to merge or rebase</span>
+          {/if}
+        </div>
+      {:else if hovered && !drag?.active}
+        <div class="tooltip" role="tooltip" style={tipStyle(hovered.x, hovered.y)}>
           <b>{hovered.commit.subject}</b>
           <span class="muted"
             >{hovered.commit.hash.slice(0, 7)} · {hovered.commit.author} · {ago(hovered.commit.time)}</span
@@ -618,8 +693,25 @@
     {/if}
 
     <footer class="map-hint muted">
-      {compact ? "Quiet stretches are folded into +N; click one to open it. " : ""}Scroll to zoom, drag to pan. Click a
-      branch name for actions, or drag it onto another branch to merge or rebase.
+      {#if repo.remotes.length}
+        <span class="key"
+          ><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="key-dot" /></svg
+          >pushed</span
+        >
+        <span class="key"
+          ><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="4" class="key-dot hollow" /></svg>not
+          pushed yet</span
+        >
+        <span class="key"
+          ><svg width="18" height="10" aria-hidden="true"
+            ><line x1="0" x2="18" y1="5" y2="5" class="key-line dashed" /></svg
+          >on the remote, not pulled yet</span
+        >
+      {/if}
+      <span
+        >{compact ? "Quiet stretches are folded into +N; click one to open it. " : ""}Scroll to zoom, drag to pan. Click
+        a branch name for actions, or drag it onto another branch to merge or rebase.</span
+      >
     </footer>
 
     {#if selectedCommit}

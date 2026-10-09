@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ActionRequest } from "../../src/git/actions";
   import type { RepoState } from "../../src/shared/types";
-  import { preview, summarize } from "./util";
+  import { preview, suggestedSync, summarize } from "./util";
   import { send } from "./vscode";
 
   let { repo, busy }: { repo: RepoState; busy: string | null } = $props();
@@ -13,14 +13,7 @@
   const summary = $derived(summarize(repo));
 
   // Highlight the one action that makes sense right now.
-  const primary = $derived.by(() => {
-    if (!status.branch || repo.remotes.length === 0) return null;
-    if (!status.upstream) return "push";
-    if (status.ahead && status.behind) return "sync";
-    if (status.behind) return "pull";
-    if (status.ahead) return "push";
-    return null;
-  });
+  const primary = $derived(suggestedSync(repo));
 
   const run = (request: ActionRequest) => send({ type: "action", request });
 </script>

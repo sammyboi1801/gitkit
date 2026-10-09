@@ -8,6 +8,7 @@ import { explain } from "../../src/workflow/yaml";
 import Map from "../../webview/map/Map.svelte";
 import Studio from "../../webview/workflow/Studio.svelte";
 import { sent } from "./setup";
+import type { CiStatus, RepoState } from "../../src/shared/types";
 import { commitOf, repoState } from "./state";
 
 const post = async (data: unknown) => {
@@ -30,6 +31,8 @@ describe("Branch Map", () => {
     render(Map);
     await post({ type: "state", state: { kind: "repo", repo, repos: [] } });
   };
+  /** A new state from the host, as after a fetch or a commit. */
+  const update = (repo: RepoState) => post({ type: "state", state: { kind: "repo", repo, repos: [] } });
   const node = (subject: RegExp) => screen.getByRole("button", { name: subject });
   const flag = (branch: string) => document.querySelector(`[data-branch="${branch}"]`)!;
   const menuItem = (name: RegExp) => screen.getByRole("menuitem", { name });
@@ -42,6 +45,146 @@ describe("Branch Map", () => {
     expect(labels).toEqual(["main"]);
     await fireEvent.click(node(/feat: login form/));
     expect(lastSent()).toEqual({ type: "commitDetails", hash: "x" });
+  });
+
+  describe("remote status", () => {
+    const strip = () => screen.getByRole("region", { name: "Remote status" });
+    const base = { ref: "origin/main", name: "main", ahead: 1, behind: 2, forkPoint: "b", isCurrent: false };
+
+    it("shows how the branch stands against its remote copy, with the one action that fits", async () => {
+      await open(
+        repoState({
+          status: { branch: "feat/login", oid: "x", upstream: "origin/feat/login", ahead: 2, behind: 1 },
+          commits,
+        }),
+      );
+      expect(within(strip()).getByText("origin/feat/login")).toBeTruthy();
+      expect(within(strip()).getByText("↑2 to push")).toBeTruthy();
+      expect(within(strip()).getByText("↓1 to pull")).toBeTruthy();
+      const sync = within(strip()).getByRole("button", { name: /Sync/ });
+      expect(sync.getAttribute("title")).toMatch(/^git pull --rebase/);
+      await fireEvent.click(sync);
+      expect(lastSent()).toEqual({ type: "action", request: { type: "sync" } });
+    });
+
+    it("says when everything is in sync, and offers to publish a branch that isn't on the remote", async () => {
+      await open();
+      expect(within(strip()).getByText("in sync")).toBeTruthy();
+      expect(within(strip()).queryByRole("button", { name: /Push|Pull|Sync/ })).toBeNull();
+
+      await update(repoState({ status: { branch: "feat/login", oid: "x", upstream: null }, commits }));
+      expect(within(strip()).getByText("only on your machine")).toBeTruthy();
+      await fireEvent.click(within(strip()).getByRole("button", { name: /Publish|Push/ }));
+      expect(lastSent()).toEqual({ type: "action", request: { type: "push" } });
+    });
+
+    it("forecasts conflicts with main and offers to update from it", async () => {
+      await open(
+        repoState({ status: { branch: "feat/login", oid: "x" }, commits, base: { ...base, conflicts: ["app.ts"] } }),
+      );
+      expect(within(strip()).getByText("2 new since you branched")).toBeTruthy();
+      expect(within(strip()).getByText(/would conflict in app\.ts/)).toBeTruthy();
+      await fireEvent.click(within(strip()).getByRole("button", { name: /main/ }));
+      expect(lastSent()).toEqual({ type: "action", request: { type: "updateFromBase" } });
+
+      await update(
+        repoState({ status: { branch: "feat/login", oid: "x" }, commits, base: { ...base, conflicts: [] } }),
+      );
+      expect(within(strip()).getByText("merges cleanly")).toBeTruthy();
+    });
+
+    it("shows CI for the last push and when the remote was last checked, with a way to check now", async () => {
+      const ci: CiStatus = {
+        state: "failure",
+        sha: "x",
+        summary: "1 of 3 checks failed",
+        failed: ["test"],
+        url: "https://ci",
+        runId: 1,
+      };
+      await open(repoState({ status: { branch: "feat/login", oid: "x" }, commits, ci }));
+      expect(within(strip()).getByText("CI: 1 of 3 checks failed")).toBeTruthy();
+      await fireEvent.click(within(strip()).getByRole("button", { name: "Open on GitHub" }));
+      expect(lastSent()).toEqual({ type: "openUrl", url: "https://ci" });
+
+      expect(within(strip()).getByText(/checked 2m ago/)).toBeTruthy();
+      await fireEvent.click(within(strip()).getByRole("button", { name: "Check the remote for new commits" }));
+      expect(lastSent()).toEqual({ type: "action", request: { type: "fetch" } });
+      await post({ type: "fetching", active: true });
+      expect(within(strip()).getByText(/checking…/)).toBeTruthy();
+    });
+
+    it("says when the remote couldn't be reached", async () => {
+      await open(repoState({ status: { branch: "feat/login", oid: "x" }, commits, fetchError: "offline" }));
+      expect(within(strip()).getByText(/couldn't reach the remote/)).toBeTruthy();
+    });
+
+    it("explains the dots and lines, and stays out of the way without a remote", async () => {
+      await open();
+      expect(screen.getByText("not pushed yet")).toBeTruthy();
+      expect(screen.getByText("on the remote, not pulled yet")).toBeTruthy();
+
+      await update(repoState({ status: { branch: "feat/login", oid: "x", upstream: null }, commits, remotes: [] }));
+      expect(screen.queryByRole("region", { name: "Remote status" })).toBeNull();
+    });
+  });
+
+  it("shortens branch names that would run into the next flag, with the full name on hover", async () => {
+    const crowded = [
+      commitOf("y", ["x"], "next", {
+        refs: [{ name: "feature/a-very-long-branch-name", kind: "local", isHead: true }],
+      }),
+      commitOf("x", ["a"], "first", { refs: [{ name: "feature/another-long-name", kind: "local", isHead: false }] }),
+      commitOf("a", [], "init", { refs: [{ name: "main", kind: "local", isHead: false }] }),
+    ];
+    await open(repoState({ status: { branch: "feature/a-very-long-branch-name", oid: "y" }, commits: crowded }));
+    const label = flag("feature/another-long-name").querySelector("text")!.textContent!;
+    expect(label.endsWith("…")).toBe(true);
+    expect(flag("main").querySelector("text")!.textContent).toBe("main");
+
+    await fireEvent.pointerEnter(flag("feature/another-long-name"));
+    const tip = screen.getByRole("tooltip");
+    expect(within(tip).getByText("feature/another-long-name")).toBeTruthy();
+    expect(within(tip).getByText(/Click for actions/)).toBeTruthy();
+    await fireEvent.pointerLeave(flag("feature/another-long-name"));
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("shows on hover where the current branch stands against the remote", async () => {
+    await open(
+      repoState({ status: { branch: "feat/login", oid: "x", upstream: "origin/feat/login", ahead: 2 }, commits }),
+    );
+    await fireEvent.pointerEnter(flag("feat/login"));
+    const tip = screen.getByRole("tooltip");
+    expect(within(tip).getByText(/Branch · you're on it/)).toBeTruthy();
+    expect(within(tip).getByText("↑2 to push")).toBeTruthy();
+
+    await fireEvent.pointerLeave(flag("feat/login"));
+    await fireEvent.pointerEnter(flag("main"));
+    expect(within(screen.getByRole("tooltip")).queryByText(/you're on it/)).toBeNull();
+  });
+
+  it("keeps hover tooltips next to the commit when the map is scrolled", async () => {
+    await open();
+    const hoverLeft = async () => {
+      await fireEvent.pointerEnter(node(/feat: login form/));
+      const left = screen.getByRole("tooltip").style.left;
+      await fireEvent.pointerLeave(node(/feat: login form/));
+      return left;
+    };
+    const before = await hoverLeft();
+    // The tooltip sits inside the scrolling canvas, so it scrolls with the map by itself.
+    const canvas = screen.getByRole("application");
+    Object.defineProperty(canvas, "scrollLeft", { value: 500, configurable: true });
+    Object.defineProperty(canvas, "scrollTop", { value: 40, configurable: true });
+    expect(await hoverLeft()).toBe(before);
+  });
+
+  it("shows a commit's details on hover", async () => {
+    await open(repoState({ status: { branch: "feat/login", oid: "x" }, commits, unpushed: ["x"] }));
+    await fireEvent.pointerEnter(node(/feat: login form/));
+    expect(screen.getByText("Not pushed yet")).toBeTruthy();
+    expect(screen.getByText(/Right-click for actions/)).toBeTruthy();
   });
 
   it("shows who made each commit", async () => {
