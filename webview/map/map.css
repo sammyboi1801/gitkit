@@ -164,3 +164,202 @@ body {
   background: transparent;
   padding: 10px 16px 12px;
 }
+
+/* Interactive map */
+
+.search {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  flex: 0 1 320px;
+  min-width: 120px;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--gk-border));
+  border-radius: var(--gk-radius);
+  padding: 2px 6px;
+}
+
+.icon-button.on {
+  background: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+.people {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--gk-border);
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 0.92em;
+}
+
+.person {
+  background: transparent;
+  border: 1px solid var(--gk-border);
+  border-radius: 14px;
+  padding: 1px 8px 1px 2px;
+  gap: 6px;
+  color: var(--vscode-foreground);
+}
+
+.person.on {
+  border-color: var(--gk-accent);
+  background: color-mix(in srgb, var(--gk-accent) 18%, transparent);
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.initials {
+  font-size: 9px;
+  font-weight: 700;
+  fill: var(--vscode-editor-background);
+  pointer-events: none;
+}
+
+.initials.on-hollow {
+  fill: var(--vscode-foreground);
+}
+
+.map-node.dim,
+.map-group.dim,
+.map-edge.dim,
+.lane-label.dim {
+  opacity: 0.18;
+}
+
+.map-node.hit .map-ring {
+  stroke: var(--vscode-editor-findMatchBorder, var(--vscode-charts-yellow));
+  stroke-width: 2;
+}
+
+.map-group {
+  cursor: pointer;
+}
+
+.map-group rect {
+  fill: var(--vscode-editor-background);
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+
+.map-group text {
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.map-group:hover rect {
+  stroke-dasharray: none;
+}
+
+.flag.draggable {
+  cursor: grab;
+}
+
+.map.dragging,
+.map.dragging * {
+  cursor: grabbing !important;
+}
+
+.flag.current rect {
+  stroke: var(--vscode-foreground);
+  stroke-width: 1.5;
+}
+
+.flag.drop-target rect {
+  stroke: var(--vscode-focusBorder);
+  stroke-dasharray: 3 2;
+  stroke-width: 1.5;
+}
+
+.flag.drop-over rect {
+  stroke: var(--vscode-focusBorder);
+  stroke-dasharray: none;
+  stroke-width: 3;
+}
+
+.drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--vscode-editorHoverWidget-background);
+  border: 1px solid var(--vscode-focusBorder);
+  font-size: 0.92em;
+}
+
+.menu {
+  position: absolute;
+  z-index: 5;
+  min-width: 220px;
+  padding: 4px;
+  display: grid;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-menu-border, var(--gk-border));
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.menu-heading {
+  padding: 4px 8px 6px;
+  font-size: 0.85em;
+  color: var(--gk-muted);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu button {
+  justify-content: flex-start;
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 4px 8px;
+  gap: 8px;
+}
+
+.menu button:hover:not(:disabled),
+.menu button:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-menu-selectionForeground, inherit);
+  outline: none;
+}
+
+.canvas:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.hint-line {
+  font-size: 0.85em;
+}
+
+.map-hint {
+  padding: 4px 16px;
+  font-size: 0.85em;
+  border-top: 1px solid var(--gk-border);
+}

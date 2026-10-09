@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { describe, expect, it } from "vitest";
 import { suggestWorkflow } from "../../src/workflow/model";
@@ -23,25 +23,101 @@ describe("Branch Map", () => {
     }),
     commitOf("a", [], "init"),
   ];
-
-  it("draws one lane per branch, named, with commits you can open", async () => {
+  const onLogin = () => repoState({ status: { branch: "feat/login", oid: "x" }, commits });
+  const open = async (repo = onLogin()) => {
     render(Map);
-    expect(sent[0]).toEqual({ type: "ready" });
-    await post({
-      type: "state",
-      state: { kind: "repo", repo: repoState({ status: { branch: "feat/login", oid: "x" }, commits }), repos: [] },
-    });
+    await post({ type: "state", state: { kind: "repo", repo, repos: [] } });
+  };
+  const node = (subject: RegExp) => screen.getByRole("button", { name: subject });
+  const flag = (branch: string) => document.querySelector(`[data-branch="${branch}"]`)!;
+  const menuItem = (name: RegExp) => screen.getByRole("menuitem", { name });
 
-    const lanes = [...document.querySelectorAll(".lane-label text")].map((t) => t.textContent?.trim());
-    expect(lanes).toEqual(expect.arrayContaining(["main", "feat/login"]));
-    const node = screen.getByRole("button", { name: /feat: login form/ });
-    await fireEvent.click(node);
+  it("asks for state, then draws named lanes with commits you can open", async () => {
+    await open();
+    expect(sent[0]).toEqual({ type: "ready" });
+    // main's lane is named under its first commit; feat/login's flag already names its lane.
+    const labels = [...document.querySelectorAll(".lane-label")].map((t) => t.textContent?.trim());
+    expect(labels).toEqual(["main"]);
+    await fireEvent.click(node(/feat: login form/));
     expect(lastSent()).toEqual({ type: "commitDetails", hash: "x" });
   });
 
+  it("shows who made each commit", async () => {
+    await open();
+    const initials = [...document.querySelectorAll(".initials")].map((t) => t.textContent);
+    expect(initials).toEqual(expect.arrayContaining(["SS", "AC"]));
+    expect(node(/docs: readme, b, by Alex Chen/)).toBeTruthy();
+  });
+
+  it("highlights one person's commits and fades the rest", async () => {
+    await open();
+    const team = screen.getByRole("group", { name: "Filter by author" });
+    await fireEvent.click(within(team).getByRole("button", { name: /Alex Chen/ }));
+    expect(node(/docs: readme/).classList.contains("dim")).toBe(false);
+    expect(node(/feat: login form/).classList.contains("dim")).toBe(true);
+  });
+
+  it("finds commits by message", async () => {
+    await open();
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Find commits" }), { target: { value: "login" } });
+    expect(node(/feat: login form/).classList.contains("hit")).toBe(true);
+    expect(node(/docs: readme/).classList.contains("dim")).toBe(true);
+  });
+
+  it("folds long quiet stretches into +N and opens them on click", async () => {
+    const long = Array.from({ length: 40 }, (_, k) =>
+      commitOf(`c${39 - k}`, k === 39 ? [] : [`c${38 - k}`], `commit ${39 - k}`, {
+        refs: k === 0 ? [{ name: "main", kind: "local", isHead: true }] : [],
+      }),
+    );
+    await open(repoState({ status: { oid: "c39" }, commits: long }));
+    const group = screen.getByRole("button", { name: /38 more commits on main/ });
+    await fireEvent.click(group);
+    expect(screen.queryByRole("button", { name: /more commits/ })).toBeNull();
+    expect(node(/commit 20,/)).toBeTruthy();
+  });
+
+  it("opens a branch's actions on click, with the exact command on hover", async () => {
+    await open();
+    await fireEvent.pointerDown(flag("main"), { clientX: 10, clientY: 10 });
+    await fireEvent.pointerUp(window, { clientX: 10, clientY: 10 });
+    const merge = menuItem(/Merge main into feat\/login/);
+    expect(merge.getAttribute("title")).toBe("git merge --autostash --no-edit main");
+    await fireEvent.click(merge);
+    expect(lastSent()).toEqual({ type: "action", request: { type: "mergeBranch", branch: "main" } });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("merges or rebases by dragging one branch onto another", async () => {
+    await open();
+    await fireEvent.pointerDown(flag("feat/login"), { clientX: 10, clientY: 10 });
+    await fireEvent.pointerMove(window, { clientX: 60, clientY: 40 });
+    await fireEvent.pointerEnter(flag("main"));
+    await fireEvent.pointerUp(window, { clientX: 60, clientY: 40 });
+    expect(screen.getByRole("menu", { name: "feat/login → main" })).toBeTruthy();
+    await fireEvent.click(menuItem(/Rebase feat\/login onto main/));
+    expect(lastSent()).toEqual({ type: "action", request: { type: "rebaseOnto", branch: "main" } });
+  });
+
+  it("offers commit actions on right-click", async () => {
+    await open();
+    await fireEvent.contextMenu(node(/docs: readme/));
+    await fireEvent.click(menuItem(/Copy b/));
+    expect(lastSent()).toEqual({ type: "copyHash", hash: "b" });
+  });
+
+  it("steps through commits with the arrow keys", async () => {
+    await open();
+    const canvas = screen.getByRole("application");
+    await fireEvent.keyDown(canvas, { key: "ArrowLeft" });
+    expect(lastSent()).toEqual({ type: "commitDetails", hash: "x" });
+    await fireEvent.keyDown(canvas, { key: "ArrowLeft" });
+    expect(lastSent()).toEqual({ type: "commitDetails", hash: "b" });
+    await fireEvent.keyDown(canvas, { key: "Escape" });
+  });
+
   it("zooms in and out", async () => {
-    render(Map);
-    await post({ type: "state", state: { kind: "repo", repo: repoState({ commits }), repos: [] } });
+    await open();
     const width = () => Number(document.querySelector(".canvas svg")?.getAttribute("width"));
     const before = width();
     await fireEvent.click(screen.getByTitle("Zoom in"));
