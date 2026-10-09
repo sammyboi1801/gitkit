@@ -124,6 +124,20 @@
           "when": "view == gitkit.pulse",
           "group": "navigation"
         }
+      ],
+      "explorer/context": [
+        {
+          "command": "gitkit.openWorkflowStudio",
+          "when": "resourcePath =~ /[\\\\/]\\.github[\\\\/]workflows[\\\\/][^\\\\/]+\\.ya?ml$/",
+          "group": "navigation@90"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "gitkit.openWorkflowStudio",
+          "when": "resourcePath =~ /[\\\\/]\\.github[\\\\/]workflows[\\\\/][^\\\\/]+\\.ya?ml$/",
+          "group": "navigation"
+        }
       ]
     },
     "configuration": {

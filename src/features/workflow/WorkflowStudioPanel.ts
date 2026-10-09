@@ -19,19 +19,26 @@ function summarize(text: string): string {
 export class WorkflowStudioPanel {
   private static current?: WorkflowStudioPanel;
 
-  static show(extensionUri: vscode.Uri, repo: { root: string; baseName: string | null } | undefined): void {
+  /** Opens Studio for the repo; with `file` (a name in .github/workflows), straight on that workflow. */
+  static show(
+    extensionUri: vscode.Uri,
+    repo: { root: string; baseName: string | null } | undefined,
+    file?: string,
+  ): Promise<void> | void {
     if (!repo) {
       void vscode.window.showInformationMessage(
         "Open a git repository first; Workflow Studio saves into its .github/workflows folder.",
       );
       return;
     }
-    if (WorkflowStudioPanel.current && WorkflowStudioPanel.current.root === repo.root) {
-      WorkflowStudioPanel.current.panel.reveal();
+    const current = WorkflowStudioPanel.current;
+    if (current && current.root === repo.root) {
+      current.panel.reveal();
+      if (file) return current.receive({ type: "open", file });
       return;
     }
-    WorkflowStudioPanel.current?.panel.dispose();
-    WorkflowStudioPanel.current = new WorkflowStudioPanel(extensionUri, repo.root, repo.baseName);
+    current?.panel.dispose();
+    WorkflowStudioPanel.current = new WorkflowStudioPanel(extensionUri, repo.root, repo.baseName, file);
   }
 
   private readonly panel: vscode.WebviewPanel;
@@ -40,6 +47,8 @@ export class WorkflowStudioPanel {
     extensionUri: vscode.Uri,
     private readonly root: string,
     private readonly baseName: string | null,
+    /** A workflow to open as soon as the webview is ready. */
+    private pendingFile?: string,
   ) {
     const distUri = vscode.Uri.joinPath(extensionUri, "dist", "webview");
     this.panel = vscode.window.createWebviewPanel(
@@ -81,6 +90,11 @@ export class WorkflowStudioPanel {
             suggestion: suggestWorkflow(facts),
             files: await this.listWorkflows(),
           });
+          if (message.type === "ready" && this.pendingFile) {
+            const file = this.pendingFile;
+            this.pendingFile = undefined;
+            await this.open(file);
+          }
           return;
         }
         case "open":
