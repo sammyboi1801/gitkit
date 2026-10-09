@@ -16,7 +16,7 @@ import { commitOf, file, repoState } from "./state";
 import { sent } from "./setup";
 
 const lastSent = () => sent.at(-1);
-const button = (name: RegExp | string) => screen.getByRole("button", { name });
+const button = (name: RegExp | string) => screen.getByRole<HTMLButtonElement>("button", { name });
 
 describe("Header", () => {
   it("says where you stand and highlights the one action that makes sense", () => {
@@ -95,7 +95,7 @@ describe("Changes", () => {
     expect(lastSent()).toEqual({ type: "action", request: { type: "discard", paths: ["README.md"] } });
   });
 
-  it("shows a single line when the tree is clean, and a hint instead of a commit box mid-merge", () => {
+  it("shows a single line when the tree is clean, and no commit box mid-merge", () => {
     const { unmount } = render(Changes, { props: { repo: repoState(), busy: null, conflictBlocks: {} } });
     expect(screen.getByText("Working tree clean")).toBeTruthy();
     expect(screen.queryByRole("textbox")).toBeNull();
@@ -106,7 +106,8 @@ describe("Changes", () => {
       status: { files: [file("a.txt", { conflicted: true, index: "U", worktree: "U" })] },
     });
     render(Changes, { props: { repo: merging, busy: null, conflictBlocks: {} } });
-    expect(screen.getByText(/press Continue above/)).toBeTruthy();
+    // The banner says what to do; a second set of instructions here only disagreed with it.
+    expect(screen.queryByText(/Continue/)).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 });
@@ -745,6 +746,46 @@ describe("App", () => {
 
     await fireEvent.click(button(/Continue/));
     expect(lastSent()).toEqual({ type: "action", request: { type: "continueOperation" } });
+  });
+
+  it("puts a paused merge's conflicts first, with one instruction and only the buttons that make sense", async () => {
+    render(App);
+    const conflicted = file("src/cart.js", { conflicted: true, index: "U", worktree: "U" });
+    const merging = repoState({
+      operation: "merge",
+      status: { upstream: "origin/feat", ahead: 1, files: [conflicted] },
+      base: {
+        ref: "origin/main",
+        name: "main",
+        isCurrent: false,
+        ahead: 1,
+        behind: 2,
+        forkPoint: null,
+        conflicts: ["src/cart.js"],
+      },
+    });
+    await post({ type: "state", state: { kind: "repo", repo: merging, repos: [] } });
+
+    expect(screen.getByRole("status").textContent?.replace(/\s+/g, " ").trim()).toMatch(
+      /merge paused: 1 file has conflicts\. Choose what to keep below, then Continue\./,
+    );
+    const next = button("Continue (1 left)");
+    expect(next.disabled).toBe(true);
+    for (const name of ["Pull", "Push", "Sync"]) expect(button(name).disabled).toBe(true);
+    // The forecast would be about the conflict you're already in.
+    expect(screen.queryByText(/would conflict in/)).toBeNull();
+    // Conflicts come before the Remote card.
+    const sections = [...document.querySelectorAll("section")].map((s) => s.className);
+    expect(sections.findIndex((c) => !c.includes("remote"))).toBeLessThan(
+      sections.findIndex((c) => c.includes("remote")),
+    );
+
+    await post({
+      type: "state",
+      state: { kind: "repo", repo: { ...merging, status: { ...merging.status, files: [] } }, repos: [] },
+    });
+    expect(screen.getByRole("status").textContent).toMatch(/no conflicts left\. Continue to finish\./);
+    expect(button("Continue").disabled).toBe(false);
   });
 
   it("applies the main-branch colour setting", async () => {

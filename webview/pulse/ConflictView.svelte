@@ -39,6 +39,10 @@
       </button>
     </div>
   {:else}
+    <!-- When both sides rewrote the same lines, picking one rarely fits: the merge editor shows both side by side. -->
+    <button class="wide merge-editor" disabled={!!busy} onclick={() => send({ type: "openMergeEditor", path })}>
+      <span class="codicon codicon-git-merge"></span>Open in the merge editor
+    </button>
     {#each blocks as block (block.index)}
       <div class="conflict-block">
         <div class="conflict-title">
@@ -59,8 +63,11 @@
           <button disabled={!!busy} onclick={() => resolve(block.index, "theirs")}
             >Keep {names.theirs.toLowerCase()}</button
           >
-          <button disabled={!!busy} title="Yours first, then theirs" onclick={() => resolve(block.index, "both")}
-            >Keep both</button
+          <button
+            class="link-button keep-both"
+            disabled={!!busy}
+            title="Keeps both, {names.ours.toLowerCase()} first. Check the result: when both sides rewrote the same code, keeping both usually leaves it twice."
+            onclick={() => resolve(block.index, "both")}>Keep both</button
           >
         </div>
       </div>
@@ -73,7 +80,4 @@
       </div>
     {/if}
   {/if}
-  <button class="link-button" onclick={() => send({ type: "openMergeEditor", path })}>
-    <span class="codicon codicon-git-merge"></span>Open in the merge editor
-  </button>
 </div>

@@ -81,24 +81,30 @@
       {@const repo = view.repo}
       {@const next = preview({ type: "continueOperation" }, repo)}
       {@const abort = preview({ type: "abortOperation" }, repo)}
+      {@const left = repo.status.files.filter((f) => f.conflicted).length}
       <div class="operation" role="status">
         <div class="operation-text">
           <span class="codicon codicon-debug-pause"></span>
-          <span
-            ><b>{repo.operation}</b> paused{repo.status.files.some((f) => f.conflicted)
-              ? ": fix the conflicted files, then press ✓ on each to mark it resolved"
-              : ": all resolved"}</span
-          >
+          <span>
+            {#if left}
+              <b>{repo.operation}</b> paused: {left === 1 ? "1 file has" : `${left} files have`} conflicts. Choose what to
+              keep below, then Continue.
+            {:else}
+              <b>{repo.operation}</b> paused: no conflicts left. Continue to finish.
+            {/if}
+          </span>
         </div>
         <div class="operation-actions">
           <button
             class="primary"
             disabled={!next.ok || !!busy}
-            aria-label="Continue"
+            aria-label={left ? `Continue (${left} left)` : "Continue"}
             title={next.text}
             onclick={() => send({ type: "action", request: { type: "continueOperation" } })}
           >
-            <span class="codicon codicon-debug-continue"></span><span class="label">Continue</span>
+            <span class="codicon codicon-debug-continue"></span><span class="label"
+              >{left ? `Continue (${left} left)` : "Continue"}</span
+            >
           </button>
           <button
             disabled={!abort.ok || !!busy}
@@ -113,8 +119,14 @@
     {/if}
     <!-- Keyed by repo, so drafts, expanded commits and scroll don't leak between repos. -->
     {#key view.repo.root}
-      <Remote repo={view.repo} {busy} {fetching} />
-      <Changes repo={view.repo} {busy} {conflictBlocks} />
+      <!-- Mid-merge, the conflicts are the job at hand: they come first, right under the banner. -->
+      {#if view.repo.operation}
+        <Changes repo={view.repo} {busy} {conflictBlocks} />
+        <Remote repo={view.repo} {busy} {fetching} />
+      {:else}
+        <Remote repo={view.repo} {busy} {fetching} />
+        <Changes repo={view.repo} {busy} {conflictBlocks} />
+      {/if}
       <Worktrees repo={view.repo} {busy} />
       <Stashes repo={view.repo} {busy} />
       <History repo={view.repo} {busy} />

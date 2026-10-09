@@ -148,7 +148,8 @@
         </div>
       </div>
 
-      {#if base.behind > 0}
+      <!-- During a merge or rebase the forecast is about the conflict you're already in. -->
+      {#if base.behind > 0 && !repo.operation}
         <div class="merge-forecast">
           {#if base.conflicts === null}
             <span class="ok"><span class="codicon codicon-pass"></span>no overlap: updates cleanly</span>

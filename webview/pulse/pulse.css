@@ -1295,6 +1295,14 @@ button.primary .count-pill {
   padding: 2px 8px;
 }
 
+.conflict-actions .keep-both {
+  padding: 2px 4px;
+}
+
+.conflict-view .merge-editor {
+  justify-self: stretch;
+}
+
 .conflict-done {
   display: grid;
   gap: 6px;

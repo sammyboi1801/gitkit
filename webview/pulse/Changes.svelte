@@ -144,8 +144,7 @@
   {#if files.length === 0}
     <p class="clean-line"><span class="codicon codicon-pass"></span>Working tree clean</p>
   {:else if repo.operation}
-    <!-- Continue makes the commit; a second commit box would only compete with it. -->
-    <p class="hint operation-hint">Resolve below, then press Continue above. It makes the commit for you.</p>
+    <!-- No commit box: Continue (in the banner, which also says what to do) makes the commit. -->
   {:else}
     <div class="commit-box">
       <textarea
