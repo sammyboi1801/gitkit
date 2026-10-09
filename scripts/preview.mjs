@@ -3,7 +3,8 @@
 // Usage: npm run build && node scripts/preview.mjs   then open .vscode-test/preview/<name>.html
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import * as esbuild from "esbuild";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, ".vscode-test", "preview");
@@ -104,8 +105,15 @@ function page(entry, messages) {
   // Each step clicks the first button whose text or label contains that phrase.
   const steps = new URLSearchParams(location.hash.slice(1)).get("click")?.split("|") ?? [];
   let i = 0;
+  // ...and an optional hover at the end: page.html#hover=main points at the "main" branch flag.
+  const hover = new URLSearchParams(location.hash.slice(1)).get("hover");
   const next = () => {
-    if (i >= steps.length) return;
+    if (i >= steps.length) {
+      const target = hover && document.querySelector(\`[data-branch="\${hover}"]\`);
+      // After the first layout settles: it zooms and scrolls to the newest commits.
+      setTimeout(() => target?.dispatchEvent(new PointerEvent("pointerenter")), 800);
+      return;
+    }
     const want = steps[i++].toLowerCase();
     const target = [...document.querySelectorAll("button, [role=button]")].find((el) =>
       ((el.getAttribute("aria-label") ?? "") + " " + el.textContent).toLowerCase().includes(want),
@@ -140,5 +148,30 @@ writeFileSync(
     },
   ]),
 );
+
+// The Branch Map shows this repo itself, read the same way the extension reads it. Remote state
+// that may not exist locally (a branch behind main, CI) is filled in so the remote strip shows.
+const reader = join(out, "read-repo.mjs");
+await esbuild.build({
+  entryPoints: [join(root, "src", "git", "repo.ts")],
+  outfile: reader,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  logLevel: "warning",
+});
+const { readRepo } = await import(pathToFileURL(reader).href);
+const repo = await readRepo(root);
+repo.status = { ...repo.status, upstream: repo.status.upstream ?? `origin/${repo.status.branch}`, ahead: 2, behind: 1 };
+repo.base ??= { ref: "origin/main", name: "main", ahead: 2, behind: 3, isCurrent: false, conflicts: ["README.md"] };
+repo.ci = {
+  state: "success",
+  sha: repo.status.oid,
+  summary: "8 checks passed",
+  failed: [],
+  url: "https://github.com",
+  runId: null,
+};
+writeFileSync(join(out, "map.html"), page("map", [{ type: "state", state: { kind: "repo", repo } }]));
 
 console.log(`Previews written to ${out}`);
