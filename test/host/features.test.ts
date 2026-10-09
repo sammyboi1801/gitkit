@@ -555,6 +555,11 @@ describe("CI status", () => {
     harness.answers.push({ accessToken: "t" });
     await panel.send({ type: "signInGitHub" });
     expect(panel.repo().ci).toMatchObject({ state: "success", summary: "All 1 check passed" });
+
+    // Turned off: what was read before goes away too, right away.
+    harness.changeConfig("gitkit.ciStatus", false);
+    await vi.waitFor(() => expect(panel.repo().ci).toBeNull());
+    expect(panel.repo().pr).toBeNull();
   });
 });
 

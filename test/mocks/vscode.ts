@@ -134,6 +134,12 @@ export const harness = {
   views: new Map<string, { resolveWebviewView(view: unknown): void }>(),
   contentProviders: new Map<string, { provideTextDocumentContent(uri: Uri): Promise<string> | string }>(),
   windowState: new Emitter<{ focused: boolean }>(),
+  /** Fire with the changed setting's key, e.g. "gitkit.ciStatus". */
+  configChanged: new Emitter<{ affectsConfiguration(section: string): boolean }>(),
+  changeConfig(key: string, value: unknown) {
+    this.config[key] = value;
+    this.configChanged.fire({ affectsConfiguration: (section) => key === section || key.startsWith(`${section}.`) });
+  },
   /** Fires like VS Code does when a terminal command starts (shell integration). */
   shellExecutions: new Emitter<{
     execution: { commandLine: { value: string }; cwd?: Uri };
@@ -317,7 +323,8 @@ export const workspace = {
     return { onDidChange: e.event, onDidCreate: e.event, onDidDelete: e.event, dispose() {} };
   },
   onDidChangeWorkspaceFolders: new Emitter<void>().event,
-  onDidChangeConfiguration: new Emitter<{ affectsConfiguration(s: string): boolean }>().event,
+  onDidChangeConfiguration: (listener: (e: { affectsConfiguration(s: string): boolean }) => void) =>
+    harness.configChanged.event(listener),
   async openTextDocument(target: Uri | string) {
     return new TextDocument(typeof target === "string" ? Uri.file(target) : target);
   },

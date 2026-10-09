@@ -96,6 +96,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       }),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration("gitkit.mainBranchColor")) this.postConfig();
+        if (e.affectsConfiguration("gitkit.ciStatus")) {
+          this.lastPosted = "";
+          void this.refresh().then(() => this.maybeCheckCi(true));
+        }
         if (!e.affectsConfiguration("gitkit.repoScanDepth")) return;
         this.roots = undefined;
         this.scheduleRefresh();
@@ -769,7 +773,9 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   /** What the extension knows about the remote besides git: fetch errors, CI and the PR. */
   private withRemoteInfo(repo: RepoState): RepoState {
-    return { ...repo, fetchError: this.fetchError, ci: this.ci, pr: this.pr };
+    // Turning CI status off hides what was read before it was turned off, too.
+    const github = vscode.workspace.getConfiguration("gitkit").get<boolean>("ciStatus", true);
+    return { ...repo, fetchError: this.fetchError, ci: github ? this.ci : null, pr: github ? this.pr : null };
   }
 
   /**
