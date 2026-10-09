@@ -5,212 +5,160 @@
 <h1 align="center">GitKit</h1>
 
 <p align="center">
-  <strong>Everyday git and GitHub in VS Code, made visual and safe.</strong>
+  <strong>Git and GitHub in VS Code, made visual and safe.</strong><br />
+  See where you stand at a glance. Undo almost anything. Never get lost in a merge again.
 </p>
 
 <p align="center">
-  <a href="https://github.com/sammyboi1801/gitkit/actions/workflows/ci.yml"><img src="https://github.com/sammyboi1801/gitkit/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license" /></a>
   <img src="https://img.shields.io/badge/VS%20Code-1.95%2B-007ACC.svg" alt="VS Code 1.95 or newer" />
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> ·
-  <a href="#getting-started">Getting started</a> ·
-  <a href="#commands">Commands</a> ·
-  <a href="#settings">Settings</a> ·
-  <a href="#privacy-and-security">Privacy</a> ·
-  <a href="#contributing">Contributing</a>
+  <img src="media/screenshots/demo.gif" width="900" alt="GitKit in action: staging, committing and pushing, a teammate's new commits, the Branch Map, resolving a conflict, a new worktree and Workflow Studio" />
 </p>
 
----
+GitKit adds a panel to VS Code that tells you, in plain words, what's going on in your project: what you've changed, what's waiting to be pushed, what your teammates did, and whether merging will go smoothly. The everyday actions are one click away, and the scary ones come with a safety net.
 
-GitKit adds a sidebar to VS Code that shows where your repository stands at a glance, puts committing, pushing and syncing one click away, and makes the riskier parts of git (rebases, conflicts, undoing mistakes) safe and understandable.
-
-**Nothing happens behind your back.** Every action shows the exact `git` command it will run, actions that change history ask first, and discarded work is kept so it can be restored.
-
-<p align="center">
-  <img src="media/screenshots/demo.gif" width="900" alt="GitKit in action: staging, committing and pushing, fetching teammates' work, the Branch Map, resolving a conflict, a new worktree and Workflow Studio" />
-</p>
+**Nothing happens behind your back.** Hover any button to see exactly what it will do. Anything that rewrites history asks first, and work you throw away is kept so you can get it back.
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src="media/screenshots/pulse.png" alt="The Pulse sidebar: branch status, Pull, Push and Sync, the remote card forecasting a conflict in src/cart.js, the commit box and the graph" /></td>
-    <td align="center" width="33%"><img src="media/screenshots/conflict.png" alt="A merge stopped on a conflict, with Keep yours, Keep incoming and Keep both for each file" /></td>
-    <td align="center" width="33%"><img src="media/screenshots/worktrees.png" alt="Two worktrees, each with its uncommitted files and distance from main, warning that both changed src/cart.js" /></td>
+    <td align="center" width="33%"><img src="media/screenshots/pulse.png" alt="The GitKit panel: the branch, Pull, Push and Sync, the remote card warning of a conflict in src/cart.js, the commit box and the history" /></td>
+    <td align="center" width="33%"><img src="media/screenshots/conflict.png" alt="A merge stopped on a conflict, with Keep yours, Keep incoming and Keep both for each change" /></td>
+    <td align="center" width="33%"><img src="media/screenshots/worktrees.png" alt="Two worktrees side by side, warning that both changed src/cart.js" /></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>Where you stand</b>, and a conflict forecast before you merge</sub></td>
-    <td align="center"><sub><b>Conflicts</b> explained, one click per file</sub></td>
-    <td align="center"><sub><b>Worktrees</b> for parallel agents, with overlaps flagged</sub></td>
+    <td align="center"><sub><b>Where you stand</b>, and a warning before a merge would conflict</sub></td>
+    <td align="center"><sub><b>Conflicts</b> explained, one click per change</sub></td>
+    <td align="center"><sub><b>Several tasks at once</b>, with overlaps flagged</sub></td>
   </tr>
 </table>
 
-## Features
+## What you can do
 
-### Repository status
+### Know where you stand
 
-- **A one-sentence summary** of where you stand: _"1 commit ready to push"_, _"3 new commits on the remote"_, _"Diverged: 2 to push, 1 to pull"_.
-- **Pull, Push and Sync**, with the right one highlighted. Pull only fast-forwards, so it never creates a surprise merge commit.
-- **Changes with line counts** (`+12 −3`) per file, one-click staging, and a commit box that commits everything when nothing is staged.
-- **Undoable discard:** discarded changes are saved as a stash and can be restored from _Saved changes_.
-- **Branch switcher** showing what each branch is ahead or behind by, which exist only locally, and which lost their remote branch.
+- **One sentence tells you the state of things:** _"1 commit ready to push"_, _"3 new commits on the remote"_, _"2 to push, 1 to pull"_.
+- **Pull, Push and Sync** buttons, with the one you probably want highlighted. Pull never creates a surprise merge.
+- **Your changes, file by file,** with how many lines you added and removed. Commit with one box and one button.
+- **Switch branches** from a list that shows which ones are ahead, behind, or only on your machine.
 
-### Remote awareness
+### Stay in step with your team
 
-- **Drift from main:** how many commits your branch and main have each gained since you branched.
-- **Conflict forecast:** GitKit test-merges in memory, without touching your files, and reports _"would conflict in app.py"_ or _"merges cleanly"_ before you do anything.
-- **Update from main** in one click: it merges into published branches and rebases unpublished ones, after saving a backup.
-- **Team activity** such as _"Alex Chen added 2 commits to origin/main"_, read from your own fetch history.
-- **CI status** for your latest pushed commit, with **Re-run failed jobs**. Public repositories need no sign-in.
-- **Why CI failed**, without leaving VS Code: each failed job with the step it stopped at (matrix jobs that failed the same way are listed once), and the failing tests or lint errors GitHub reported. Click one to open that file at that line, or open the failed step's log in a tab with the cursor on the first error (GitHub shares logs only with signed-in users).
-- **Pull request readiness** in one line: _"PR #42 CI passing, review needed, 2 unresolved comments, merges cleanly"_. Without a PR, **Open a PR** drafts the title and description from your commits, then creates it, creates a draft, or opens GitHub's page pre-filled.
-- Background fetching every few minutes, only while VS Code is focused.
-
-### Branch lanes and the Branch Map
-
-Each branch gets its own lane and color, with main always first, so branches visibly fork off and merge back. Merged branches stay visible after deletion, because GitKit recovers their names from merge messages. Hollow dots mark commits you haven't pushed; faded, dashed ones are on the remote but not yet pulled.
-
-The **Branch Map** opens the same view horizontally in an editor tab, with a strip above it showing your branch against its remote copy, against main (with the conflict forecast), CI, the pull request, and worktrees that changed the same files. You can work in it directly:
+- **A heads-up when teammates push.** GitKit checks for new commits every few minutes while you work. When someone pushes to your branch or to main, you get a pop-up like _"Priya Patel pushed 2 commits to origin/main"_ and a count on the GitKit icon until you take a look.
+- **See how far you've drifted from main,** and whether merging it in would conflict, before you try. GitKit test-merges in memory, without touching your files.
+- **Bring in main's latest work in one click,** with a backup saved first.
+- **Recent activity** in plain words: _"Alex Chen added 2 commits to origin/main"_.
 
 <p align="center">
-  <img src="media/screenshots/branch-map.png" width="900" alt="The Branch Map: main, a merged feature branch and feat/checkout as colored lanes, with the remote, conflict forecast and people filters above" />
+  <img src="media/screenshots/new-commits.png" width="520" alt="A VS Code pop-up from GitKit: Priya Patel pushed 1 commit to origin/main, with a Show button" />
 </p>
 
-| Action          | How                                                                               |
-| --------------- | --------------------------------------------------------------------------------- |
-| Merge or rebase | Drag one branch onto another; the confirmation forecasts conflicts first          |
-| Branch actions  | Click a branch name: switch, merge, rebase, branch from here, delete              |
-| Commit actions  | Right-click a commit: revert, cherry-pick, branch from here, copy hash            |
-| Navigate        | Scroll to zoom, drag to pan, arrow keys step through commits, `0` fits the window |
-| Long histories  | Quiet stretches fold into **+N** groups that expand on click                      |
-| Find work       | Search by message, author or hash; filter by person; hover a lane to isolate it   |
+### Know when (and why) your checks fail
 
-### Worktrees and coding agents
+- **Your GitHub checks** for the latest commit you pushed, with a **Re-run** button for the ones that failed.
+- **See why they failed without leaving VS Code:** which job failed, the step it stopped at, and the failing tests or errors. Click an error to jump to that line in your code, or open the failed step's log with the cursor on the first error.
+- **Pull requests:** one line says if yours is ready (_"checks passing, review needed, 2 unresolved comments"_). No pull request yet? GitKit drafts the title and description from your commits.
 
-Run several agents (or tasks) side by side, each in its own folder on its own branch, without losing track of them:
+<p align="center">
+  <img src="media/screenshots/ci.png" width="420" alt="Failed checks under the CI row: Lint and both test jobs, the step each stopped at, and the failing tests with their file and line" />
+</p>
 
-- **Every worktree, at a glance:** branch, folder, uncommitted files, distance from main and last activity, including worktrees made by the git CLI or by agent tools. Click one to open it in a new window.
-- **New worktree** from Pulse, the branch switcher or the Command Palette. It previews the exact `git worktree add`, can copy ignored files you list (like `.vscode/settings.json`; `.env` only if you add it) and runs a setup command such as `npm install` in a visible terminal.
-- **Agents stepping on each other:** _"agent/auth and agent/docs both changed auth.py"_, and when both have commits, whether merging them would conflict.
-- **Checkpoints:** a snapshot of a worktree's files, new files included, saved when a coding agent (`claude`, `codex`, `aider` and others) starts in a terminal, before removing a worktree with uncommitted work, or by hand. Restore one from the Undo list. Checkpoints never touch your files, staging area or stashes, leave out files over the commit guard's size limit, and only the newest 20 are kept.
-- **Safe clean-up:** removing a worktree warns about uncommitted files, leaves locked ones alone, and offers to delete the branch only if it's merged. Switching to a branch that's open in another worktree offers to open that worktree instead of failing.
+### See your branches as a map
 
-### Conflict resolution
+Each branch gets its own colored lane, so you can see where branches split off and merge back. Commits you haven't pushed yet, and ones on the remote you haven't pulled, are drawn differently so they stand out.
 
-When a merge or rebase stops, each conflict is shown as **Yours** against **Incoming**, with _Keep yours_, _Keep incoming_, _Keep both_ and _Open in the merge editor_. During a rebase the labels become **Upstream** and **Your commit**, because git's "ours" and "theirs" swap meaning there. Resolutions go through the editor, so they can be undone with Ctrl+Z. Finish with **Continue**, or **Abort** to return to exactly where you started.
+Open the **Branch Map** for the full picture in a tab of its own, and work right in it: drag one branch onto another to merge, click a branch to switch to it, right-click a commit to undo it or copy it elsewhere. Search by message or person, and zoom out to see a long history at once.
 
-### Oops: fix a mistake
+<p align="center">
+  <img src="media/screenshots/branch-map.png" width="900" alt="The Branch Map: main, a merged feature branch and feat/checkout as colored lanes, with a summary strip and people filters above" />
+</p>
 
-A single menu for the problems people most often search for:
+### Fix conflicts calmly
 
-- Undo the last commit and keep its changes (or revert it safely if it's already pushed)
-- Reword the last commit, or add forgotten changes to it
-- Move commits made on the wrong branch to a new one
-- Recover a deleted branch
-- Restore discarded changes
-- Stop tracking a file while keeping it on disk
-- Delete merged branches, **including squash-merged ones**
-- Step back through an **undo timeline** of commits, merges, rebases and resets; undo is itself undoable
+When a merge stops on a conflict, GitKit shows each one as **your version** next to **the incoming version**, with buttons to keep yours, keep theirs, keep both, or open VS Code's merge editor. Changed your mind? Ctrl+Z works, and **Abort** puts everything back exactly as it was.
 
-### Commit guard
+### Undo mistakes with Oops
 
-Before each commit, GitKit reviews the lines being added and warns about:
+One menu for the problems people search for most:
 
-- **Likely secrets**, including AWS, GitHub, Slack, Stripe, Google, OpenAI and Anthropic keys and private keys, with a jump to the exact line.
-- **Files that rarely belong in a repository**, such as `.env` files, keys, credentials and very large files, with an option to leave them out and ignore them.
-- **The wrong identity** for the repository, based on your `gitkit.identities` rules, for anyone who uses separate work, school and personal addresses.
+- Undo the last commit but keep the changes (safely, even if you already pushed it)
+- Fix the last commit's message, or add a file you forgot
+- Move commits you made on the wrong branch
+- Bring back a deleted branch or changes you discarded
+- Clean up branches that are already merged
+- Step back through a timeline of what happened, and undo the undo
 
-### Workflow Studio
+### Commit without worry
 
-Create GitHub Actions workflows without writing YAML. Studio starts from **what you want to automate**: checking every push, testing pull requests, publishing a Docker image, releasing on a version tag, deploying to GitHub Pages, running a scheduled job, or starting from scratch. Goals that fit your project are marked as recommended.
+Before each commit, GitKit checks what you're about to save and warns you about:
+
+- **Passwords and keys** that look real (AWS, GitHub, Stripe, OpenAI and many more), with a jump to the exact line
+- **Files that usually shouldn't be shared,** like `.env` files and very large files
+- **The wrong email address,** if you use different ones for work, school and personal projects
+
+### Work on several things at once
+
+Worktrees let you have several branches open at the same time, each in its own folder, which is handy for running more than one AI coding agent side by side.
+
+- **See every worktree** with its changes and how far it is from main, and open any of them in a new window.
+- **Create one in a click,** optionally copying settings files and running a setup command like `npm install`.
+- **Know when two of them overlap:** _"agent/auth and agent/docs both changed auth.py"_.
+- **Checkpoints:** GitKit quietly saves a snapshot of a worktree's files when a coding agent starts, so you can roll back if it goes wrong.
+
+### Build GitHub Actions without writing YAML
+
+**Workflow Studio** starts from what you want to automate: test every push, check pull requests, publish a Docker image, release a version, deploy a website, or run something on a schedule. GitKit suggests the ones that fit your project.
 
 <table>
   <tr>
-    <td width="50%"><img src="media/screenshots/studio-start.png" alt="Workflow Studio's start page: pick what to automate, with recommended goals for this project" /></td>
-    <td width="50%"><img src="media/screenshots/studio.png" alt="An existing CI workflow opened in Workflow Studio: triggers as chips and Lint, Test, Build and Deploy as job cards in the order they run" /></td>
+    <td width="50%"><img src="media/screenshots/studio-start.png" alt="Workflow Studio's start page: pick what to automate, with suggestions for this project" /></td>
+    <td width="50%"><img src="media/screenshots/studio.png" alt="An existing workflow in Workflow Studio: when it runs, and its jobs as cards in the order they run" /></td>
   </tr>
   <tr>
     <td align="center"><sub>Start from what you want to automate</sub></td>
-    <td align="center"><sub>Any existing workflow opens as editable jobs</sub></td>
+    <td align="center"><sub>Existing workflows open as cards you can edit</sub></td>
   </tr>
 </table>
 
-- Triggers read as a sentence, _"CI runs on pushes to main and on pull requests"_, where each part is editable. Schedules are picked from lists (every day at 06:00 UTC, every Monday…), with a custom cron for anything else.
-- Jobs appear as cards, left to right in the order they run. Choose Linux, Windows, macOS or any runner label, toggle the versions to test, and set what runs after what.
-- **Build your own steps:** commands, any Marketplace action with its inputs, conditions, reordering. Ready-made jobs can be turned into their steps with **Customize the steps**.
-- **Least privilege by default:** workflows get read-only access, and only the jobs that need more (such as publishing an image) receive it.
-- Problems are explained on the card they belong to; the generated YAML is one click away.
-- **Any existing workflow opens as editable jobs.** Anything Studio has no control for is kept exactly as written.
-- **Checked before saving:** workflows are validated against GitHub's schema, so a typo like `runs_on` is caught in VS Code instead of on GitHub. Right-click any file in `.github/workflows` and choose **Open in Workflow Studio**.
+- When it runs reads as a sentence, like _"runs on pushes to main and on pull requests"_. Schedules are picked from a list (every day at 06:00 UTC, every Monday…).
+- Jobs are cards, left to right in the order they run. Pick the operating system and versions to test with checkboxes.
+- Workflows get only the permissions they need, and GitKit checks your workflow against GitHub's rules before saving, so mistakes show up in VS Code instead of on GitHub.
 
-### Looks native in every theme
+### Fits right in
 
-GitKit uses only your theme's colors, so it fits light, dark and high-contrast themes alike.
+GitKit uses your theme's colors, so it looks at home in light, dark and high-contrast themes. Open a folder with several projects in it and GitKit finds each one.
 
 <p align="center">
-  <img src="media/screenshots/themes.png" alt="GitKit in Light Modern, High Contrast and High Contrast Light themes" />
+  <img src="media/screenshots/themes.png" alt="GitKit in the Light Modern, High Contrast and High Contrast Light themes" />
 </p>
-
-### Multi-repository folders
-
-Open a parent folder and GitKit discovers every repository inside it. Each appears under **Repositories** with its branch, ahead/behind count, changes and conflicts. GitKit follows the file you are editing and keeps a separate commit draft per repository.
 
 ## Getting started
 
-### Requirements
+You need **VS Code 1.95** or newer and **git 2.38** or newer.
 
-- VS Code 1.95 or newer
-- git 2.38 or newer (used for the conflict forecast and merged-branch detection)
+1. Install GitKit. Until it's on the Marketplace, download the `.vsix` file from a release, then in VS Code open the Extensions view, choose **…** → **Install from VSIX…**, and pick the file.
+2. Open a folder that has a git project in it.
+3. Click the **GitKit** icon in the bar on the left.
 
-### Installation
-
-Until GitKit is published on the Marketplace, install it from a `.vsix` package:
-
-1. Build the package with `npm install` and `npm run package`, or download it from a release.
-2. In VS Code, open the Extensions view, choose **…** → **Install from VSIX…**, and select `gitkit-<version>.vsix`.
-
-### First steps
-
-1. Open a folder that contains a git repository.
-2. Select the **GitKit** icon in the activity bar.
-3. Use the icons at the top of the panel to open **Oops**, the **Branch Map** and **Workflow Studio**.
-
-## Commands
-
-All commands are available from the Command Palette under **GitKit**.
-
-| Command                             | Description                                       |
-| ----------------------------------- | ------------------------------------------------- |
-| `GitKit: Refresh`                   | Re-read every repository in the workspace         |
-| `GitKit: Open Branch Map`           | Open the interactive branch diagram               |
-| `GitKit: Oops: Fix a Mistake…`      | Undo, recover or clean up with guided fixes       |
-| `GitKit: Clean Up Merged Branches…` | Find and delete merged and squash-merged branches |
-| `GitKit: Open Workflow Studio`      | Create or review GitHub Actions workflows         |
-| `GitKit: New Worktree…`             | Work on a branch in its own folder                |
-| `GitKit: Save Checkpoint`           | Snapshot this worktree's files, new ones included |
+The icons at the top of the panel open **Oops**, the **Branch Map** and **Workflow Studio**. Every GitKit command is also in the Command Palette (Ctrl+Shift+P) under **GitKit**.
 
 ## Settings
 
-| Setting                            | Default                  | Description                                                                                       |
-| ---------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------- |
-| `gitkit.autoFetchMinutes`          | `5`                      | How often to check the remote while VS Code is focused. `0` disables it.                          |
-| `gitkit.mainBranchColor`           | `blue`                   | Color of the main branch: `blue`, `green`, `purple`, `orange`, `red`, `yellow`, or any CSS color. |
-| `gitkit.repoScanDepth`             | `2`                      | How many folder levels to search for repositories.                                                |
-| `gitkit.followActiveEditor`        | `true`                   | Switch to the repository of the file you are editing.                                             |
-| `gitkit.commitGuard.enabled`       | `true`                   | Check commits for secrets, sensitive files and large files.                                       |
-| `gitkit.commitGuard.maxFileSizeMB` | `10`                     | File size, in MB, above which the commit guard warns.                                             |
-| `gitkit.identities`                | `[]`                     | Expected commit email per remote or folder (see below).                                           |
-| `gitkit.ciStatus`                  | `true`                   | Show GitHub check results and pull request status for the current branch.                         |
-| `gitkit.worktrees.location`        | `sibling`                | Where new worktrees go: next to the repo in `<repo>.worktrees/`, or `inside` it in `.worktrees/`. |
-| `gitkit.worktrees.setupCommand`    | `""`                     | Command to run in a new worktree, in a visible terminal, e.g. `npm install`.                      |
-| `gitkit.worktrees.copyFiles`       | `[]`                     | Ignored files to copy into new worktrees. `.env` is copied only if listed.                        |
-| `gitkit.checkpoints.onAgentStart`  | `true`                   | Save a checkpoint when a coding agent starts in a terminal.                                       |
-| `gitkit.checkpoints.agentCommands` | `["claude", "codex", …]` | Terminal commands that count as starting an agent.                                                |
-| `gitkit.checkpoints.keep`          | `20`                     | Checkpoints kept per worktree.                                                                    |
-| `gitkit.checkpoints.maxAgeDays`    | `30`                     | Checkpoints older than this are dropped.                                                          |
+The ones you're most likely to change. Open VS Code's settings and search for **GitKit** to see them all.
 
-Example identity rules; the first matching rule applies:
+| Setting                         | What it does                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `gitkit.autoFetchMinutes`       | How often to check for teammates' new commits, in minutes (default 5). `0` turns it off.                                   |
+| `gitkit.newCommitAlerts`        | How to tell you about them: a pop-up and a count on the icon (`popup`, the default), `badge` for just the count, or `off`. |
+| `gitkit.ciStatus`               | Show your GitHub checks and pull request (on by default).                                                                  |
+| `gitkit.mainBranchColor`        | The color of the main branch's lane: `blue`, `green`, `purple`, `orange`, `red`, `yellow` or any color.                    |
+| `gitkit.commitGuard.enabled`    | Check commits for passwords, keys and files that shouldn't be shared (on by default).                                      |
+| `gitkit.identities`             | Which email to commit with for which projects, so work and personal don't get mixed up. See below.                         |
+| `gitkit.worktrees.setupCommand` | A command to run in each new worktree, such as `npm install`.                                                              |
+
+For example, to use your university email for one GitHub organization and your work email in one folder:
 
 ```json
 "gitkit.identities": [
@@ -219,28 +167,16 @@ Example identity rules; the first matching rule applies:
 ]
 ```
 
-## Privacy and security
+## Privacy
 
-- GitKit runs your local `git`. It contacts the network only for `git fetch` and, when CI status is enabled, the GitHub API for your branch's check results, the errors and logs of failed checks, and its pull request. It creates a pull request only when you choose to.
-- Checkpoints stay in your repository under `refs/gitkit/`, are never pushed, and never touch your files, staging area or stashes.
-- There is no telemetry.
-- GitHub sign-in uses the account VS Code already manages, and is requested only when you choose **Sign in**.
-- Webviews run with a strict content security policy, and commands are executed without a shell, so branch and file names cannot inject commands.
+- GitKit works with the `git` already on your computer. It only goes online when you push or pull, to check for new commits, and, if you leave GitHub checks on, to read your checks and pull request from GitHub.
+- There is no telemetry: nothing about you or your code is collected.
+- GitHub sign-in uses the account VS Code already knows, and GitKit only asks when you click **Sign in** or open a check's log.
+- Checkpoints stay on your computer and are never pushed.
 
 ## Contributing
 
-```bash
-npm install
-npm run check             # typecheck, lint, unit and component tests, build
-npm run test:integration  # smoke test inside a real VS Code (downloaded once)
-npm run watch             # rebuild on change
-```
-
-Press **F5** to launch GitKit against a throwaway sandbox repository, or choose **Run GitKit (multi-repo folder)** to try several repositories at once. `npm run sandbox -- --reset` rebuilds the sandboxes.
-
-Tests run on temporary repositories with no global git configuration, so they behave identically on every machine. Extension code is exercised through a scriptable fake of the VS Code API, webview components are rendered in jsdom, and CI runs the suite on Linux, Windows and macOS plus a smoke test inside VS Code.
-
-`npm run tour` (Windows) opens a real VS Code on a made-up project, performs every main action step by step, checks the result in git, and screenshots each step into `.vscode-test/tour/shots`; the images in this README come from it. `node scripts/perf.mjs` times a refresh on a synthetic repository with 20,000 commits, 200 branches and 5 worktrees.
+Ideas, bug reports and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get set up.
 
 ## License
 
