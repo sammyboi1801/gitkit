@@ -52,7 +52,7 @@ export class WorkflowStudioPanel {
         retainContextWhenHidden: true,
       },
     );
-    this.panel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "gitkit.svg");
+    this.panel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "tab.svg");
     this.panel.webview.html = renderWebviewHtml(this.panel.webview, distUri, "workflow");
     this.panel.webview.onDidReceiveMessage((message: StudioToHost) => this.receive(message));
     this.panel.onDidDispose(() => {

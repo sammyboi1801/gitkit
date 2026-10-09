@@ -27,7 +27,7 @@ export class BranchMapPanel {
       localResourceRoots: [distUri],
       retainContextWhenHidden: true,
     });
-    this.panel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "gitkit.svg");
+    this.panel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "tab.svg");
     this.panel.webview.html = renderWebviewHtml(this.panel.webview, distUri, "map");
 
     this.disposables.push(

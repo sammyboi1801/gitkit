@@ -2,6 +2,7 @@
 !dist/**
 dist/**/*.map
 !media/gitkit.svg
+!media/tab.svg
 !media/icon.png
 !package.json
 !README.md

@@ -130,7 +130,7 @@ export const harness = {
   /** Terminals the extension opened, and what it typed into them. */
   terminals: [] as { name: string; cwd: string; sent: string[]; shown: boolean }[],
   commands: new Map<string, (...args: unknown[]) => unknown>(),
-  panels: [] as { viewType: string; title: string; webview: FakeWebview; dispose(): void }[],
+  panels: [] as { viewType: string; title: string; webview: FakeWebview; iconPath?: unknown; dispose(): void }[],
   views: new Map<string, { resolveWebviewView(view: unknown): void }>(),
   contentProviders: new Map<string, { provideTextDocumentContent(uri: Uri): Promise<string> | string }>(),
   windowState: new Emitter<{ focused: boolean }>(),
@@ -152,7 +152,8 @@ export const harness = {
     this.session = undefined;
     this.terminals = [];
     this.commands.clear();
-    this.panels = [];
+    // Disposing resets the panels' singletons, so each test opens fresh ones.
+    this.panels.splice(0).forEach((p) => p.dispose());
     this.views.clear();
     this.contentProviders.clear();
   },

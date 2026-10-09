@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Editor-tab icon: the activity-bar "K" in the Marketplace icon's lane colours. -->
+  <path d="M7 3v18" stroke="#4c9df3"/>
+  <path d="M7 13.5L15.3 6.2" stroke="#b083f0"/>
+  <path d="M9.6 11.3L15.6 17.6" stroke="#3fb950"/>
+  <circle cx="7" cy="12" r="1.8" fill="#4c9df3" stroke="none"/>
+  <circle cx="17" cy="4.8" r="2.3" stroke="#b083f0"/>
+  <circle cx="17" cy="19.2" r="2.3" stroke="#3fb950"/>
+</svg>

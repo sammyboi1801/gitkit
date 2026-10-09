@@ -231,6 +231,24 @@ describe("Branch Map", () => {
     expect(state.state.kind).toBe("repo");
     expect(map.webview.posted).toContainEqual({ type: "config", mainBranchColor: "blue" });
   });
+
+  it("shows the colour icon on its tab and Workflow Studio's, and packages it", async () => {
+    contexts.push(activateExtension());
+    harness.folders = [makeRepo()];
+    await harness.resolveView(harness.views.get("gitkit.pulse")!).send({ type: "ready" });
+    await harness.commands.get("gitkit.openBranchMap")!();
+    await harness.commands.get("gitkit.openWorkflowStudio")!();
+    const root = join(__dirname, "..", "..");
+    for (const panel of harness.panels) {
+      const icon = (panel.iconPath as Uri).fsPath;
+      expect(icon.endsWith(join("media", "tab.svg")), panel.viewType).toBe(true);
+    }
+    expect(harness.panels).toHaveLength(2);
+    const svg = readFileSync(join(root, "media", "tab.svg"), "utf8");
+    // Coloured strokes, not currentColor (which shows grey on a tab).
+    expect(svg).not.toContain("currentColor");
+    expect(readFileSync(join(root, ".vscodeignore"), "utf8")).toContain("!media/tab.svg");
+  });
 });
 
 describe("Workflow Studio", () => {
