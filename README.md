@@ -29,6 +29,23 @@ GitKit adds a sidebar to VS Code that shows where your repository stands at a gl
 
 **Nothing happens behind your back.** Every action shows the exact `git` command it will run, actions that change history ask first, and discarded work is kept so it can be restored.
 
+<p align="center">
+  <img src="media/screenshots/demo.gif" width="900" alt="GitKit in action: staging, committing and pushing, fetching teammates' work, the Branch Map, resolving a conflict, a new worktree and Workflow Studio" />
+</p>
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="media/screenshots/pulse.png" alt="The Pulse sidebar: branch status, Pull, Push and Sync, the remote card forecasting a conflict in src/cart.js, the commit box and the graph" /></td>
+    <td align="center" width="33%"><img src="media/screenshots/conflict.png" alt="A merge stopped on a conflict, with Keep yours, Keep incoming and Keep both for each file" /></td>
+    <td align="center" width="33%"><img src="media/screenshots/worktrees.png" alt="Two worktrees, each with its uncommitted files and distance from main, warning that both changed src/cart.js" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Where you stand</b>, and a conflict forecast before you merge</sub></td>
+    <td align="center"><sub><b>Conflicts</b> explained, one click per file</sub></td>
+    <td align="center"><sub><b>Worktrees</b> for parallel agents, with overlaps flagged</sub></td>
+  </tr>
+</table>
+
 ## Features
 
 ### Repository status
@@ -54,6 +71,10 @@ GitKit adds a sidebar to VS Code that shows where your repository stands at a gl
 Each branch gets its own lane and color, with main always first, so branches visibly fork off and merge back. Merged branches stay visible after deletion, because GitKit recovers their names from merge messages. Hollow dots mark commits you haven't pushed; faded, dashed ones are on the remote but not yet pulled.
 
 The **Branch Map** opens the same view horizontally in an editor tab, with a strip above it showing your branch against its remote copy, against main (with the conflict forecast), CI, the pull request, and worktrees that changed the same files. You can work in it directly:
+
+<p align="center">
+  <img src="media/screenshots/branch-map.png" width="900" alt="The Branch Map: main, a merged feature branch and feat/checkout as colored lanes, with the remote, conflict forecast and people filters above" />
+</p>
 
 | Action          | How                                                                               |
 | --------------- | --------------------------------------------------------------------------------- |
@@ -103,12 +124,32 @@ Before each commit, GitKit reviews the lines being added and warns about:
 
 Create GitHub Actions workflows without writing YAML. Studio starts from **what you want to automate**: checking every push, testing pull requests, publishing a Docker image, releasing on a version tag, deploying to GitHub Pages, running a scheduled job, or starting from scratch. Goals that fit your project are marked as recommended.
 
+<table>
+  <tr>
+    <td width="50%"><img src="media/screenshots/studio-start.png" alt="Workflow Studio's start page: pick what to automate, with recommended goals for this project" /></td>
+    <td width="50%"><img src="media/screenshots/studio.png" alt="An existing CI workflow opened in Workflow Studio: triggers as chips and Lint, Test, Build and Deploy as job cards in the order they run" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Start from what you want to automate</sub></td>
+    <td align="center"><sub>Any existing workflow opens as editable jobs</sub></td>
+  </tr>
+</table>
+
 - Triggers read as a sentence, _"CI runs on pushes to main and on pull requests"_, where each part is editable. Schedules are picked from lists (every day at 06:00 UTC, every Monday…), with a custom cron for anything else.
 - Jobs appear as cards, left to right in the order they run. Choose Linux, Windows, macOS or any runner label, toggle the versions to test, and set what runs after what.
 - **Build your own steps:** commands, any Marketplace action with its inputs, conditions, reordering. Ready-made jobs can be turned into their steps with **Customize the steps**.
 - **Least privilege by default:** workflows get read-only access, and only the jobs that need more (such as publishing an image) receive it.
 - Problems are explained on the card they belong to; the generated YAML is one click away.
-- **Any existing workflow opens as editable jobs.** What Studio doesn't show (matrices, services, path filters) is kept exactly as written.
+- **Any existing workflow opens as editable jobs.** Anything Studio has no control for is kept exactly as written.
+- **Checked before saving:** workflows are validated against GitHub's schema, so a typo like `runs_on` is caught in VS Code instead of on GitHub. Right-click any file in `.github/workflows` and choose **Open in Workflow Studio**.
+
+### Looks native in every theme
+
+GitKit uses only your theme's colors, so it fits light, dark and high-contrast themes alike.
+
+<p align="center">
+  <img src="media/screenshots/themes.png" alt="GitKit in Light Modern, High Contrast and High Contrast Light themes" />
+</p>
 
 ### Multi-repository folders
 
@@ -196,7 +237,9 @@ npm run watch             # rebuild on change
 
 Press **F5** to launch GitKit against a throwaway sandbox repository, or choose **Run GitKit (multi-repo folder)** to try several repositories at once. `npm run sandbox -- --reset` rebuilds the sandboxes.
 
-Tests run on temporary repositories with no global git configuration, so they behave identically on every machine. Extension code is exercised through a scriptable fake of the VS Code API, webview components are rendered in jsdom, and CI runs the suite on Linux and Windows plus a smoke test inside VS Code.
+Tests run on temporary repositories with no global git configuration, so they behave identically on every machine. Extension code is exercised through a scriptable fake of the VS Code API, webview components are rendered in jsdom, and CI runs the suite on Linux, Windows and macOS plus a smoke test inside VS Code.
+
+`npm run tour` (Windows) opens a real VS Code on a made-up project, performs every main action step by step, checks the result in git, and screenshots each step into `.vscode-test/tour/shots`; the images in this README come from it. `node scripts/perf.mjs` times a refresh on a synthetic repository with 20,000 commits, 200 branches and 5 worktrees.
 
 ## License
 

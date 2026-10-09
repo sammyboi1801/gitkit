@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Workflow Studio checks workflows against GitHub's official schema** before saving, so a typo in a YAML box is caught with a plain explanation ("jobs › test: GitHub doesn't know "runs_on"").
+- **Open in Workflow Studio** from a workflow file's right-click menu or editor title bar.
+- **Removing a worktree** closes the terminals open in it first (Windows can't delete a folder in use), and no longer reports an error when only the emptied folder is still briefly in use.
+- A merge or rebase that **stops on conflicts** is shown as paused, not as a failed command.
+- **Readability:** incoming-work colors readable in every theme, ↑/↓ counts drawn as icons, Pull/Push/Sync fit a narrow sidebar, commit subjects keep their space next to branch badges (extra badges fold into "+N" when narrow).
+- **Tested on real VS Code:** an end-to-end tour (`npm run tour`) performs every action in a real window and screenshots it; CI now also runs on macOS.
+- **Faster refreshes with many worktrees:** other worktrees' details are reused for a few seconds, so a refresh with five worktrees costs the same as with none.
+- Job cards in Workflow Studio get icons from what the job does (lint, test, build, deploy, release).
 - **Worktrees:** every worktree listed with its branch, uncommitted files, distance from main and last activity; create (with a setup command and copied files), open in a new window or this one, lock, remove and clean up. Branches open in another worktree are labelled everywhere, and switching or deleting them says where they're open.
 - **Agents side by side:** worktrees that changed the same files are flagged, with an in-memory forecast of whether their commits would conflict.
 - **Checkpoints** of a worktree's files (new files included), saved when a coding agent starts in a terminal, before removing a worktree with uncommitted work, or by hand; restorable from the Undo list. They never touch your files, staging area or stashes.
