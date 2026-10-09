@@ -148,7 +148,7 @@ describe("Oops", () => {
     await panel.send({ type: "oops" });
     expect(subjects(dir)).toEqual(["first"]);
 
-    harness.answers.push(pick("Go back in time"), pick("Moved branch"), "Undo");
+    harness.answers.push(pick("Go back in time"), pick("Went back"), "Undo");
     await panel.send({ type: "oops" });
     expect(subjects(dir)).toEqual(["second", "first"]);
   });

@@ -2,8 +2,11 @@ import type { HistoryEntry, StashEntry } from "../shared/types";
 
 // Turns HEAD's reflog into plain-English "what happened" entries, newest first, and lists stashes.
 
-/** Format for `git reflog show --date=unix HEAD`, matching what parseHistory expects. */
-export const REFLOG_FORMAT = "%H%x1f%gd%x1f%gs";
+/**
+ * Format for `git reflog show --date=unix HEAD`, matching what parseHistory expects. The last field
+ * is the subject of the commit HEAD moved to, so a reset can name where it went in words.
+ */
+export const REFLOG_FORMAT = "%H%x1f%gd%x1f%gs%x1f%s";
 /** Format for `git stash list`, matching what parseStashes expects. */
 export const STASH_FORMAT = "%gd%x1f%H%x1f%ct%x1f%gs";
 
@@ -11,6 +14,8 @@ interface RawEntry {
   hash: string;
   time: number;
   subject: string;
+  /** The subject of the commit at `hash`. */
+  message: string;
 }
 
 const REBASE_STEP =
@@ -21,8 +26,13 @@ export function parseHistory(output: string): HistoryEntry[] {
     .split("\n")
     .filter(Boolean)
     .map((line) => {
-      const [hash, selector, subject] = line.split("\x1f");
-      return { hash, time: Number(/@\{(\d+)\}$/.exec(selector)?.[1] ?? 0), subject: subject ?? "" };
+      const [hash, selector, subject, message] = line.split("\x1f");
+      return {
+        hash,
+        time: Number(/@\{(\d+)\}$/.exec(selector)?.[1] ?? 0),
+        subject: subject ?? "",
+        message: message ?? "",
+      };
     });
 
   const entries: HistoryEntry[] = [];
@@ -52,12 +62,17 @@ export function parseHistory(output: string): HistoryEntry[] {
       continue;
     }
 
-    entries.push({ ...describe(entry.subject), hash: entry.hash, before: raw[i + 1]?.hash ?? null, time: entry.time });
+    entries.push({
+      ...describe(entry.subject, entry.message),
+      hash: entry.hash,
+      before: raw[i + 1]?.hash ?? null,
+      time: entry.time,
+    });
   }
   return entries;
 }
 
-function describe(subject: string): Pick<HistoryEntry, "kind" | "summary" | "from" | "to"> {
+function describe(subject: string, message: string): Pick<HistoryEntry, "kind" | "summary" | "from" | "to"> {
   let m: RegExpExecArray | null;
   if ((m = /^commit \(amend\): (.*)$/.exec(subject))) return { kind: "amend", summary: `Amended "${m[1]}"` };
   if ((m = /^commit \(merge\): (.*)$/.exec(subject))) return { kind: "merge", summary: `Finished merge: ${m[1]}` };
@@ -71,7 +86,8 @@ function describe(subject: string): Pick<HistoryEntry, "kind" | "summary" | "fro
   }
   if (/^pull\b/.test(subject)) return { kind: "pull", summary: "Pulled from the remote" };
   if ((m = /^reset: moving to (.+)$/.exec(subject)))
-    return { kind: "reset", summary: `Moved branch to ${short(m[1])}` };
+    // "Moved branch to a9401b2" means nothing to most people; the commit's message does.
+    return { kind: "reset", summary: message ? `Went back to "${message}"` : `Went back to ${short(m[1])}` };
   if ((m = /^cherry-pick: (.*)$/.exec(subject))) return { kind: "cherry-pick", summary: `Cherry-picked "${m[1]}"` };
   if ((m = /^revert: (.*)$/.exec(subject))) return { kind: "revert", summary: m[1] };
   if (REBASE_STEP.test(subject)) return { kind: "rebase", summary: "Rebase step" };

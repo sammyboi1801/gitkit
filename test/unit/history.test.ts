@@ -16,12 +16,17 @@ describe("parseHistory", () => {
     );
     expect(entries.map((e) => [e.kind, e.summary, e.before])).toEqual([
       ["amend", 'Amended "fix typo"', "h4"],
-      ["reset", "Moved branch to HEAD~1", "h3"],
+      ["reset", "Went back to HEAD~1", "h3"],
       ["checkout", "Switched main → feat/x", "h2"],
       ["merge", "Merged feat/ui", "h1"],
       ["commit", 'Committed "first"', null],
     ]);
     expect(entries[2]).toMatchObject({ from: "main", to: "feat/x" });
+  });
+
+  it("names where a reset went by that commit's message, not its hash", () => {
+    const entries = parseHistory(`${line("h4", 40, "reset: moving to a9401b2")}\x1ffeat: seed the product list`);
+    expect(entries[0].summary).toBe('Went back to "feat: seed the product list"');
   });
 
   it("collapses a whole rebase into one entry whose 'before' is the state before it started", () => {
