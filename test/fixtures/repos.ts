@@ -58,6 +58,7 @@ export function commit(cwd: string, message: string, files: Record<string, strin
  * own commits, rebases and merges need one.
  */
 export function initRepo(dir: string): string {
+  mkdirSync(dir, { recursive: true });
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.name", "Test");
   git(dir, "config", "user.email", "test@example.com");

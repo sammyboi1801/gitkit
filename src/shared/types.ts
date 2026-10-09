@@ -132,6 +132,22 @@ export interface RepoState {
   pr?: PrState | null;
 }
 
+/** One checkout of a repo, from `git worktree list`. */
+export interface Worktree {
+  path: string;
+  /** The commit checked out; null in a bare repo. */
+  head: string | null;
+  /** Short branch name; null when detached or bare. */
+  branch: string | null;
+  /** The original checkout, the one the others were made from. */
+  main: boolean;
+  bare: boolean;
+  /** Why it's locked ("" when no reason was given); null when not locked. */
+  locked: string | null;
+  /** Why git would clean it up, usually that its folder is gone; null when it's fine. */
+  prunable: string | null;
+}
+
 /** The open pull request for the current branch, as GitHub reports it. */
 export interface PullRequest {
   number: number;

@@ -1,5 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { gitFolderKind, realPath } from "./worktrees";
 
 // Folders that are never worth scanning for repos: dependencies, environments, build output.
 const SKIP = new Set([
@@ -29,6 +30,9 @@ export async function discoverRepos(
   findRoot: (folder: string) => Promise<string | null>,
 ): Promise<string[]> {
   const found = new Map<string, string>();
+  // The repos the open folders themselves are in: kept even when they're worktrees, since a
+  // worktree opened in its own window is the repo being worked on there.
+  const opened = new Set<string>();
   const add = (path: string) => {
     const key = pathKey(path);
     if (!found.has(key) && found.size < MAX_REPOS) found.set(key, resolve(path));
@@ -36,10 +40,22 @@ export async function discoverRepos(
 
   for (const folder of folders) {
     const root = await findRoot(folder).catch(() => null);
-    if (root) add(root);
+    if (root) {
+      add(root);
+      opened.add(pathKey(root));
+    }
     await scan(folder, depth, add);
   }
-  return [...found.values()];
+
+  // A worktree whose main repo was found too is shown under that repo, not as a repo of its own.
+  const mains = new Set([...found.values()].map((p) => pathKey(realPath(p))));
+  return [...found.entries()]
+    .filter(([key, path]) => {
+      if (opened.has(key)) return true;
+      const folder = gitFolderKind(path);
+      return !(folder.kind === "worktree" && folder.mainRoot && mains.has(pathKey(realPath(folder.mainRoot))));
+    })
+    .map(([, path]) => path);
 }
 
 async function scan(dir: string, depth: number, add: (path: string) => void): Promise<void> {
