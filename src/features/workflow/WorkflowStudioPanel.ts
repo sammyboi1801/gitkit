@@ -6,6 +6,14 @@ import { suggestWorkflow, validate, type ProjectFacts, type WorkflowModel } from
 import { explain, readModel, toYaml } from "../../workflow/yaml";
 import { renderWebviewHtml } from "../webviewHtml";
 
+/** "CI · on push, on pull requests · 3 jobs", or why the file couldn't be read. */
+function summarize(text: string): string {
+  const e = explain(text);
+  if (e.error) return "Couldn't read this file";
+  const jobs = `${e.jobs.length} job${e.jobs.length === 1 ? "" : "s"}`;
+  return [e.name, e.triggers.slice(0, 2).join(", ") || "no triggers", jobs].join(" · ");
+}
+
 /** Workflow Studio: build GitHub Actions workflows visually, or read existing ones in plain English. */
 export class WorkflowStudioPanel {
   private static current?: WorkflowStudioPanel;
@@ -63,14 +71,17 @@ export class WorkflowStudioPanel {
     try {
       switch (message.type) {
         case "ready":
-        case "new":
+        case "new": {
+          const facts = await this.facts();
           this.post({
             type: "init",
             repoName: path.basename(this.root),
-            suggestion: suggestWorkflow(await this.facts()),
+            facts,
+            suggestion: suggestWorkflow(facts),
             files: await this.listWorkflows(),
           });
           return;
+        }
         case "open":
           return this.open(message.file);
         case "save":
@@ -99,7 +110,7 @@ export class WorkflowStudioPanel {
     return Promise.all(
       names.sort().map(async (file) => {
         const text = await readFile(path.join(this.workflowsDir, file), "utf8").catch(() => "");
-        return { file, byGitKit: readModel(text) !== null };
+        return { file, byGitKit: readModel(text) !== null, summary: summarize(text) };
       }),
     );
   }

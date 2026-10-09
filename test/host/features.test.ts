@@ -252,7 +252,9 @@ describe("Workflow Studio", () => {
     await studio.webview.send({ type: "save", model: suggestion });
     const file = join(dir, ".github", "workflows", "ci.yml");
     expect(readFileSync(file, "utf8")).toContain("npm run lint");
-    expect(posted("saved").at(-1)?.files).toEqual([{ file: "ci.yml", byGitKit: true }]);
+    expect(posted("saved").at(-1)?.files).toEqual([
+      { file: "ci.yml", byGitKit: true, summary: "CI · on push to main, on pull requests · 2 jobs" },
+    ]);
 
     await studio.webview.send({ type: "open", file: "ci.yml" });
     expect(posted("opened").at(-1)).toMatchObject({ file: "ci.yml", editedByHand: false, model: suggestion });

@@ -1,7 +1,7 @@
 // Message protocol between the extension host and the Pulse webview.
 import type { ActionRequest } from "../git/actions";
 import type { Resolution } from "../git/conflicts";
-import type { WorkflowModel } from "../workflow/model";
+import type { ProjectFacts, WorkflowModel } from "../workflow/model";
 import type { Explanation } from "../workflow/yaml";
 import type { CommitDetails, ConflictBlock, RepoState, RepoSummary } from "./types";
 
@@ -55,6 +55,8 @@ export interface WorkflowFile {
   file: string;
   /** Written by Workflow Studio, so it can be edited visually again. */
   byGitKit: boolean;
+  /** One line for the start screen, e.g. "CI · on push, on pull requests · 3 jobs". */
+  summary: string;
 }
 
 export type StudioToHost =
@@ -65,7 +67,7 @@ export type StudioToHost =
   | { type: "save"; model: WorkflowModel };
 
 export type HostToStudio =
-  | { type: "init"; repoName: string; suggestion: WorkflowModel; files: WorkflowFile[] }
+  | { type: "init"; repoName: string; facts: ProjectFacts; suggestion: WorkflowModel; files: WorkflowFile[] }
   | { type: "opened"; file: string; model: WorkflowModel | null; editedByHand: boolean; explanation: Explanation }
   | { type: "saved"; file: string; files: WorkflowFile[] }
   | { type: "error"; message: string };
