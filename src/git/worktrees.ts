@@ -172,6 +172,7 @@ export async function readWorktreeInfo(
         behind: null,
         lastActivity: null,
         touched: null,
+        uncommitted: null,
       };
       if (w.bare || w.prunable !== null || !w.head || i >= MAX_DETAILED) return info;
 
@@ -192,11 +193,18 @@ export async function readWorktreeInfo(
 /** How long another worktree's details are reused between refreshes. */
 const OTHERS_MAX_AGE_MS = 10_000;
 
-type Details = Pick<WorktreeInfo, "changes" | "ahead" | "behind" | "lastActivity" | "touched">;
+type Details = Pick<WorktreeInfo, "changes" | "ahead" | "behind" | "lastActivity" | "touched" | "uncommitted">;
 const details = new Map<string, { key: string; at: number; details: Details }>();
 
 async function readDetails(w: Worktree, root: string, base: string | null): Promise<Details> {
-  const info: Details = { changes: null, ahead: null, behind: null, lastActivity: null, touched: null };
+  const info: Details = {
+    changes: null,
+    ahead: null,
+    behind: null,
+    lastActivity: null,
+    touched: null,
+    uncommitted: null,
+  };
   const tip = w.branch ? `refs/heads/${w.branch}` : w.head!;
   const [status, time, counts, committed] = await Promise.all([
     read(["status", "--porcelain", "-z", "--untracked-files=all"], w.path).catch(() => null),
@@ -223,6 +231,7 @@ async function readDetails(w: Worktree, root: string, base: string | null): Prom
   if (status) {
     const files = new Set([...(committed?.stdout.split("\0").filter(Boolean) ?? []), ...paths]);
     info.touched = [...files].sort().slice(0, MAX_TOUCHED);
+    info.uncommitted = [...new Set(paths)].sort().slice(0, MAX_TOUCHED);
   }
   return info;
 }

@@ -167,6 +167,7 @@ describe("Worktrees", () => {
     behind: 0,
     lastActivity: null,
     touched: null,
+    uncommitted: null,
     ...overrides,
   });
   const trees = [
@@ -202,8 +203,7 @@ describe("Worktrees", () => {
     expect(within(feature).getByText("feature/login")).toBeTruthy();
     expect(within(feature).getByText("app.worktrees/feature-login")).toBeTruthy();
     expect(within(feature).getByText("3 uncommitted")).toBeTruthy();
-    expect(within(feature).getByText("2 ahead")).toBeTruthy();
-    expect(within(feature).getByText("1 behind main")).toBeTruthy();
+    expect(within(feature).getByText("2 ahead of main, 1 behind")).toBeTruthy();
     expect(within(feature).getByText("2m ago")).toBeTruthy();
     expect(within(agent).getByText("detached at 1234567")).toBeTruthy();
     expect(within(agent).getByText("/elsewhere/agent")).toBeTruthy();
@@ -283,9 +283,9 @@ describe("Worktrees", () => {
     });
     const [main, feature, agent] = rows();
     expect(within(feature).getByText("conflicts with detached at 1234567 in auth.py")).toBeTruthy();
-    expect(within(feature).getByText("also changed in main: README.md")).toBeTruthy();
+    expect(within(feature).getByText("README.md changed in feature/login and main")).toBeTruthy();
     expect(within(agent).getByText("conflicts with feature/login in auth.py")).toBeTruthy();
-    expect(within(main).getByText("also changed in feature/login: README.md")).toBeTruthy();
+    expect(within(main).getByText("README.md changed in main and feature/login")).toBeTruthy();
   });
 
   it("offers Clean up only when a worktree's folder is gone", () => {

@@ -181,6 +181,8 @@ export interface WorktreeInfo extends Worktree {
   lastActivity: number | null;
   /** Files it changed since leaving the main branch, committed or not. */
   touched: string[] | null;
+  /** The ones of those not committed yet. */
+  uncommitted: string[] | null;
 }
 
 /** Two worktrees that changed the same files: agents about to step on each other. */

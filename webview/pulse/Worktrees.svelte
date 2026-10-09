@@ -17,8 +17,10 @@
   function details(w: WorktreeInfo): string[] {
     const parts: string[] = [];
     if (w.changes) parts.push(`${w.changes} uncommitted`);
-    if (w.ahead) parts.push(`${w.ahead} ahead`);
-    if (w.behind) parts.push(`${w.behind} behind ${base}`);
+    // One phrase, so a line break can't split "3 ahead" from what it's ahead of.
+    if (w.ahead && w.behind) parts.push(`${w.ahead} ahead of ${base}, ${w.behind} behind`);
+    else if (w.ahead) parts.push(`${w.ahead} ahead of ${base}`);
+    else if (w.behind) parts.push(`${w.behind} behind ${base}`);
     return parts;
   }
 

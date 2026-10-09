@@ -188,12 +188,24 @@ describe("worktree overlap wording", () => {
       { a: "/a", b: "/c", files: ["auth.py"], conflicts: ["auth.py"] },
     ]);
     expect(overlapNotes("/a", repo)).toEqual([
-      { text: "also changed in agent/b: auth.py, api.py, x.py +1 more", tone: "warn" },
+      { text: "auth.py, api.py, x.py +1 more changed in agent/a and agent/b", tone: "warn" },
       { text: "conflicts with detached at 1234567 in auth.py", tone: "conflict" },
     ]);
     expect(overlapNotes("/b", repo)).toEqual([
-      { text: "also changed in agent/a: auth.py, api.py, x.py +1 more", tone: "warn" },
+      { text: "auth.py, api.py, x.py +1 more changed in agent/b and agent/a", tone: "warn" },
     ]);
+    // Whose change is committed, when it's all one or the other.
+    const known = {
+      ...repo,
+      worktrees: [
+        { ...repo.worktrees[0], uncommitted: [] },
+        { ...repo.worktrees[1], uncommitted: ["auth.py", "api.py", "x.py", "y.py"] },
+        repo.worktrees[2],
+      ],
+    };
+    expect(overlapNotes("/a", known)[0].text).toBe(
+      "auth.py, api.py, x.py +1 more changed in agent/a (committed) and agent/b (uncommitted)",
+    );
     expect(overlapNotes("/nowhere", repo)).toEqual([]);
   });
 

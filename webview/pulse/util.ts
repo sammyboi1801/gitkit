@@ -50,12 +50,28 @@ export function overlapNotes(path: string, repo: RepoState): { text: string; ton
   return repo.worktreeOverlaps
     .filter((o) => o.a === path || o.b === path)
     .map((o) => {
+      const self = byPath.get(path);
       const other = byPath.get(o.a === path ? o.b : o.a);
       const name = other ? worktreeName(other) : "another worktree";
-      return o.conflicts?.length
-        ? { text: `conflicts with ${name} in ${fileList(o.conflicts)}`, tone: "conflict" as const }
-        : { text: `also changed in ${name}: ${fileList(o.files)}`, tone: "warn" as const };
+      if (o.conflicts?.length) {
+        return { text: `conflicts with ${name} in ${fileList(o.conflicts)}`, tone: "conflict" as const };
+      }
+      // Say whose change is committed: a committed one isn't in the card's list of uncommitted files.
+      const here = changeState(self, o.files);
+      const there = changeState(other, o.files);
+      return {
+        text: `${fileList(o.files)} changed in ${self ? worktreeName(self) : "this worktree"}${here} and ${name}${there}`,
+        tone: "warn" as const,
+      };
     });
+}
+
+/** " (committed)" or " (uncommitted)" when all of `files` are one or the other in this worktree. */
+function changeState(w: WorktreeInfo | undefined, files: readonly string[]): string {
+  if (!w?.uncommitted) return "";
+  const open = files.filter((f) => w.uncommitted!.includes(f)).length;
+  if (open === files.length) return " (uncommitted)";
+  return open === 0 ? " (committed)" : "";
 }
 
 /** The worst overlap between worktrees in one line (conflicts first), for the Branch Map's strip. */

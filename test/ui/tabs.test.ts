@@ -221,6 +221,7 @@ describe("Branch Map", () => {
       behind: 0,
       lastActivity: null,
       touched: null,
+      uncommitted: null,
       ...extra,
     });
     const worktrees = [
@@ -246,7 +247,7 @@ describe("Branch Map", () => {
       const tip = within(screen.getByRole("tooltip"));
       expect(tip.getByText("Open in a worktree: /repo.worktrees/main")).toBeTruthy();
       expect(tip.getByText("4 uncommitted")).toBeTruthy();
-      expect(tip.getByText("also changed in feat/login: app.ts")).toBeTruthy();
+      expect(tip.getByText("app.ts changed in main and feat/login")).toBeTruthy();
     });
 
     it("sums up overlapping worktrees in the strip, conflicts first", async () => {

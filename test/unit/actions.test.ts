@@ -300,6 +300,7 @@ describe("worktrees", () => {
     behind: 0,
     lastActivity: null,
     touched: null,
+    uncommitted: null,
     ...extra,
   });
   const withTrees = (...extra: WorktreeInfo[]): RepoState => ({
@@ -454,6 +455,7 @@ describe("deleting a branch open in a worktree", () => {
           behind: 0,
           lastActivity: null,
           touched: null,
+          uncommitted: null,
         },
         {
           path: "/w/agent",
@@ -469,6 +471,7 @@ describe("deleting a branch open in a worktree", () => {
           behind: 0,
           lastActivity: null,
           touched: null,
+          uncommitted: null,
         },
       ],
     };

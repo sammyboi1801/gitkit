@@ -175,6 +175,8 @@ describe("worktrees changing the same files", () => {
     write(a, "new_test.py", "assert True\n");
     const info = await readWorktreeInfo(app, "main");
     expect(info.find((w) => w.branch === "agent/a")!.touched).toEqual(["auth.py", "new_test.py"]);
+    // Which of them aren't committed yet, so an overlap can say whose change is still in progress.
+    expect(info.find((w) => w.branch === "agent/a")!.uncommitted).toEqual(["new_test.py"]);
     expect(info.find((w) => w.branch === "main")!.touched).toEqual([]);
   });
 
