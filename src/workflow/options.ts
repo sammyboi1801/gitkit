@@ -91,6 +91,52 @@ export function withMatrix(strategy: unknown, rows: readonly { name: string; val
   return setPath(next, ["matrix"], { ...kept, ...fromRows });
 }
 
+/** A matrix combination as text people can type: "os=windows-latest, node=20". */
+export function comboText(combo: unknown): string {
+  if (!isObj(combo)) return "";
+  return Object.entries(combo)
+    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+    .join(", ");
+}
+
+/** "os=windows-latest, node=20" → { os: "windows-latest", node: 20 }; null when it isn't key=value pairs. */
+export function parseCombo(text: string): Obj | null {
+  const combo: Obj = {};
+  for (const part of text.split(",")) {
+    if (!part.trim()) continue;
+    const at = part.indexOf("=");
+    if (at <= 0) return null;
+    combo[part.slice(0, at).trim()] = scalar(part.slice(at + 1).trim());
+  }
+  return Object.keys(combo).length ? combo : null;
+}
+
+/**
+ * strategy.matrix.include or .exclude from rows of combinations. Rows that aren't key=value pairs
+ * yet (still being typed) are left out until they are.
+ */
+export function withCombos(strategy: unknown, key: "include" | "exclude", rows: readonly string[]): Obj | undefined {
+  const next: Obj = isObj(strategy) ? (JSON.parse(JSON.stringify(strategy)) as Obj) : {};
+  const combos = rows.map(parseCombo).filter((c): c is Obj => c !== null);
+  return setPath(next, ["matrix", key], combos);
+}
+
+/** The environment's name and URL, however it's written: a string, or { name, url }. */
+export function environmentOf(env: unknown): { name: string; url: string } {
+  if (typeof env === "string") return { name: env, url: "" };
+  if (isObj(env))
+    return { name: typeof env.name === "string" ? env.name : "", url: typeof env.url === "string" ? env.url : "" };
+  return { name: "", url: "" };
+}
+
+/** Back to the shortest form: just the name, unless there's a URL (or other keys) too. */
+export function withEnvironment(env: unknown, name: string, url: string): unknown {
+  const rest = isObj(env) ? Object.fromEntries(Object.entries(env).filter(([k]) => k !== "name" && k !== "url")) : {};
+  if (!name.trim() && !url.trim() && !Object.keys(rest).length) return undefined;
+  if (!url.trim() && !Object.keys(rest).length) return name.trim();
+  return { name: name.trim(), ...(url.trim() ? { url: url.trim() } : {}), ...rest };
+}
+
 // --- Services ---------------------------------------------------------------------------------
 
 export interface ServiceRow {

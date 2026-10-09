@@ -908,8 +908,11 @@ export function validate(model: WorkflowModel): Problem[] {
       if (!model.jobs.some((j) => j.id === need))
         problems.push({ job: job.id, message: `Runs after "${need}", which doesn't exist.` });
     }
+    if (typeof job.extra?.uses === "string" && !job.extra.uses.trim()) {
+      problems.push({ job: job.id, message: `${job.name}: say which workflow it runs.` });
+    }
     // A job that calls a reusable workflow (uses: at job level) has no steps of its own.
-    if (job.template === "steps" && !job.extra?.uses) {
+    if (job.template === "steps" && job.extra?.uses === undefined) {
       const steps = job.steps ?? [];
       if (steps.length === 0) problems.push({ job: job.id, message: `${job.name} has no steps yet.` });
       steps.forEach((step, i) => {

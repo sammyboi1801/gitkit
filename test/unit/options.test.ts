@@ -13,15 +13,20 @@ import {
   type WorkflowModel,
 } from "../../src/workflow/model";
 import {
+  comboText,
+  environmentOf,
   getPath,
   isEmpty,
   levelsFor,
   matrixRows,
+  parseCombo,
   parseYamlMapping,
   scalar,
   serviceRows,
   setPath,
   toYamlText,
+  withCombos,
+  withEnvironment,
   withMatrix,
   withServices,
 } from "../../src/workflow/options";
@@ -110,6 +115,40 @@ describe("matrix rows", () => {
     });
     expect(withMatrix({ matrix: { os: ["a"] } }, [])).toBeUndefined();
     expect(withMatrix({ matrix: { os: ["a"] } }, [{ name: "os", values: " , " }])).toBeUndefined();
+  });
+});
+
+describe("matrix combinations", () => {
+  it("reads and writes include and exclude as key=value rows", () => {
+    expect(parseCombo("os=windows-latest, node=20")).toEqual({ os: "windows-latest", node: 20 });
+    expect(parseCombo("experimental=true")).toEqual({ experimental: true });
+    expect(parseCombo("just text")).toBeNull();
+    expect(comboText({ os: "windows-latest", node: 20 })).toBe("os=windows-latest, node=20");
+    const strategy = { matrix: { node: [22, 24] }, "fail-fast": false };
+    expect(withCombos(strategy, "exclude", ["node=22, os=macos", "half typed"])).toEqual({
+      matrix: { node: [22, 24], exclude: [{ node: 22, os: "macos" }] },
+      "fail-fast": false,
+    });
+    expect(withCombos({ matrix: { node: [22], include: [{ x: 1 }] } }, "include", [])).toEqual({
+      matrix: { node: [22] },
+    });
+  });
+});
+
+describe("environments", () => {
+  it("keeps the short form until there is a URL", () => {
+    expect(environmentOf("production")).toEqual({ name: "production", url: "" });
+    expect(environmentOf({ name: "github-pages", url: "https://x" })).toEqual({
+      name: "github-pages",
+      url: "https://x",
+    });
+    expect(withEnvironment(undefined, "production", "")).toBe("production");
+    expect(withEnvironment("production", "production", "https://acme.dev")).toEqual({
+      name: "production",
+      url: "https://acme.dev",
+    });
+    expect(withEnvironment({ name: "p", deployment: false }, "p", "")).toEqual({ name: "p", deployment: false });
+    expect(withEnvironment("p", "", "")).toBeUndefined();
   });
 });
 

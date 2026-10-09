@@ -718,8 +718,12 @@ describe("Workflow Studio", () => {
     expect(screen.getByRole("button", { name: /Add a trigger/ })).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: /^deploy\b/ }));
     const editor = screen.getByRole("dialog", { name: "Edit deploy" });
-    expect(within(editor).getByText("self-hosted, linux")).toBeTruthy();
-    expect((within(editor).getByPlaceholderText("production") as HTMLInputElement).value).toBe("production");
+    expect((within(editor).getByRole("textbox", { name: "Runner labels" }) as HTMLInputElement).value).toBe(
+      "self-hosted, linux",
+    );
+    expect((within(editor).getByRole("textbox", { name: "Environment name" }) as HTMLInputElement).value).toBe(
+      "production",
+    );
     expect(within(editor).getByRole("button", { name: "build", pressed: true })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
@@ -833,6 +837,134 @@ describe("Workflow Studio", () => {
       expect(lint.strategy).toEqual({ matrix: { os: ["ubuntu-latest", "windows-latest"] } });
       expect(lint.permissions).toEqual({ "pull-requests": "write" });
       expect(lint["timeout-minutes"]).toBe(20);
+    });
+
+    it("sets a job's environment URL, concurrency, outputs and shell", async () => {
+      const editor = await editJob(/^Lint\b/, "Lint", true);
+      await open(editor, "More options");
+      const options = within(editor.querySelector(".job-options") as HTMLElement);
+      await fireEvent.input(options.getByRole("textbox", { name: "Environment name" }), {
+        target: { value: "production" },
+      });
+      expect(yaml().jobs.lint.environment).toBe("production");
+      await fireEvent.input(options.getByRole("textbox", { name: "Environment URL" }), {
+        target: { value: "https://acme.dev" },
+      });
+      expect(yaml().jobs.lint.environment).toEqual({ name: "production", url: "https://acme.dev" });
+
+      await fireEvent.input(options.getByRole("textbox", { name: "Concurrency group" }), {
+        target: { value: "deploy-${{ github.ref }}" },
+      });
+      await fireEvent.click(options.getByRole("checkbox", { name: /Cancel the one already running/ }));
+      expect(yaml().jobs.lint.concurrency).toEqual({ group: "deploy-${{ github.ref }}", "cancel-in-progress": true });
+
+      const outputs = within(options.getByRole("group", { name: "Outputs" }));
+      await fireEvent.click(outputs.getByRole("button", { name: /Add/ }));
+      await fireEvent.input(outputs.getAllByRole("textbox")[0], { target: { value: "version" } });
+      await fireEvent.input(outputs.getAllByRole("textbox")[1], {
+        target: { value: "${{ steps.v.outputs.version }}" },
+      });
+      expect(yaml().jobs.lint.outputs).toEqual({ version: "${{ steps.v.outputs.version }}" });
+
+      await fireEvent.change(options.getByRole("combobox", { name: "Shell for commands" }), {
+        target: { value: "pwsh" },
+      });
+      expect(yaml().jobs.lint.defaults).toEqual({ run: { shell: "pwsh" } });
+    });
+
+    it("adds matrix combinations to run and to skip, and a limit on how many run at once", async () => {
+      const editor = await editJob(/^Lint\b/, "Lint", true);
+      await open(editor, "More options");
+      const options = within(editor.querySelector(".job-options") as HTMLElement);
+      await fireEvent.click(
+        within(options.getByRole("group", { name: "Run for each" })).getByRole("button", { name: /Add a variable/ }),
+      );
+      await fireEvent.input(options.getByRole("textbox", { name: "Matrix variable" }), { target: { value: "os" } });
+      await fireEvent.input(options.getByRole("textbox", { name: "Values of os" }), {
+        target: { value: "ubuntu-latest, windows-latest" },
+      });
+      const skip = within(options.getByRole("group", { name: "Skip these combinations" }));
+      await fireEvent.click(skip.getByRole("button", { name: /Add a combination/ }));
+      await fireEvent.input(skip.getByRole("textbox"), { target: { value: "os=windows-latest" } });
+      const also = within(options.getByRole("group", { name: "Also run with" }));
+      await fireEvent.click(also.getByRole("button", { name: /Add a combination/ }));
+      await fireEvent.input(also.getByRole("textbox"), { target: { value: "os=macos-latest, experimental=true" } });
+      await fireEvent.input(options.getByRole("spinbutton", { name: /At most this many at once/ }), {
+        target: { value: "2" },
+      });
+      expect(yaml().jobs.lint.strategy).toEqual({
+        matrix: {
+          os: ["ubuntu-latest", "windows-latest"],
+          exclude: [{ os: "windows-latest" }],
+          include: [{ os: "macos-latest", experimental: true }],
+        },
+        "max-parallel": 2,
+      });
+    });
+
+    it("runs on self-hosted runners that have several labels", async () => {
+      const editor = await editJob(/^Lint\b/, "Lint", true);
+      await fireEvent.click(within(editor).getByRole("radio", { name: "Other…" }));
+      await fireEvent.input(within(editor).getByRole("textbox", { name: "Runner label" }), {
+        target: { value: "self-hosted, linux, gpu" },
+      });
+      expect(yaml().jobs.lint["runs-on"]).toEqual(["self-hosted", "linux", "gpu"]);
+      const labels = within(editor).getByRole("textbox", { name: "Runner labels" });
+      await fireEvent.input(labels, { target: { value: "self-hosted" } });
+      expect(yaml().jobs.lint["runs-on"]).toBe("self-hosted");
+    });
+
+    it("adds a job that runs a reusable workflow, with inputs and all of its secrets", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await fireEvent.click(screen.getByRole("button", { name: /Add a job after Lint/ }));
+      await fireEvent.input(screen.getByRole("textbox", { name: "Search jobs" }), { target: { value: "reusable" } });
+      await fireEvent.click(screen.getByRole("button", { name: /Run a reusable workflow/ }));
+      const editor = screen.getByRole("dialog", { name: "Edit Run a reusable workflow" });
+      expect(screen.getByText("Run a reusable workflow: say which workflow it runs.")).toBeTruthy();
+
+      await fireEvent.input(within(editor).getByRole("combobox", { name: "Workflow it runs" }), {
+        target: { value: "./.github/workflows/deploy.yml" },
+      });
+      const inputs = within(within(editor).getByRole("group", { name: "Inputs it's given" }));
+      await fireEvent.click(inputs.getByRole("button", { name: /Add/ }));
+      await fireEvent.input(inputs.getAllByRole("textbox")[0], { target: { value: "target" } });
+      await fireEvent.input(inputs.getAllByRole("textbox")[1], { target: { value: "production" } });
+      await fireEvent.click(within(editor).getByRole("radio", { name: /Pass all of this workflow's secrets/ }));
+
+      expect(yaml().jobs.call).toEqual({
+        name: "Run a reusable workflow",
+        needs: "lint",
+        uses: "./.github/workflows/deploy.yml",
+        with: { target: "production" },
+        secrets: "inherit",
+      });
+      expect(
+        screen.getByRole("button", { name: /Run a reusable workflow\b.*runs \.\/\.github\/workflows\/deploy\.yml/ }),
+      ).toBeTruthy();
+    });
+
+    it("sets permissions and concurrency for the whole workflow, in place of the presets", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      const settings = within(screen.getByRole("region", { name: "More settings" }));
+      // The table starts from what the "Read-only access by default" preset gives.
+      const contents = settings.getByRole("combobox", {
+        name: "contents permission for every job",
+      }) as HTMLSelectElement;
+      expect(contents.value).toBe("read");
+      await fireEvent.change(settings.getByRole("combobox", { name: "issues permission for every job" }), {
+        target: { value: "write" },
+      });
+      expect(yaml().permissions).toEqual({ contents: "read", issues: "write" });
+      expect(screen.getByText("Every job's access is set under More settings.")).toBeTruthy();
+      expect(screen.queryByRole("checkbox", { name: /Read-only access by default/ })).toBeNull();
+
+      await fireEvent.input(settings.getByRole("textbox", { name: "Workflow concurrency group" }), {
+        target: { value: "release" },
+      });
+      expect(yaml().concurrency).toEqual({ group: "release" });
+      expect(screen.queryByRole("checkbox", { name: /Cancel outdated runs/ })).toBeNull();
     });
 
     it("picks when a job runs from a list, says it on the card, and takes any other condition", async () => {

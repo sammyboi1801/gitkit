@@ -2,7 +2,11 @@
   import { template, templateKeys, type Job } from "../../src/workflow/model";
   import {
     PERMISSION_SCOPES,
+    comboText,
+    environmentOf,
     getPath,
+    withCombos,
+    withEnvironment,
     levelsFor,
     matrixRows,
     serviceRows,
@@ -51,14 +55,18 @@
     set(["permissions"], Object.keys(next).length ? next : undefined);
   }
 
-  const environment = $derived.by(() => {
-    const env = extra(["environment"]);
-    return typeof env === "string"
-      ? env
-      : typeof getPath(job.extra, ["environment", "name"]) === "string"
-        ? String(getPath(job.extra, ["environment", "name"]))
-        : "";
-  });
+  const environment = $derived(environmentOf(job.extra?.environment));
+  const SHELLS = ["bash", "pwsh", "python", "sh", "cmd", "powershell"];
+
+  /** strategy.matrix.include or .exclude as editable "key=value, key=value" rows. */
+  const combosOf = (strategy: unknown, key: "include" | "exclude") => {
+    const list = getPath(strategy as Record<string, unknown> | undefined, ["matrix", key]);
+    return Array.isArray(list) ? list.map(comboText) : [];
+  };
+  // svelte-ignore state_referenced_locally
+  let include: string[] = $state(combosOf(job.extra?.strategy, "include"));
+  // svelte-ignore state_referenced_locally
+  let exclude: string[] = $state(combosOf(job.extra?.strategy, "exclude"));
 </script>
 
 <details class="advanced job-options">
@@ -118,6 +126,56 @@
             </label>
           {/if}
         </div>
+
+        {#if matrix.some((r) => r.name.trim()) || include.length || exclude.length}
+          {#each [{ key: "include", label: "Also run with", rows: include, hint: "Extra combinations, or extra values for some: os=windows-latest, node=20." }, { key: "exclude", label: "Skip these combinations", rows: exclude, hint: "Leave out a combination: os=macos-latest, node=22." }] as group (group.key)}
+            <div class="field" role="group" aria-label={group.label}>
+              <span class="field-label">{group.label}<span class="optional"> optional</span></span>
+              {#each group.rows as _, i (i)}
+                <div class="input-row combo-row">
+                  <input
+                    class="mono"
+                    aria-label="{group.label}, combination {i + 1}"
+                    placeholder="os=windows-latest, node=20"
+                    bind:value={group.rows[i]}
+                    oninput={() =>
+                      set(
+                        ["strategy"],
+                        withCombos(job.extra?.strategy, group.key as "include" | "exclude", group.rows),
+                      )}
+                  />
+                  <button
+                    class="icon-button"
+                    aria-label="Remove combination {i + 1}"
+                    onclick={() => {
+                      group.rows.splice(i, 1);
+                      set(
+                        ["strategy"],
+                        withCombos(job.extra?.strategy, group.key as "include" | "exclude", group.rows),
+                      );
+                    }}><span class="codicon codicon-close"></span></button
+                  >
+                </div>
+              {/each}
+              <button class="link" onclick={() => group.rows.push("")}
+                ><span class="codicon codicon-add"></span>Add a combination</button
+              >
+              <span class="field-hint">{group.hint}</span>
+            </div>
+          {/each}
+          <label class="field">
+            <span class="field-label">At most this many at once<span class="optional"> optional</span></span>
+            <input
+              class="short"
+              type="number"
+              min="1"
+              placeholder="no limit"
+              value={text(["strategy", "max-parallel"])}
+              oninput={(e) =>
+                set(["strategy", "max-parallel"], e.currentTarget.value ? Number(e.currentTarget.value) : undefined)}
+            />
+          </label>
+        {/if}
       {/if}
 
       <div class="field" role="group" aria-label="Service containers">
@@ -184,18 +242,75 @@
         <span><span class="toggle-title">Don't fail the workflow if this job fails</span></span>
       </label>
 
-      <label class="field">
+      <div class="field">
         <span class="field-label">Deployment environment<span class="optional"> optional</span></span>
-        <input
-          class="mono short"
-          placeholder="production"
-          value={environment}
-          oninput={(e) => set(["environment"], e.currentTarget.value.trim())}
-        />
+        <div class="input-row environment-row">
+          <input
+            class="mono"
+            aria-label="Environment name"
+            placeholder="production"
+            value={environment.name}
+            oninput={(e) =>
+              set(["environment"], withEnvironment(job.extra?.environment, e.currentTarget.value, environment.url))}
+          />
+          <input
+            class="mono"
+            aria-label="Environment URL"
+            placeholder="https://example.com (optional)"
+            disabled={!environment.name}
+            value={environment.url}
+            oninput={(e) =>
+              set(["environment"], withEnvironment(job.extra?.environment, environment.name, e.currentTarget.value))}
+          />
+        </div>
         <span class="field-hint"
-          >Uses that environment's secrets and approval rules, set up in the repo's settings.</span
+          >Uses that environment's secrets and approval rules, set up in the repo's settings. The URL shows on the
+          deployment, linking to what was deployed.</span
         >
-      </label>
+      </div>
+
+      <div class="field" role="group" aria-label="Concurrency">
+        <span class="field-label">One run at a time<span class="optional"> optional</span></span>
+        <input
+          class="mono"
+          aria-label="Concurrency group"
+          placeholder={"deploy-${{ github.ref }}"}
+          value={text(["concurrency", "group"]) ||
+            (typeof extra(["concurrency"]) === "string" ? text(["concurrency"]) : "")}
+          oninput={(e) => {
+            const group = e.currentTarget.value.trim();
+            set(
+              ["concurrency"],
+              group
+                ? { group, ...(extra(["concurrency", "cancel-in-progress"]) ? { "cancel-in-progress": true } : {}) }
+                : undefined,
+            );
+          }}
+        />
+        {#if extra(["concurrency"])}
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              checked={extra(["concurrency", "cancel-in-progress"]) === true}
+              onchange={(e) => {
+                const group = text(["concurrency", "group"]) || text(["concurrency"]);
+                set(["concurrency"], { group, ...(e.currentTarget.checked ? { "cancel-in-progress": true } : {}) });
+              }}
+            />
+            <span><span class="toggle-title">Cancel the one already running</span></span>
+          </label>
+        {/if}
+        <span class="field-hint">Runs that share a group wait for each other, so two deploys never overlap.</span>
+      </div>
+
+      <KeyValues
+        label="Outputs"
+        value={job.extra?.outputs as Record<string, unknown> | undefined}
+        onchange={(v) => set(["outputs"], v)}
+        hint={"Values later jobs read as ${{ needs." +
+          job.id +
+          ".outputs.NAME }}, usually ${{ steps.STEP.outputs.NAME }}."}
+      />
 
       <label class="field">
         <span class="field-label">Run inside a container<span class="optional"> optional</span></span>
@@ -215,6 +330,17 @@
           value={text(["defaults", "run", "working-directory"])}
           oninput={(e) => set(["defaults", "run", "working-directory"], e.currentTarget.value.trim())}
         />
+      </label>
+
+      <label class="field">
+        <span class="field-label">Shell for commands</span>
+        <select
+          value={text(["defaults", "run", "shell"])}
+          onchange={(e) => set(["defaults", "run", "shell"], e.currentTarget.value)}
+        >
+          <option value="">Default (bash; PowerShell on Windows)</option>
+          {#each SHELLS as shell (shell)}<option value={shell}>{shell}</option>{/each}
+        </select>
       </label>
 
       <div class="field" role="group" aria-label="Permissions">
@@ -259,6 +385,8 @@
           onapply={(v) => {
             job.extra = v;
             matrix = matrixRows(v?.strategy);
+            include = combosOf(v?.strategy, "include");
+            exclude = combosOf(v?.strategy, "exclude");
             services = serviceRows(v?.services);
             revision++;
           }}

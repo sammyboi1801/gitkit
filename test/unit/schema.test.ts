@@ -25,6 +25,36 @@ const workflow = (jobs: WorkflowModel["jobs"]): WorkflowModel => ({
 const asGitHubSeesIt = (model: WorkflowModel) => parse(toYaml(model));
 
 describe("GitHub's workflow schema", () => {
+  it("accepts jobs using every setting Studio has a control for", () => {
+    const job = newJob("steps", []);
+    job.extra = {
+      "runs-on": ["self-hosted", "linux"],
+      environment: { name: "production", url: "https://acme.dev" },
+      concurrency: { group: "deploy", "cancel-in-progress": true },
+      outputs: { version: "${{ steps.v.outputs.version }}" },
+      defaults: { run: { shell: "pwsh", "working-directory": "web" } },
+      strategy: {
+        matrix: { os: ["ubuntu-latest"], include: [{ os: "macos-latest" }], exclude: [{ os: "ubuntu-latest" }] },
+        "max-parallel": 2,
+      },
+    };
+    const call = {
+      ...newJob("steps", [job]),
+      id: "call",
+      steps: undefined,
+      extra: { uses: "./.github/workflows/deploy.yml", with: { target: "prod" }, secrets: "inherit" },
+    };
+    const model = {
+      ...workflow([job, call]),
+      extra: {
+        permissions: { contents: "read", issues: "write" },
+        concurrency: { group: "ci" },
+        defaults: { run: { shell: "bash" } },
+      },
+    };
+    expect(schemaProblems(asGitHubSeesIt(model))).toEqual([]);
+  });
+
   it("accepts every trigger as Studio starts it, and as its options set it", () => {
     for (const { event } of EVENTS) {
       const config = event === "workflow_run" ? { workflows: ["CI"], types: ["completed"] } : newEventConfig(event);

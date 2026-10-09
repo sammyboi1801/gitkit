@@ -1382,3 +1382,19 @@ textarea[aria-invalid="true"] {
   gap: 8px;
   align-items: center;
 }
+
+.safety-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.combo-row,
+.environment-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.environment-row {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+}

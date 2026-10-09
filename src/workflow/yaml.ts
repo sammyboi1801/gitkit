@@ -36,7 +36,7 @@ function jobYaml(job: Job): Record<string, unknown> {
   if (job.needs.length) body.needs = job.needs.length === 1 ? job.needs[0] : job.needs;
   Object.assign(body, templateKeys(job), extra);
   // A job that calls a reusable workflow (uses:) has no steps or runner of its own.
-  if (extra.uses) {
+  if (extra.uses !== undefined) {
     delete body["runs-on"];
     return body;
   }

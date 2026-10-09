@@ -188,7 +188,13 @@
   {:else if model}
     <div class="studio-body" class:with-yaml={showYaml}>
       <div class="studio-main">
-        <Builder bind:model {problems} {stacks} {workflowNames} />
+        <Builder
+          bind:model
+          {problems}
+          {stacks}
+          {workflowNames}
+          workflowFiles={files.map((f) => f.file).filter((f) => f !== model?.file)}
+        />
       </div>
       {#if showYaml}
         <aside class="yaml-pane" aria-label="Generated YAML">

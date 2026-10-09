@@ -20,11 +20,12 @@
   import { describeEvent, eventSpec, normalizeOn } from "../../src/workflow/events";
   import { applyOn } from "../../src/workflow/import";
   import { setPath } from "../../src/workflow/options";
-  import { addEvent, addVersionTags, removeEvent } from "../../src/workflow/triggers";
+  import { addEvent, addVersionTags, removeEvent, splitList } from "../../src/workflow/triggers";
   import { mainBranch, warnings } from "../../src/workflow/warnings";
   import { triggersYaml } from "../../src/workflow/yaml";
   import ConditionField from "./ConditionField.svelte";
   import JobOptions from "./JobOptions.svelte";
+  import ReusableCall from "./ReusableCall.svelte";
   import StepOptions from "./StepOptions.svelte";
   import StepPicker from "./StepPicker.svelte";
   import TriggerEditor from "./TriggerEditor.svelte";
@@ -36,7 +37,14 @@
     problems,
     stacks,
     workflowNames = [],
-  }: { model: WorkflowModel; problems: Problem[]; stacks: Stack[]; workflowNames?: string[] } = $props();
+    workflowFiles = [],
+  }: {
+    model: WorkflowModel;
+    problems: Problem[];
+    stacks: Stack[];
+    workflowNames?: string[];
+    workflowFiles?: string[];
+  } = $props();
 
   const GROUPS: { id: Template["group"]; label: string }[] = [
     { id: "check", label: "Check the code" },
@@ -118,6 +126,16 @@
       .sort((a, b) => fit(a) - fit(b));
   }
 
+  // The "Run a reusable workflow" tile shows when every word searched for is in what it says.
+  const CALL_TILE_TEXT = "run a reusable workflow call another repo uses";
+  const showCallTile = $derived(
+    pickerSearch
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .every((w) => CALL_TILE_TEXT.includes(w)),
+  );
+
   async function openPicker(after: string[]) {
     addingJobAfter = after;
     pickerSearch = "";
@@ -173,7 +191,8 @@
   }
 
   function meta(job: Job): string {
-    if (typeof job.extra?.uses === "string") return `calls ${job.extra.uses}`;
+    if (typeof job.extra?.uses === "string")
+      return job.extra.uses ? `runs ${job.extra.uses}` : "runs a reusable workflow";
     if (job.template === "steps") {
       const n = job.steps?.length ?? 0;
       return `${runnerLabel(job)} · ${n} step${n === 1 ? "" : "s"}`;
@@ -205,6 +224,10 @@
     "container",
     "defaults",
     "permissions",
+    "concurrency",
+    "outputs",
+    "with",
+    "secrets",
   ];
   const keptKeys = (job: Job) => Object.keys(job.extra ?? {}).filter((k) => !JOB_FIELDS.includes(k));
 
@@ -264,6 +287,34 @@
   // --- Runner ---
 
   const isCustomRunner = (job: Job) => !RUNNERS.some((r) => r.value === job.runsOn);
+
+  /** One label is the runner's name; several (self-hosted, linux, gpu) are written as a list. */
+  function setRunner(job: Job, text: string) {
+    const labels = splitList(text);
+    if (labels.length > 1) {
+      job.extra = { ...(job.extra ?? {}), "runs-on": labels };
+      return;
+    }
+    if (job.extra && "runs-on" in job.extra) {
+      const rest = { ...job.extra };
+      delete rest["runs-on"];
+      job.extra = Object.keys(rest).length ? rest : undefined;
+    }
+    job.runsOn = labels[0] ?? text.trim();
+  }
+
+  /** A job that runs a reusable workflow instead of steps of its own. */
+  async function addCallJob() {
+    const job = newJob("steps", model.jobs);
+    job.id = job.id === "job" ? "call" : job.id.replace(/^job/, "call");
+    job.name = "Run a reusable workflow";
+    job.steps = undefined;
+    job.extra = { uses: "" };
+    job.needs = [...(addingJobAfter ?? [])];
+    model.jobs.push(job);
+    addingJobAfter = null;
+    await edit(model.jobs[model.jobs.length - 1]);
+  }
 
   function onKey(event: KeyboardEvent) {
     if (event.key !== "Escape") return;
@@ -404,20 +455,34 @@
   <!-- 3. Safety settings. -->
   <section class="card" aria-labelledby="safety-heading">
     <div class="card-head"><h3 id="safety-heading">Safety</h3></div>
-    <label class="toggle-row">
-      <input type="checkbox" bind:checked={model.readOnlyPermissions} />
-      <span>
-        <span class="toggle-title">Read-only access by default</span>
-        <span class="field-hint">Recommended. Jobs that need more, like publishing, get it for that job only.</span>
-      </span>
-    </label>
-    <label class="toggle-row">
-      <input type="checkbox" bind:checked={model.cancelSuperseded} />
-      <span>
-        <span class="toggle-title">Cancel outdated runs</span>
-        <span class="field-hint">When a newer push arrives, stop the run for the older one.</span>
-      </span>
-    </label>
+    <!-- Presets; once More settings has its own permissions or concurrency, those apply instead. -->
+    {#if model.extra?.permissions === undefined}
+      <label class="toggle-row">
+        <input type="checkbox" bind:checked={model.readOnlyPermissions} />
+        <span>
+          <span class="toggle-title">Read-only access by default</span>
+          <span class="field-hint">Recommended. Jobs that need more, like publishing, get it for that job only.</span>
+        </span>
+      </label>
+    {:else}
+      <p class="field-hint safety-custom">
+        <span class="codicon codicon-shield" aria-hidden="true"></span>Every job's access is set under More settings.
+      </p>
+    {/if}
+    {#if model.extra?.concurrency === undefined}
+      <label class="toggle-row">
+        <input type="checkbox" bind:checked={model.cancelSuperseded} />
+        <span>
+          <span class="toggle-title">Cancel outdated runs</span>
+          <span class="field-hint">When a newer push arrives, stop the run for the older one.</span>
+        </span>
+      </label>
+    {:else}
+      <p class="field-hint safety-custom">
+        <span class="codicon codicon-layers" aria-hidden="true"></span>Which runs wait for each other is set under More
+        settings.
+      </p>
+    {/if}
   </section>
 
   <WorkflowSettings bind:model bind:triggersOpen={triggersYamlOpen} />
@@ -451,7 +516,8 @@
     <div class="dialog-body" role="group" aria-label="Choose a job to add">
       {#each GROUPS as group (group.id)}
         {@const items = templatesIn(group.id)}
-        {#if items.length}
+        {@const call = group.id === "other" && showCallTile}
+        {#if items.length || call}
           <h3 class="tile-group">{group.label}</h3>
           <div class="tiles">
             {#each items as t (t.id)}
@@ -463,6 +529,16 @@
                 </span>
               </button>
             {/each}
+            {#if call}
+              <button class="tile group-other" onclick={addCallJob}>
+                <span class="job-icon codicon codicon-references" aria-hidden="true"></span>
+                <span class="tile-text">
+                  <span class="tile-title">Run a reusable workflow</span>
+                  <span class="tile-description">Runs another workflow as this job, from this repo or another one.</span
+                  >
+                </span>
+              </button>
+            {/if}
           </div>
         {/if}
       {/each}
@@ -494,10 +570,26 @@
       </label>
 
       {#if typeof job.extra?.uses === "string"}
-        <p class="notice kept">
-          <span class="codicon codicon-references" aria-hidden="true"></span>
-          <span>Calls the workflow <code>{job.extra.uses}</code>. Its settings are kept as written.</span>
-        </p>
+        <ReusableCall {job} {workflowFiles} />
+      {:else if Array.isArray(job.extra?.["runs-on"])}
+        <label class="field">
+          <span class="field-label">Runs on runners with these labels</span>
+          <input
+            class="mono"
+            aria-label="Runner labels"
+            value={(job.extra["runs-on"] as string[]).join(", ")}
+            oninput={(e) => setRunner(job, e.currentTarget.value)}
+          />
+          <span class="field-hint"
+            >A runner needs every label, like self-hosted, linux, gpu. <button
+              class="link"
+              onclick={() => {
+                if (job.extra) delete job.extra["runs-on"];
+                job.runsOn = "ubuntu-latest";
+              }}>Use a GitHub-hosted runner</button
+            ></span
+          >
+        </label>
       {:else if job.extra?.["runs-on"] !== undefined}
         <div class="field">
           <span class="field-label">Runs on</span>
@@ -533,9 +625,16 @@
             >
           </div>
           {#if isCustomRunner(job)}
-            <input class="mono" aria-label="Runner label" bind:value={job.runsOn} placeholder="self-hosted" />
+            <input
+              class="mono"
+              aria-label="Runner label"
+              value={job.runsOn}
+              oninput={(e) => setRunner(job, e.currentTarget.value)}
+              placeholder="self-hosted"
+            />
             <span class="field-hint"
-              >A runner label, like <code>self-hosted</code> or <code>ubuntu-24.04-arm</code>.</span
+              >A runner label, like <code>self-hosted</code> or <code>ubuntu-24.04-arm</code>. Several, comma-separated,
+              pick a runner that has them all.</span
             >
           {/if}
         </div>
