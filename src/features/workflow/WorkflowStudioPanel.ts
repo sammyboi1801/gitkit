@@ -45,7 +45,7 @@ export class WorkflowStudioPanel {
     );
     this.panel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "gitkit.svg");
     this.panel.webview.html = renderWebviewHtml(this.panel.webview, distUri, "workflow");
-    this.panel.webview.onDidReceiveMessage((message: StudioToHost) => void this.receive(message));
+    this.panel.webview.onDidReceiveMessage((message: StudioToHost) => this.receive(message));
     this.panel.onDidDispose(() => {
       if (WorkflowStudioPanel.current === this) WorkflowStudioPanel.current = undefined;
     });

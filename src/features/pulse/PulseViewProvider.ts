@@ -87,7 +87,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     view.webview.options = { enableScripts: true, localResourceRoots: [distUri] };
     view.webview.html = renderWebviewHtml(view.webview, distUri, "pulse");
 
-    view.webview.onDidReceiveMessage((message: WebviewToHost) => void this.receive(message));
+    // Returning the promise lets tests await the handling; VS Code ignores it.
+    view.webview.onDidReceiveMessage((message: WebviewToHost) => this.receive(message));
     view.onDidChangeVisibility(() => view.visible && this.scheduleRefresh());
     view.onDidDispose(() => (this.view = undefined));
   }
@@ -174,19 +175,19 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return this.selected!;
   }
 
-  private select(root: string): void {
+  private async select(root: string): Promise<void> {
     if (this.selected && pathKey(this.selected) === pathKey(root)) return;
     this.selected = root;
     void this.state.update(SELECTED_KEY, root);
     this.lastPosted = "";
-    void this.refresh();
+    await this.refresh();
   }
 
   private followEditor(editor: vscode.TextEditor | undefined): void {
     if (!editor || editor.document.uri.scheme !== "file" || !this.roots || this.roots.length < 2) return;
     if (!vscode.workspace.getConfiguration("gitkit").get<boolean>("followActiveEditor", true)) return;
     const root = repoForPath(editor.document.uri.fsPath, this.roots);
-    if (root) this.select(root);
+    if (root) void this.select(root);
   }
 
   /** Re-checks CI: every minute while checks run, every five minutes otherwise, only while focused. */
@@ -266,8 +267,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
         return;
       }
       case "selectRepo":
-        this.select(message.root);
-        return;
+        return this.select(message.root);
       case "openFile":
         return this.openFile(message.path);
       case "action":
@@ -431,7 +431,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private async runAction(request: ActionRequest): Promise<void> {
     if (!this.repo || this.busy) return;
-    // Re-plan from the host's own state: never execute commands built by the webview.
+    // Re-read first: the file watcher refreshes after a short delay, and an action clicked right
+    // after an edit must not be planned from the state before it.
+    this.repo = { ...(await readRepo(this.repo.root)), fetchError: this.fetchError, ci: this.ci };
+    // Plan from the host's own state: never execute commands built by the webview.
     const result = planAction(request, this.repo);
     if (!result.ok) {
       this.post({ type: "error", error: { command: "", message: result.reason } });
