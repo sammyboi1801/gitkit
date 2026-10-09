@@ -1190,7 +1190,8 @@ textarea:focus-visible {
 
 .permissions {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  /* One per row in the narrow job panel, so names like pull-requests don't wrap. */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 6px 12px;
 }
 
