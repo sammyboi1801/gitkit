@@ -46,21 +46,39 @@ export type TemplateId =
   | "docker-build"
   | "go-test"
   | "rust-test"
+  | "docker-publish"
+  | "github-release"
+  | "pages-deploy"
   | "custom";
 
 export type Stack = "node" | "python" | "docker" | "go" | "rust";
+
+export interface TemplateInput {
+  key: string;
+  label: string;
+  placeholder: string;
+  default: string;
+  /** Leaving it empty skips that step instead of being an error. */
+  optional?: boolean;
+}
 
 export interface Template {
   id: TemplateId;
   label: string;
   stack: Stack | null;
+  /** Where it sits in the "add a job" menu. */
+  group: "check" | "build" | "ship" | "other";
   description: string;
   /** What the matrix varies, if anything, e.g. "node-version". */
   matrixKey?: string;
+  /** Versions offered as toggles in the editor. */
+  versionChoices?: string[];
   defaultVersions: string[];
   defaultId: string;
-  /** Inputs shown on the job card. */
-  inputs: { key: string; label: string; placeholder: string; default: string }[];
+  /** Inputs shown when editing the job. */
+  inputs: TemplateInput[];
+  /** Extra token permissions this job needs, granted to this job only. */
+  permissions?: Record<string, "read" | "write">;
 }
 
 export const TEMPLATES: Template[] = [
@@ -68,6 +86,7 @@ export const TEMPLATES: Template[] = [
     id: "node-lint",
     label: "Lint (Node)",
     stack: "node",
+    group: "check",
     description: "Install dependencies and run the lint script.",
     defaultVersions: [],
     defaultId: "lint",
@@ -77,6 +96,8 @@ export const TEMPLATES: Template[] = [
     id: "node-test",
     label: "Test (Node)",
     stack: "node",
+    group: "check",
+    versionChoices: ["18", "20", "22", "24"],
     description: "Run tests on each Node version.",
     matrixKey: "node-version",
     defaultVersions: ["20", "22"],
@@ -87,6 +108,7 @@ export const TEMPLATES: Template[] = [
     id: "node-build",
     label: "Build (Node)",
     stack: "node",
+    group: "build",
     description: "Build the project to catch compile errors.",
     defaultVersions: [],
     defaultId: "build",
@@ -96,6 +118,7 @@ export const TEMPLATES: Template[] = [
     id: "python-lint",
     label: "Lint (Python)",
     stack: "python",
+    group: "check",
     description: "Check style and common bugs with Ruff.",
     defaultVersions: [],
     defaultId: "lint",
@@ -105,6 +128,8 @@ export const TEMPLATES: Template[] = [
     id: "python-test",
     label: "Test (Python)",
     stack: "python",
+    group: "check",
+    versionChoices: ["3.9", "3.10", "3.11", "3.12", "3.13"],
     description: "Run pytest on each Python version.",
     matrixKey: "python-version",
     defaultVersions: ["3.11", "3.12"],
@@ -123,6 +148,7 @@ export const TEMPLATES: Template[] = [
     id: "docker-build",
     label: "Docker image",
     stack: "docker",
+    group: "build",
     description: "Build the Dockerfile to make sure the image still builds.",
     defaultVersions: [],
     defaultId: "docker",
@@ -132,6 +158,8 @@ export const TEMPLATES: Template[] = [
     id: "go-test",
     label: "Test (Go)",
     stack: "go",
+    group: "check",
+    versionChoices: ["1.21", "1.22", "1.23", "1.24"],
     description: "Run go test on each Go version.",
     matrixKey: "go-version",
     defaultVersions: ["1.22", "1.23"],
@@ -142,15 +170,53 @@ export const TEMPLATES: Template[] = [
     id: "rust-test",
     label: "Test (Rust)",
     stack: "rust",
+    group: "check",
     description: "Run cargo test.",
     defaultVersions: [],
     defaultId: "test",
     inputs: [{ key: "command", label: "Command", placeholder: "cargo test", default: "cargo test" }],
   },
   {
+    id: "docker-publish",
+    label: "Publish Docker image",
+    stack: "docker",
+    group: "ship",
+    description: "Build the Dockerfile and push the image to GitHub Container Registry (ghcr.io).",
+    defaultVersions: [],
+    defaultId: "publish-image",
+    inputs: [{ key: "context", label: "Folder with the Dockerfile", placeholder: ".", default: "." }],
+    permissions: { packages: "write" },
+  },
+  {
+    id: "github-release",
+    label: "GitHub release",
+    stack: null,
+    group: "ship",
+    description: "Create a GitHub release for the tag that triggered the run, with notes generated from the commits.",
+    defaultVersions: [],
+    defaultId: "release",
+    inputs: [],
+    permissions: { contents: "write" },
+  },
+  {
+    id: "pages-deploy",
+    label: "Deploy to GitHub Pages",
+    stack: null,
+    group: "ship",
+    description: "Publish a folder as your GitHub Pages site, optionally building it first.",
+    defaultVersions: [],
+    defaultId: "deploy-pages",
+    inputs: [
+      { key: "build", label: "Build command", placeholder: "npm ci && npm run build", default: "", optional: true },
+      { key: "folder", label: "Folder to publish", placeholder: "dist", default: "." },
+    ],
+    permissions: { pages: "write", "id-token": "write" },
+  },
+  {
     id: "custom",
     label: "Custom command",
     stack: null,
+    group: "other",
     description: "Run any shell command after checkout.",
     defaultVersions: [],
     defaultId: "custom",
@@ -283,7 +349,7 @@ export function validate(model: WorkflowModel): Problem[] {
       if (!model.jobs.some((j) => j.id === need))
         problems.push({ job: job.id, message: `Runs after "${need}", which doesn't exist.` });
     }
-    if (template(job.template).inputs.some((i) => !job.inputs[i.key]?.trim())) {
+    if (template(job.template).inputs.some((i) => !i.optional && !job.inputs[i.key]?.trim())) {
       problems.push({ job: job.id, message: `${job.name}: fill in every field.` });
     }
   }
@@ -335,3 +401,168 @@ export function stages(jobs: readonly { id: string; needs: string[] }[]): string
   for (const job of jobs) (result[level.get(job.id)!] ??= []).push(job.id);
   return result.filter(Boolean);
 }
+
+// --- Goals: the start screen's "what do you want to automate?" -----------------------------
+
+export interface Goal {
+  id: "check" | "pr" | "docker" | "release" | "pages" | "schedule" | "blank";
+  title: string;
+  description: string;
+  icon: string;
+  /** Suggested for this project, e.g. Docker when there's a Dockerfile. */
+  recommended: boolean;
+  model: WorkflowModel;
+}
+
+const triggers = (overrides: Partial<Triggers> = {}): Triggers => ({
+  push: { enabled: false, branches: [] },
+  pullRequest: { enabled: false, branches: [] },
+  tags: { enabled: false, pattern: "v*" },
+  schedule: { enabled: false, cron: "0 6 * * *" },
+  manual: true,
+  ...overrides,
+});
+
+const workflow = (name: string, file: string, t: Triggers, jobs: Job[], cancelSuperseded = true): WorkflowModel => ({
+  name,
+  file,
+  triggers: t,
+  jobs,
+  readOnlyPermissions: true,
+  cancelSuperseded,
+});
+
+const single = (id: TemplateId, inputs: Record<string, string> = {}): Job[] => {
+  const job = newJob(id, []);
+  Object.assign(job.inputs, inputs);
+  return [job];
+};
+
+export function goals(facts: ProjectFacts): Goal[] {
+  const stacks = detectStacks(facts);
+  const checks = suggestWorkflow(facts);
+  const branch = facts.defaultBranch ?? "main";
+  const buildsSite = !!facts.npmScripts?.build;
+  return [
+    {
+      id: "check",
+      title: "Check every push",
+      description: "Lint and test your code whenever you push, and on pull requests.",
+      icon: "pass",
+      recommended: stacks.length > 0,
+      model: checks,
+    },
+    {
+      id: "pr",
+      title: "Test pull requests",
+      description: "Run the same checks only on pull requests, before anything is merged.",
+      icon: "git-pull-request",
+      recommended: false,
+      model: workflow(
+        "Pull request checks",
+        "pr.yml",
+        triggers({ pullRequest: { enabled: true, branches: [branch] } }),
+        checks.jobs,
+      ),
+    },
+    {
+      id: "docker",
+      title: "Publish a Docker image",
+      description: "Build your Dockerfile and push it to the GitHub container registry when you tag a version.",
+      icon: "package",
+      recommended: stacks.includes("docker"),
+      model: workflow(
+        "Docker image",
+        "docker.yml",
+        triggers({ tags: { enabled: true, pattern: "v*" } }),
+        single("docker-publish"),
+      ),
+    },
+    {
+      id: "release",
+      title: "Release when I tag a version",
+      description: "Push a tag like v1.2.0 and get a GitHub release with notes written from your commits.",
+      icon: "tag",
+      recommended: false,
+      model: workflow(
+        "Release",
+        "release.yml",
+        triggers({ tags: { enabled: true, pattern: "v*" } }),
+        single("github-release"),
+      ),
+    },
+    {
+      id: "pages",
+      title: "Deploy a site to GitHub Pages",
+      description: "Publish your site every time you push to the main branch.",
+      icon: "globe",
+      recommended: false,
+      model: workflow(
+        "Deploy site",
+        "pages.yml",
+        triggers({ push: { enabled: true, branches: [branch] } }),
+        single("pages-deploy", buildsSite ? { build: "npm ci && npm run build", folder: "dist" } : {}),
+        // A half-cancelled deploy is worse than a slightly late one.
+        false,
+      ),
+    },
+    {
+      id: "schedule",
+      title: "Run something on a schedule",
+      description: "Run a script every day, week or hour: reports, cleanups, link checks.",
+      icon: "watch",
+      recommended: false,
+      model: workflow(
+        "Scheduled job",
+        "scheduled.yml",
+        triggers({ schedule: { enabled: true, cron: "0 6 * * *" } }),
+        single("custom", { command: "./scripts/nightly.sh" }),
+      ),
+    },
+    {
+      id: "blank",
+      title: "Start from scratch",
+      description: "An empty workflow that runs on pushes to the main branch. Add the jobs you want.",
+      icon: "new-file",
+      recommended: false,
+      model: workflow("Workflow", "workflow.yml", triggers({ push: { enabled: true, branches: [branch] } }), []),
+    },
+  ];
+}
+
+// --- Plain English for the builder ----------------------------------------------------------
+
+export const SCHEDULES = [
+  { cron: "0 * * * *", label: "every hour" },
+  { cron: "0 6 * * *", label: "every day at 06:00 UTC" },
+  { cron: "0 2 * * *", label: "every night at 02:00 UTC" },
+  { cron: "0 6 * * 1", label: "every Monday at 06:00 UTC" },
+  { cron: "0 6 1 * *", label: "on the 1st of every month" },
+];
+
+export function describeSchedule(cron: string): string {
+  return SCHEDULES.find((s) => s.cron === cron.trim())?.label ?? `on schedule "${cron.trim()}"`;
+}
+
+/** The triggers as sentence parts: "on pushes to main", "on pull requests", and so on. */
+export function describeTriggers(t: Triggers): string[] {
+  const list = (names: string[]) =>
+    names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}` : names[0];
+  const parts: string[] = [];
+  if (t.push.enabled) parts.push(t.push.branches.length ? `on pushes to ${list(t.push.branches)}` : "on every push");
+  if (t.pullRequest.enabled) {
+    parts.push(
+      t.pullRequest.branches.length ? `on pull requests into ${list(t.pullRequest.branches)}` : "on pull requests",
+    );
+  }
+  if (t.tags.enabled) parts.push(`when you push a tag like ${t.tags.pattern}`);
+  if (t.schedule.enabled) parts.push(describeSchedule(t.schedule.cron));
+  if (t.manual) parts.push("when you click Run on GitHub");
+  return parts;
+}
+
+export const RUNNERS: { value: Runner; label: string }[] = [
+  { value: "ubuntu-latest", label: "Linux" },
+  { value: "windows-latest", label: "Windows" },
+  { value: "macos-latest", label: "macOS" },
+];

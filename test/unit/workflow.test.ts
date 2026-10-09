@@ -1,6 +1,15 @@
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
-import { newJob, stages, suggestWorkflow, validate, type WorkflowModel } from "../../src/workflow/model";
+import {
+  describeSchedule,
+  describeTriggers,
+  goals,
+  newJob,
+  stages,
+  suggestWorkflow,
+  validate,
+  type WorkflowModel,
+} from "../../src/workflow/model";
 import { explain, readModel, toYaml } from "../../src/workflow/yaml";
 
 const node = suggestWorkflow({
@@ -169,5 +178,70 @@ describe("explain", () => {
   it("gives new jobs unique ids", () => {
     const jobs = [newJob("node-test", [])];
     expect(newJob("node-test", jobs).id).toBe("test-2");
+  });
+});
+
+describe("goals", () => {
+  const facts = {
+    files: ["package.json", "Dockerfile"],
+    npmScripts: { lint: "x", test: "y", build: "z" },
+    defaultBranch: "main",
+  };
+  const byId = Object.fromEntries(goals(facts).map((g) => [g.id, g]));
+
+  it("recommends what fits the project", () => {
+    expect(byId.check.recommended).toBe(true);
+    expect(byId.docker.recommended).toBe(true);
+    expect(byId.release.recommended).toBe(false);
+  });
+
+  it("builds a valid workflow for every goal except the blank one", () => {
+    for (const goal of goals(facts)) {
+      const expected = goal.id === "blank" ? ["Add at least one job."] : [];
+      expect(
+        validate(goal.model).map((p) => p.message),
+        goal.id,
+      ).toEqual(expected);
+    }
+  });
+
+  it("grants extra permissions only to the job that needs them", () => {
+    const docker = parse(toYaml(byId.docker.model));
+    expect(docker.permissions).toEqual({ contents: "read" });
+    expect(docker.jobs["publish-image"].permissions).toEqual({ contents: "read", packages: "write" });
+    expect(docker.on).toEqual({ push: { tags: ["v*"] }, workflow_dispatch: null });
+
+    const pages = parse(toYaml(byId.pages.model));
+    expect(pages.jobs["deploy-pages"].permissions).toEqual({ contents: "read", pages: "write", "id-token": "write" });
+    expect(pages.jobs["deploy-pages"].environment.name).toBe("github-pages");
+    const names = pages.jobs["deploy-pages"].steps.map((s: { name?: string; uses?: string }) => s.name ?? s.uses);
+    expect(names).toContain("Build");
+  });
+
+  it("skips the optional build step when there's nothing to build", () => {
+    const plain = goals({ files: [] }).find((g) => g.id === "pages")!;
+    const steps = parse(toYaml(plain.model)).jobs["deploy-pages"].steps as { name?: string }[];
+    expect(steps.some((s) => s.name === "Build")).toBe(false);
+  });
+
+  it("releases with the gh CLI, no third-party action", () => {
+    const release = parse(toYaml(byId.release.model)).jobs.release;
+    // Creating a release needs write access to contents, for this job only.
+    expect(release.permissions).toEqual({ contents: "write" });
+    expect(release.steps[1].run).toBe('gh release create "$GITHUB_REF_NAME" --generate-notes');
+  });
+});
+
+describe("plain-English triggers", () => {
+  it("reads triggers as sentence parts", () => {
+    expect(describeTriggers(node.triggers)).toEqual([
+      "on pushes to main",
+      "on pull requests",
+      "when you click Run on GitHub",
+    ]);
+    const several = { ...node.triggers, push: { enabled: true, branches: ["main", "dev", "release"] }, manual: false };
+    expect(describeTriggers(several)[0]).toBe("on pushes to main, dev or release");
+    expect(describeSchedule("0 6 * * 1")).toBe("every Monday at 06:00 UTC");
+    expect(describeSchedule("*/5 * * * *")).toBe('on schedule "*/5 * * * *"');
   });
 });

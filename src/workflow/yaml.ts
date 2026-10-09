@@ -14,6 +14,11 @@ const ACTIONS = {
   go: "actions/setup-go@v5",
   buildx: "docker/setup-buildx-action@v3",
   dockerBuild: "docker/build-push-action@v6",
+  dockerLogin: "docker/login-action@v3",
+  dockerMeta: "docker/metadata-action@v5",
+  pagesConfigure: "actions/configure-pages@v5",
+  pagesUpload: "actions/upload-pages-artifact@v3",
+  pagesDeploy: "actions/deploy-pages@v4",
 };
 
 type Step = Record<string, unknown>;
@@ -64,6 +69,44 @@ function steps(job: Job): Step[] {
         { uses: ACTIONS.buildx },
         { uses: ACTIONS.dockerBuild, with: { context: input("context"), push: false } },
       ];
+    case "docker-publish":
+      return [
+        checkout,
+        { uses: ACTIONS.buildx },
+        {
+          uses: ACTIONS.dockerLogin,
+          with: { registry: "ghcr.io", username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" },
+        },
+        // Tags the image from the git ref: branch name, tag (v1.2.3) and commit sha.
+        { id: "meta", uses: ACTIONS.dockerMeta, with: { images: "ghcr.io/${{ github.repository }}" } },
+        {
+          uses: ACTIONS.dockerBuild,
+          with: {
+            context: input("context"),
+            push: true,
+            tags: "${{ steps.meta.outputs.tags }}",
+            labels: "${{ steps.meta.outputs.labels }}",
+          },
+        },
+      ];
+    case "github-release":
+      // gh ships with GitHub's runners, so no third-party action is needed.
+      return [
+        checkout,
+        {
+          name: "Create the release",
+          run: 'gh release create "$GITHUB_REF_NAME" --generate-notes',
+          env: { GH_TOKEN: "${{ github.token }}" },
+        },
+      ];
+    case "pages-deploy":
+      return [
+        checkout,
+        ...(input("build").trim() ? [{ name: "Build", run: input("build") }] : []),
+        { uses: ACTIONS.pagesConfigure },
+        { uses: ACTIONS.pagesUpload, with: { path: input("folder") } },
+        { id: "deployment", uses: ACTIONS.pagesDeploy },
+      ];
     case "custom":
       return [checkout, { run: input("command") }];
   }
@@ -89,9 +132,15 @@ export function toYaml(model: WorkflowModel): string {
   const order = stages(model.jobs).flat();
   for (const id of order) {
     const job = model.jobs.find((j) => j.id === id)!;
-    const key = template(job.template).matrixKey;
+    const t = template(job.template);
+    const key = t.matrixKey;
     const body: Record<string, unknown> = { name: job.name, "runs-on": job.runsOn };
     if (job.needs.length) body.needs = job.needs.length === 1 ? job.needs[0] : job.needs;
+    // Extra permissions go on the job that needs them, never the whole workflow.
+    if (t.permissions) body.permissions = { contents: "read", ...t.permissions };
+    if (job.template === "pages-deploy") {
+      body.environment = { name: "github-pages", url: "${{ steps.deployment.outputs.page_url }}" };
+    }
     if (key && job.versions.length) body.strategy = { matrix: { [key]: job.versions } };
     body.steps = steps(job);
     jobs[id] = body;
