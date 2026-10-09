@@ -25,6 +25,23 @@ export class GitError extends Error {
   }
 }
 
+/**
+ * Makes git's output the same on every machine, so parsing never depends on the user's setup:
+ * English messages (GitKit recognises some errors by text), no colour codes, and paths printed
+ * as-is rather than octal-escaped. Config is injected via GIT_CONFIG_* so command lines (and
+ * the previews built from them) stay exactly what the user would type.
+ */
+const STABLE_ENV: Record<string, string> = {
+  LC_ALL: "C",
+  // A terminal prompt would hang forever with no terminal attached; credential helpers still work.
+  GIT_TERMINAL_PROMPT: "0",
+  GIT_CONFIG_COUNT: "2",
+  GIT_CONFIG_KEY_0: "color.ui",
+  GIT_CONFIG_VALUE_0: "never",
+  GIT_CONFIG_KEY_1: "core.quotePath",
+  GIT_CONFIG_VALUE_1: "false",
+};
+
 // execFile, never a shell string: args are passed to git verbatim, so branch names can't inject commands.
 export function runGit(args: readonly string[], cwd: string, options: RunOptions = {}): Promise<GitResult> {
   return new Promise((resolve, reject) => {
@@ -35,8 +52,7 @@ export function runGit(args: readonly string[], cwd: string, options: RunOptions
         cwd,
         maxBuffer: 32 * 1024 * 1024,
         windowsHide: true,
-        // A terminal prompt would hang forever with no terminal attached; credential helpers still work.
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...options.env },
+        env: { ...process.env, ...STABLE_ENV, ...options.env },
       },
       (error, stdout, stderr) => {
         if (error) {
