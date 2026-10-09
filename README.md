@@ -140,7 +140,7 @@ GitKit uses your theme's colors, so it looks at home in light, dark and high-con
 
 You need **VS Code 1.95** or newer and **git 2.38** or newer.
 
-1. Install GitKit. Until it's on the Marketplace, download the `.vsix` file from a release, then in VS Code open the Extensions view, choose **…** → **Install from VSIX…**, and pick the file.
+1. Install GitKit: in VS Code open the Extensions view (Ctrl+Shift+X), search for **GitKit** and click **Install**.
 2. Open a folder that has a git project in it.
 3. Click the **GitKit** icon in the bar on the left.
 
