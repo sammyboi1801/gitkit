@@ -1439,3 +1439,61 @@ button.primary .count-pill {
   font-size: 0.9em;
   line-height: 18px;
 }
+
+/* Narrow sidebars: shrink gracefully instead of clipping. */
+
+body {
+  overflow-x: hidden;
+}
+
+.actions button,
+.operation-actions button,
+.oops-button {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.operation-actions {
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+}
+
+@media (max-width: 300px) {
+  .oops-button .label,
+  .step .time,
+  .repo-branch {
+    display: none;
+  }
+}
+
+@media (max-width: 250px) {
+  /* Icons only; each button keeps its name as a tooltip and for screen readers. */
+  .actions .label,
+  .operation-actions .label {
+    display: none;
+  }
+
+  .header,
+  .commit-box,
+  .conflict-view,
+  .remote-row {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .file,
+  .step,
+  .stash {
+    padding-left: 12px;
+    padding-right: 8px;
+  }
+
+  .stats {
+    display: none;
+  }
+}

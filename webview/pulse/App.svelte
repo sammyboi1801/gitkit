@@ -93,17 +93,19 @@
           <button
             class="primary"
             disabled={!next.ok || !!busy}
+            aria-label="Continue"
             title={next.text}
             onclick={() => send({ type: "action", request: { type: "continueOperation" } })}
           >
-            <span class="codicon codicon-debug-continue"></span>Continue
+            <span class="codicon codicon-debug-continue"></span><span class="label">Continue</span>
           </button>
           <button
             disabled={!abort.ok || !!busy}
+            aria-label="Abort"
             title={abort.text}
             onclick={() => send({ type: "action", request: { type: "abortOperation" } })}
           >
-            <span class="codicon codicon-debug-stop"></span>Abort
+            <span class="codicon codicon-debug-stop"></span><span class="label">Abort</span>
           </button>
         </div>
       </div>
