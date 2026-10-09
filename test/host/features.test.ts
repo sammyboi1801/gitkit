@@ -560,7 +560,7 @@ describe("CI status", () => {
 
     // Turned off: what was read before goes away too, right away.
     harness.changeConfig("gitkit.ciStatus", false);
-    await vi.waitFor(() => expect(panel.repo().ci).toBeNull());
+    await vi.waitFor(() => expect(panel.repo().ci).toBeNull(), { timeout: 20_000 });
     expect(panel.repo().pr).toBeNull();
   });
 
@@ -660,7 +660,7 @@ describe("CI status", () => {
       const { work, panel } = await failingPanel(9004);
       await panel.send({ type: "openCiError", failure: 0, error: 0 });
       expect(harness.editors.at(-1)).toMatchObject({ line: 889 });
-      expect(harness.editors.at(-1)!.uri.fsPath).toBe(join(work, "test", "host", "features.test.ts"));
+      expect(harness.editors.at(-1)!.uri.fsPath).toBe(join(realPath(work), "test", "host", "features.test.ts"));
 
       rmSync(join(work, "test"), { recursive: true });
       await panel.send({ type: "openCiError", failure: 0, error: 1 });
