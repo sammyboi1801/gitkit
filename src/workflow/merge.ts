@@ -91,7 +91,15 @@ function merge(doc: Document, node: Node | null, value: unknown, path: readonly 
       const at = node.items.findIndex((p) => after.includes(keyOf(p)));
       const fresh = doc.createPair(key, next) as Pair;
       if (at === -1) node.items.push(fresh);
-      else node.items.splice(at, 0, fresh);
+      else {
+        // A comment above the first key is the file's (or the block's) own: it stays on top.
+        const first = node.items[0]?.key as Node | undefined;
+        if (at === 0 && first?.commentBefore) {
+          (fresh.key as Node).commentBefore = first.commentBefore;
+          first.commentBefore = undefined;
+        }
+        node.items.splice(at, 0, fresh);
+      }
     });
     return node;
   }

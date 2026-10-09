@@ -84,10 +84,17 @@ describe("updateYaml", () => {
     expect(saved).toMatch(/run: echo one\n\s+- run: echo two\n$/);
   });
 
-  it("refuses files it can't edit safely, so the caller rewrites them instead", () => {
-    expect(
-      updateYaml("defaults: &d\n  run:\n    shell: bash\njobs:\n  a:\n    defaults: *d\n", { jobs: {} }),
-    ).toBeNull();
+  it("keeps an unnamed workflow unnamed, and the file's opening comment on top when a name is given", () => {
+    const unnamed =
+      "# Checks every push.\non: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo a\n";
+    // Studio shows "ci" for it, but writing name: ci would change how GitHub lists the workflow.
+    expect(edit(() => {}, unnamed)).toBe(unnamed);
+    expect(edit((m) => (m.name = "Checks"), unnamed)).toBe(
+      unnamed.replace("# Checks every push.\n", "# Checks every push.\nname: Checks\n"),
+    );
+  });
+
+  it("refuses only what isn't YAML at all, so the caller rewrites it instead", () => {
     expect(updateYaml("jobs: [unclosed", { jobs: {} })).toBeNull();
   });
 });

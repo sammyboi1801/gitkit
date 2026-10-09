@@ -62,7 +62,9 @@ export function workflowObject(model: WorkflowModel): Record<string, unknown> {
   for (const id of stages(model.jobs).flat()) jobs[id] = jobYaml(model.jobs.find((j) => j.id === id)!);
 
   const { permissions, concurrency, ...extra } = model.extra ?? {};
-  const workflow: Record<string, unknown> = { name: model.name };
+  const workflow: Record<string, unknown> = {};
+  // Still unnamed, as the file was: writing the file's name as name: would change how GitHub lists it.
+  if (!(model.unnamed && model.name === model.file.replace(/\.ya?ml$/i, ""))) workflow.name = model.name;
   if (extra["run-name"] !== undefined) workflow["run-name"] = extra["run-name"];
   workflow.on = triggersYaml(model);
   if (permissions !== undefined) workflow.permissions = permissions;

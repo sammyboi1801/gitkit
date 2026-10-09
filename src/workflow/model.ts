@@ -57,6 +57,11 @@ export interface WorkflowModel {
   cancelSuperseded: boolean;
   /** Top-level settings Studio doesn't model (env, defaults, run-name, custom permissions…). */
   extra?: Record<string, unknown>;
+  /**
+   * The file had no name:, so GitHub lists it by its path. Studio shows the file's name instead,
+   * and writes a name: only once someone changes it.
+   */
+  unnamed?: boolean;
 }
 
 export type TemplateId =

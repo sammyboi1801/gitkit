@@ -25,6 +25,7 @@ export function importWorkflow(text: string, file: string): WorkflowModel {
     readOnlyPermissions: false,
     cancelSuperseded: false,
   };
+  if (typeof data.name !== "string") model.unnamed = true;
 
   applyOn(model, on);
 
