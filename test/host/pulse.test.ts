@@ -130,6 +130,16 @@ describe("Pulse panel: commit guard", () => {
     expect(harness.shown.at(-1)?.detail).toMatch(/config\.ts:1 looks like an AWS access key/);
   });
 
+  it("checks changes added to the last commit too", async () => {
+    const dir = makeRepo();
+    write(dir, "config.ts", "const key = 'AKIAABCDEFGHIJKLMNOP';\n");
+    const panel = await openPanel(dir);
+    harness.answers.push(undefined);
+    await panel.send({ type: "action", request: { type: "amendAdd" } });
+    expect(git(dir, "show", "--name-only", "--format=", "HEAD").trim()).toBe("a.txt");
+    expect(harness.shown.at(-1)?.detail).toMatch(/config\.ts:1 looks like an AWS access key/);
+  });
+
   it("sets the expected email for this repo when identities say so", async () => {
     const dir = makeRepo();
     harness.config["gitkit.identities"] = [{ folder: dir, email: "me@school.edu" }];

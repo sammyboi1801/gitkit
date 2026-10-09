@@ -947,7 +947,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       if (choice !== plan.label) return;
     }
     let steps = plan.steps;
-    if (request.type === "commit") {
+    // Adding to the last commit commits too: the same checks apply.
+    if (request.type === "commit" || request.type === "amendAdd") {
       const guarded = await guardCommit(this.repo, plan);
       if (!guarded) return;
       steps = guarded;
