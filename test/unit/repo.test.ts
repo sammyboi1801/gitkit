@@ -1,57 +1,22 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readBranches, readCommitDetails, readRepo } from "../../src/git/repo";
+import { describe, expect, it } from "vitest";
+import { planAction, type ActionRequest } from "../../src/git/actions";
+import {
+  findWorkspaceRepo,
+  readBranches,
+  readCleanupCandidates,
+  readCommitDetails,
+  readRepo,
+} from "../../src/git/repo";
+import { runGit } from "../../src/git/runner";
+import { commit, git, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
 
-// Runs the real git commands GitKit uses against a throwaway repo with a bare remote.
-let base: string;
-let work: string;
+// Runs the real git commands GitKit uses against throwaway repos. Each test builds its own.
 
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", ...args], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-beforeAll(() => {
-  base = mkdtempSync(join(tmpdir(), "gitkit-test-"));
-  const remote = join(base, "remote.git");
-  work = join(base, "work");
-  git(base, "init", "--bare", "-b", "main", remote);
-  git(base, "clone", remote, work);
-  git(work, "checkout", "-b", "main");
-
-  writeFileSync(join(work, "a.txt"), "one\n");
-  git(work, "add", ".");
-  git(work, "commit", "-m", "first");
-  writeFileSync(join(work, "a.txt"), "one\ntwo\n");
-  git(work, "commit", "-am", "second");
-  git(work, "push", "-u", "origin", "main");
-
-  // One commit only on the remote (behind), one only local (ahead).
-  writeFileSync(join(work, "b.txt"), "remote\n");
-  git(work, "add", ".");
-  git(work, "commit", "-m", "remote only");
-  git(work, "push");
-  git(work, "reset", "--hard", "HEAD~1");
-  writeFileSync(join(work, "c.txt"), "local\n");
-  git(work, "add", ".");
-  git(work, "commit", "-m", "local only");
-
-  // Uncommitted: one staged edit, one unstaged edit, one untracked file.
-  writeFileSync(join(work, "a.txt"), "one\ntwo\nthree\n");
-  git(work, "add", "a.txt");
-  writeFileSync(join(work, "c.txt"), "local\nmore\nlines\n");
-  writeFileSync(join(work, "new file.txt"), "hi\n");
-});
-
-afterAll(() => rmSync(base, { recursive: true, force: true }));
-
-describe("readRepo against a real repo", () => {
+describe("readRepo", () => {
   it("reads status, line stats, ahead/behind and graph markers", async () => {
+    const { work } = makeDivergedClone();
     const repo = await readRepo(work);
     const { status } = repo;
 
@@ -76,12 +41,41 @@ describe("readRepo against a real repo", () => {
     expect(repo.activity[0]).toMatchObject({ ref: "origin/main", kind: "push", commits: 1, authors: ["Test"] });
   });
 
+  it("handles a repo with no commits yet", async () => {
+    const empty = tempDir();
+    git(empty, "init", "-q", "-b", "main");
+    write(empty, "new.txt", "x\n");
+
+    const repo = await readRepo(empty);
+    expect(repo.status).toMatchObject({ branch: "main", oid: null });
+    expect(repo.graph.commits).toEqual([]);
+    expect(repo.history).toEqual([]);
+    expect(repo.base).toBeNull();
+  });
+
+  it("detects a merge stopped on a conflict", async () => {
+    const dir = makeRepo();
+    git(dir, "switch", "-q", "-c", "other");
+    commit(dir, "theirs", { "a.txt": "theirs\n" });
+    git(dir, "switch", "-q", "main");
+    commit(dir, "ours", { "a.txt": "ours\n" });
+    expect(() => git(dir, "merge", "other")).toThrow();
+
+    const repo = await readRepo(dir);
+    expect(repo.operation).toBe("merge");
+    expect(repo.status.files).toEqual([expect.objectContaining({ path: "a.txt", conflicted: true })]);
+  });
+});
+
+describe("readBranches and readCommitDetails", () => {
   it("lists branches with tracking info", async () => {
+    const { work } = makeDivergedClone();
     const [main] = await readBranches(work);
     expect(main).toMatchObject({ name: "main", upstream: "origin/main", ahead: 1, behind: 1, current: true });
   });
 
   it("reads commit details with per-file stats", async () => {
+    const { work } = makeDivergedClone();
     const head = git(work, "rev-parse", "HEAD").trim();
     const details = await readCommitDetails(work, head);
     expect(details).toMatchObject({ hash: head, author: "Test", body: "local only" });
@@ -91,11 +85,12 @@ describe("readRepo against a real repo", () => {
 
 describe("base branch comparison", () => {
   it("counts commits since branching and predicts conflicts without touching files", async () => {
+    const { work } = makeDivergedClone();
     // origin/main added b.txt; this branch adds a different b.txt, so a merge must conflict.
-    git(work, "switch", "-c", "feat");
-    writeFileSync(join(work, "b.txt"), "mine\n");
+    git(work, "switch", "-q", "-c", "feat");
+    write(work, "b.txt", "mine\n");
     git(work, "add", "b.txt");
-    git(work, "commit", "-m", "mine", "--only", "b.txt");
+    git(work, "commit", "-q", "-m", "mine", "--only", "b.txt");
     const statusBefore = git(work, "status", "--porcelain");
 
     const repo = await readRepo(work);
@@ -112,98 +107,111 @@ describe("base branch comparison", () => {
 
 describe("activity feed", () => {
   it("only reports remote branches, never local ones with a slash in the name", async () => {
-    git(work, "switch", "-c", "fix/local-only");
+    const { work } = makeDivergedClone();
+    git(work, "switch", "-q", "-c", "fix/local-only");
     const repo = await readRepo(work);
+    expect(repo.activity.length).toBeGreaterThan(0);
     expect(repo.activity.every((item) => item.ref.startsWith("origin/"))).toBe(true);
   });
 });
 
 describe("findWorkspaceRepo", () => {
   it("ignores a parent repo that ignores the opened folder", async () => {
-    const { mkdirSync } = await import("node:fs");
-    const { findWorkspaceRepo } = await import("../../src/git/repo");
-    writeFileSync(join(work, ".gitignore"), "ignored-dir/\n");
-    mkdirSync(join(work, "ignored-dir"), { recursive: true });
-    mkdirSync(join(work, "tracked-dir"), { recursive: true });
-    expect(await findWorkspaceRepo(join(work, "ignored-dir"))).toBeNull();
-    expect(await findWorkspaceRepo(join(work, "tracked-dir"))).not.toBeNull();
+    const dir = makeRepo();
+    write(dir, ".gitignore", "ignored-dir/\n");
+    mkdirSync(join(dir, "ignored-dir"));
+    mkdirSync(join(dir, "tracked-dir"));
+    expect(await findWorkspaceRepo(join(dir, "ignored-dir"))).toBeNull();
+    expect(await findWorkspaceRepo(join(dir, "tracked-dir"))).not.toBeNull();
   });
 });
 
 describe("readCleanupCandidates", () => {
   it("finds squash-merged and merged branches but keeps unmerged ones", async () => {
-    const { readCleanupCandidates } = await import("../../src/git/repo");
-    const cleanup = mkdtempSync(join(tmpdir(), "gitkit-cleanup-"));
-    try {
-      git(cleanup, "init", "-q", "-b", "main");
-      writeFileSync(join(cleanup, "a.txt"), "a\n");
-      git(cleanup, "add", ".");
-      git(cleanup, "commit", "-qm", "base");
+    const dir = makeRepo();
+    // squashed: two commits on a branch, landed on main as one squash commit.
+    git(dir, "switch", "-q", "-c", "squashed");
+    commit(dir, "s1", { "s.txt": "one\n" });
+    commit(dir, "s2", { "s.txt": "one\ntwo\n" });
+    git(dir, "switch", "-q", "main");
+    git(dir, "merge", "-q", "--squash", "squashed");
+    git(dir, "commit", "-q", "-m", "squash merge");
+    // merged: a branch whose commit main already contains.
+    git(dir, "branch", "merged", "HEAD~1");
+    // open: real unmerged work.
+    git(dir, "switch", "-q", "-c", "open");
+    commit(dir, "wip", { "o.txt": "wip\n" });
+    git(dir, "switch", "-q", "main");
 
-      // squashed: two commits on a branch, landed on main as one squash commit.
-      git(cleanup, "switch", "-qc", "squashed");
-      writeFileSync(join(cleanup, "s.txt"), "one\n");
-      git(cleanup, "add", ".");
-      git(cleanup, "commit", "-qm", "s1");
-      writeFileSync(join(cleanup, "s.txt"), "one\ntwo\n");
-      git(cleanup, "commit", "-qam", "s2");
-      git(cleanup, "switch", "-q", "main");
-      git(cleanup, "merge", "-q", "--squash", "squashed");
-      git(cleanup, "commit", "-qm", "squash merge");
-
-      // merged: a plain fast-forward-able branch already contained in main.
-      git(cleanup, "branch", "merged", "HEAD~1");
-
-      // open: real unmerged work.
-      git(cleanup, "switch", "-qc", "open");
-      writeFileSync(join(cleanup, "o.txt"), "wip\n");
-      git(cleanup, "add", ".");
-      git(cleanup, "commit", "-qm", "wip");
-      git(cleanup, "switch", "-q", "main");
-
-      const names = (await readCleanupCandidates(cleanup, "main", "main")).map((c) => c.branch.name).sort();
-      expect(names).toEqual(["merged", "squashed"]);
-    } finally {
-      rmSync(cleanup, { recursive: true, force: true });
-    }
+    const names = (await readCleanupCandidates(dir, "main", "main")).map((c) => c.branch.name).sort();
+    expect(names).toEqual(["merged", "squashed"]);
   });
 });
 
 describe("undo, end to end", () => {
+  const run = async (dir: string, request: ActionRequest) => {
+    const result = planAction(request, await readRepo(dir));
+    if (!result.ok) throw new Error(result.reason);
+    for (const args of result.plan.steps) await runGit(args, dir);
+  };
+  const head = (dir: string) => git(dir, "rev-parse", "HEAD").trim();
+
   it("undoes a commit while keeping uncommitted work, and the undo itself can be undone", async () => {
-    const { planAction } = await import("../../src/git/actions");
-    const { runGit } = await import("../../src/git/runner");
-    const dir = mkdtempSync(join(tmpdir(), "gitkit-undo-"));
-    const run = async (request: Parameters<typeof planAction>[0]) => {
-      const result = planAction(request, await readRepo(dir));
-      if (!result.ok) throw new Error(result.reason);
-      for (const args of result.plan.steps) await runGit(args, dir);
-    };
-    const head = () => git(dir, "rev-parse", "HEAD").trim();
-    try {
-      git(dir, "init", "-q", "-b", "main");
-      writeFileSync(join(dir, "a.txt"), "a\n");
-      git(dir, "add", ".");
-      git(dir, "commit", "-qm", "first");
-      const first = head();
-      writeFileSync(join(dir, "b.txt"), "b\n");
-      git(dir, "add", ".");
-      git(dir, "commit", "-qm", "second");
-      const second = head();
-      writeFileSync(join(dir, "notes.txt"), "uncommitted\n");
+    const dir = makeRepo();
+    const first = head(dir);
+    const second = commit(dir, "second", { "b.txt": "b\n" });
+    write(dir, "notes.txt", "uncommitted\n");
 
-      const before = await readRepo(dir);
-      expect(before.history[0]).toMatchObject({ kind: "commit", summary: 'Committed "second"' });
+    const before = await readRepo(dir);
+    expect(before.history[0]).toMatchObject({ kind: "commit", summary: 'Committed "second"' });
 
-      await run({ type: "undoTo", index: 0 });
-      expect(head()).toBe(first);
-      expect(git(dir, "status", "--porcelain")).toContain("notes.txt");
+    await run(dir, { type: "undoTo", index: 0 });
+    expect(head(dir)).toBe(first);
+    expect(git(dir, "status", "--porcelain")).toContain("notes.txt");
 
-      // The reset is itself in the history, so undoing it brings "second" back.
-      await run({ type: "undoTo", index: 0 });
-      expect(head()).toBe(second);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    // The reset is itself in the history, so undoing it brings "second" back.
+    await run(dir, { type: "undoTo", index: 0 });
+    expect(head(dir)).toBe(second);
+  });
+
+  it("undoes the last commit but keeps its changes staged", async () => {
+    const dir = makeRepo();
+    const first = head(dir);
+    commit(dir, "oops", { "b.txt": "b\n" });
+
+    await run(dir, { type: "undoLastCommit" });
+    expect(head(dir)).toBe(first);
+    expect(git(dir, "status", "--porcelain")).toContain("A  b.txt");
+  });
+
+  it("discards into a stash that can be restored", async () => {
+    const dir = makeRepo();
+    write(dir, "a.txt", "changed\n");
+
+    await run(dir, { type: "discard", paths: ["a.txt"] });
+    expect(git(dir, "status", "--porcelain")).toBe("");
+
+    const repo = await readRepo(dir);
+    expect(repo.stashes[0]).toMatchObject({ byGitKit: true, message: "GitKit discard: a.txt" });
+    await run(dir, { type: "stashPop", ref: repo.stashes[0].ref });
+    expect(git(dir, "status", "--porcelain")).toContain("a.txt");
+  });
+});
+
+describe("runGit", () => {
+  it("prints non-ASCII paths as-is, whatever the repo's own config says", async () => {
+    const dir = makeRepo();
+    git(dir, "config", "core.quotePath", "true");
+    commit(dir, "accent", { "café.txt": "x\n" });
+    const { stdout } = await runGit(["ls-files"], dir);
+    expect(stdout.split("\n")).toContain("café.txt");
+  });
+
+  it("reports failures with git's English message and the command that failed", async () => {
+    const dir = makeRepo();
+    await expect(runGit(["switch", "no-such-branch"], dir)).rejects.toMatchObject({
+      command: "git switch no-such-branch",
+      stderr: expect.stringMatching(/invalid reference|did not match/i),
+    });
   });
 });
