@@ -89,6 +89,8 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
     }
 
     case "push": {
+      // Mid-merge, the branch is half-way between two states: pushing or pulling now only confuses it.
+      if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
       if (!status.branch) return fail("HEAD is detached. Check out a branch to push.");
       if (status.upstream) return ok("Push", [["push"]]);
       const remote = pickRemote(repo.remotes);
@@ -97,11 +99,13 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
     }
 
     case "pull":
+      if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
       if (!status.upstream) return fail("This branch isn't tracking a remote branch yet.");
       // Fast-forward only: never creates a surprise merge commit. Diverged branches go through Sync.
       return ok("Pull", [["pull", "--ff-only"]]);
 
     case "sync": {
+      if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
       if (!status.upstream) return planAction({ type: "push" }, repo);
       return ok("Sync", [["pull", "--rebase", "--autostash"], ["push"]]);
     }

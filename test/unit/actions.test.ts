@@ -166,6 +166,13 @@ describe("continue and abort", () => {
     expect(planAction({ type: "continueOperation" }, stuck).ok).toBe(false);
   });
 
+  it("won't pull, push or sync until the merge is finished or aborted", () => {
+    const merging = { ...repo({ upstream: "origin/main", ahead: 1, behind: 1 }), operation: "merge" as const };
+    for (const type of ["pull", "push", "sync"] as const) {
+      expect(planAction({ type }, merging)).toEqual({ ok: false, reason: "Finish or abort the merge first." });
+    }
+  });
+
   it("aborts with a confirmation", () => {
     const result = planAction({ type: "abortOperation" }, { ...repo(), operation: "cherry-pick" });
     expect(result.ok && result.plan.confirm).toBeTruthy();
