@@ -136,6 +136,17 @@
       .every((w) => CALL_TILE_TEXT.includes(w)),
   );
 
+  /** "Lint", "Lint and Test", "Lint, Test and Build". */
+  const names = (jobs: readonly Job[]) =>
+    jobs.length <= 1
+      ? (jobs[0]?.name ?? "")
+      : `${jobs
+          .slice(0, -1)
+          .map((j) => j.name)
+          .join(", ")} and ${jobs[jobs.length - 1].name}`;
+  /** What a job added to a column waits for, so it lands in that column: what its jobs wait for. */
+  const alongside = (column: readonly Job[]) => [...new Set(column.flatMap((j) => j.needs))];
+
   async function openPicker(after: string[]) {
     addingJobAfter = after;
     pickerSearch = "";
@@ -398,9 +409,6 @@
       </button>
     {:else}
       <div class="pipeline">
-        <button class="add-start" title="Add a job that starts right away" onclick={() => openPicker([])}>
-          <span class="codicon codicon-add"></span><span class="sr-only">Add a job that starts right away</span>
-        </button>
         {#each columns as column, c (c)}
           <ol class="stage" aria-label="Step {c + 1}{c === 0 ? ', starts right away' : ', after the previous step'}">
             {#each column as job (job)}
@@ -436,18 +444,30 @@
                 </button>
               </li>
             {/each}
+            <!-- Adds to this column: the new job waits for what this column's jobs wait for. -->
             <li>
-              <button class="ghost-card" onclick={() => openPicker(column.map((j) => j.id))}>
-                <span class="codicon codicon-add"></span>Add a job after {column.length === 1
-                  ? column[0].name
-                  : "these"}
+              <button
+                class="ghost-card"
+                title={c === 0 ? "Starts as soon as the workflow runs" : `Runs at the same time as ${names(column)}`}
+                onclick={() => openPicker(alongside(column))}
+              >
+                <span class="codicon codicon-add"></span>Add a job here
               </button>
             </li>
           </ol>
-          {#if c < columns.length - 1}
-            <span class="connector codicon codicon-arrow-right" aria-hidden="true"></span>
-          {/if}
+          <span class="connector codicon codicon-arrow-right" aria-hidden="true"></span>
         {/each}
+        <!-- The next column, still empty: a job added here runs after the last ones. -->
+        <ol class="stage" aria-label="After {names(columns[columns.length - 1])}">
+          <li>
+            <button
+              class="ghost-card next-stage"
+              onclick={() => openPicker(columns[columns.length - 1].map((j) => j.id))}
+            >
+              <span class="codicon codicon-add"></span>Add a job after {names(columns[columns.length - 1])}
+            </button>
+          </li>
+        </ol>
       </div>
     {/if}
   </section>

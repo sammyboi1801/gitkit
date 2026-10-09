@@ -572,30 +572,16 @@ textarea:focus-visible {
   list-style: none;
 }
 
-/* The round "+" on the left: a job that starts right away, beside the first column. */
-.add-start {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  margin-top: 12px;
-  padding: 0;
-  border-radius: 50%;
-  background: transparent;
-  border: 1px dashed var(--gk-border);
-  color: var(--gk-muted);
-}
-
-.add-start:hover:not(:disabled) {
-  background: transparent;
-  border-color: var(--gk-accent);
-  color: var(--vscode-foreground);
-}
-
 .connector {
   flex: none;
   margin: 19px 4px 0;
   color: var(--gk-muted);
   font-size: 16px;
+}
+
+/* The empty next column: as tall as a job card, so it reads as the place the job will go. */
+.ghost-card.next-stage {
+  min-height: 62px;
 }
 
 .first-job {

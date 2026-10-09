@@ -550,13 +550,35 @@ describe("Workflow Studio", () => {
     expect(screen.getByRole("status").textContent).toMatch(/Ready to save/);
   });
 
-  it("adds a job after another from a menu of plain-English choices", async () => {
+  it("adds a job right where its button is: in a column, or in the next one", async () => {
     await startWith(/Check every push/);
-    await fireEvent.click(screen.getByRole("button", { name: /Add a job after Lint/ }));
-    const picker = screen.getByRole("group", { name: "Choose a job to add" });
-    await fireEvent.click(within(picker).getByRole("button", { name: /Build \(Node\)/ }));
-    const editor = screen.getByRole("dialog", { name: "Edit Build" });
+    const column = (n: number) => [...document.querySelectorAll(".stage")][n] as HTMLElement;
+    const names = (n: number) => [...column(n).querySelectorAll(".job-name")].map((e) => e.textContent);
+    expect([names(0), names(1)]).toEqual([["Lint"], ["Test"]]);
+
+    // "Add a job here" under Test: alongside it, so it waits for Lint too.
+    await fireEvent.click(within(column(1)).getByRole("button", { name: "Add a job here" }));
+    await fireEvent.click(
+      within(screen.getByRole("group", { name: "Choose a job to add" })).getByRole("button", {
+        name: /Build \(Node\)/,
+      }),
+    );
+    let editor = screen.getByRole("dialog", { name: "Edit Build" });
     expect(within(editor).getByRole("button", { name: "Lint", pressed: true })).toBeTruthy();
+    expect(names(1)).toEqual(["Test", "Build"]);
+    await fireEvent.click(within(editor).getByRole("button", { name: "Done" }));
+
+    // The empty column on the right: after everything in the last column.
+    await fireEvent.click(screen.getByRole("button", { name: "Add a job after Test and Build" }));
+    await fireEvent.click(
+      within(screen.getByRole("group", { name: "Choose a job to add" })).getByRole("button", {
+        name: /Your own steps/,
+      }),
+    );
+    editor = screen.getByRole("dialog", { name: "Edit New job" });
+    expect(within(editor).getByRole("button", { name: "Test", pressed: true })).toBeTruthy();
+    expect(within(editor).getByRole("button", { name: "Build", pressed: true })).toBeTruthy();
+    expect(names(2)).toEqual(["New job"]);
   });
 
   it("edits a job with toggles instead of free text, and shows the YAML on demand", async () => {
@@ -592,7 +614,9 @@ describe("Workflow Studio", () => {
   it("lays jobs out left to right, with a way to add one that starts right away", async () => {
     await startWith(/Check every push/);
     expect(screen.queryByText("Runs first")).toBeNull();
-    await fireEvent.click(screen.getByRole("button", { name: "Add a job that starts right away" }));
+    const first = screen.getAllByRole("button", { name: "Add a job here" })[0];
+    expect(first.getAttribute("title")).toBe("Starts as soon as the workflow runs");
+    await fireEvent.click(first);
     const picker = screen.getByRole("group", { name: "Choose a job to add" });
     await fireEvent.click(within(picker).getByRole("button", { name: /Your own steps/ }));
     const editor = screen.getByRole("dialog", { name: "Edit New job" });
@@ -917,7 +941,7 @@ describe("Workflow Studio", () => {
     it("adds a job that runs a reusable workflow, with inputs and all of its secrets", async () => {
       await startWith(/Check every push/);
       await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
-      await fireEvent.click(screen.getByRole("button", { name: /Add a job after Lint/ }));
+      await fireEvent.click(screen.getAllByRole("button", { name: "Add a job here" })[1]);
       await fireEvent.input(screen.getByRole("textbox", { name: "Search jobs" }), { target: { value: "reusable" } });
       await fireEvent.click(screen.getByRole("button", { name: /Run a reusable workflow/ }));
       const editor = screen.getByRole("dialog", { name: "Edit Run a reusable workflow" });
@@ -1005,7 +1029,7 @@ describe("Workflow Studio", () => {
     it("warns, without blocking Save, when a deploy would run on every pull request, and fixes it", async () => {
       await startWith(/Check every push/);
       await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
-      await fireEvent.click(screen.getByRole("button", { name: /Add a job after Lint/ }));
+      await fireEvent.click(screen.getAllByRole("button", { name: "Add a job here" })[1]);
       const picker = screen.getByRole("group", { name: "Choose a job to add" });
       await fireEvent.click(within(picker).getByRole("button", { name: /Deploy to GitHub Pages/ }));
 
