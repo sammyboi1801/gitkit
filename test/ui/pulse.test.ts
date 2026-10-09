@@ -181,7 +181,7 @@ describe("Worktrees", () => {
     tree({ path: "/code/app.worktrees/gone", branch: "gone", prunable: "gitdir file points to non-existent location" }),
   ];
   const show = (worktrees = trees) =>
-    render(Worktrees, { props: { repo: repoState({ worktrees, base: { ...baseInfo, name: "main" } }) } });
+    render(Worktrees, { props: { repo: repoState({ worktrees, base: { ...baseInfo, name: "main" } }), busy: null } });
   const baseInfo = {
     ref: "origin/main",
     name: "main",
@@ -223,6 +223,47 @@ describe("Worktrees", () => {
     expect((within(main).getByRole("button") as HTMLButtonElement).disabled).toBe(true);
     expect((within(gone).getByRole("button") as HTMLButtonElement).disabled).toBe(true);
     expect(within(gone).queryByRole("button", { name: /to this window/ })).toBeNull();
+  });
+
+  it("creates, removes, locks and cleans up, showing the exact command on each button", async () => {
+    show();
+    await fireEvent.click(button("New worktree"));
+    expect(lastSent()).toEqual({ type: "newWorktree" });
+
+    const remove = button("Remove feature/login");
+    expect(remove.getAttribute("title")).toBe(
+      "Remove this worktree (its branch stays)\ngit worktree remove --force /code/app.worktrees/feature-login",
+    );
+    await fireEvent.click(remove);
+    expect(lastSent()).toEqual({
+      type: "action",
+      request: { type: "removeWorktree", path: "/code/app.worktrees/feature-login" },
+    });
+
+    await fireEvent.click(button("Lock feature/login"));
+    expect(lastSent()).toEqual({
+      type: "action",
+      request: { type: "lockWorktree", path: "/code/app.worktrees/feature-login" },
+    });
+    await fireEvent.click(button("Unlock detached at 1234567"));
+    expect(lastSent()).toEqual({ type: "action", request: { type: "unlockWorktree", path: "/elsewhere/agent" } });
+
+    const cleanUp = button("Clean up");
+    expect(cleanUp.getAttribute("title")).toBe("Forget the 1 worktree whose folder is gone\ngit worktree prune");
+    await fireEvent.click(cleanUp);
+    expect(lastSent()).toEqual({ type: "action", request: { type: "pruneWorktrees" } });
+  });
+
+  it("can't remove a locked worktree, and says why", () => {
+    show();
+    const remove = button("Remove detached at 1234567") as HTMLButtonElement;
+    expect(remove.disabled).toBe(true);
+    expect(remove.getAttribute("title")).toBe("It's locked (agent session running). Unlock it first.");
+  });
+
+  it("offers Clean up only when a worktree's folder is gone", () => {
+    show(trees.filter((w) => w.prunable === null));
+    expect(screen.queryByRole("button", { name: "Clean up" })).toBeNull();
   });
 
   it("stays out of the way for a repo with just its own checkout", () => {

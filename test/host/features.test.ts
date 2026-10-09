@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activate } from "../../src/extension";
@@ -6,7 +6,9 @@ import { readCi, readPullRequest, rerunFailedJobs } from "../../src/github/clien
 import { readRepo } from "../../src/git/repo";
 import type { HostToStudio } from "../../src/shared/messages";
 import type { WorkflowModel } from "../../src/workflow/model";
-import { commit, git, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
+import { formatCommand } from "../../src/git/format";
+import { samePath } from "../../src/git/paths";
+import { commit, git, initRepo, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
 import { harness, Uri } from "../mocks/vscode";
 import { memento, openPanel } from "./helpers";
 
@@ -40,6 +42,7 @@ describe("activation", () => {
     expect([...harness.views.keys()]).toEqual(["gitkit.pulse"]);
     expect([...harness.commands.keys()].sort()).toEqual([
       "gitkit.cleanupBranches",
+      "gitkit.newWorktree",
       "gitkit.oops",
       "gitkit.openBranchMap",
       "gitkit.openWorkflowStudio",
@@ -619,6 +622,168 @@ describe("worktrees", () => {
     git(app, "worktree", "add", "-q", "-b", "feature/login", feature);
     return { app, feature };
   }
+
+  /** A repo in its own temp folder, so worktrees created next to it stay inside that folder. */
+  function appRepo() {
+    const base = tempDir();
+    const app = initRepo(join(base, "app"));
+    commit(app, "first", { "a.txt": "one\n", ".gitignore": ".env\nnode_modules/\n" });
+    return { base, app };
+  }
+  const worktreeList = (dir: string) => git(dir, "worktree", "list", "--porcelain");
+  const modal = () => harness.shown.filter((s) => s.kind === "info" && s.detail !== undefined).at(-1)!;
+
+  describe("creating", () => {
+    it("makes one next to the repo for a new branch, copies listed files and runs the setup command", async () => {
+      const { base, app } = appRepo();
+      write(app, ".env", "SECRET=1\n");
+      harness.config["gitkit.worktrees.setupCommand"] = "npm install";
+      harness.config["gitkit.worktrees.copyFiles"] = [".env", "missing.json"];
+      const panel = await openPanel(app);
+      harness.answers.push("agent/fix-login", "Create", undefined);
+      await panel.send({ type: "newWorktree" });
+
+      const target = join(base, "app.worktrees", "agent-fix-login");
+      expect(modal().message).toBe(`Create a worktree for agent/fix-login (new, from main) at ${target}?`);
+      expect(modal().detail).toContain(formatCommand(["worktree", "add", "-b", "agent/fix-login", target, "main"]));
+      expect(modal().detail).toContain(
+        'Then: copy .env from the main checkout; run "npm install" in a terminal there.',
+      );
+      expect(modal().detail).toContain("Not copied: missing.json (not found).");
+
+      expect(worktreeList(app)).toContain("branch refs/heads/agent/fix-login");
+      expect(readFileSync(join(target, ".env"), "utf8")).toBe("SECRET=1\n");
+      expect(harness.terminals).toEqual([
+        { name: "Setup: agent-fix-login", cwd: target, sent: ["npm install"], shown: true },
+      ]);
+      expect(panel.repo().worktrees.map((w) => w.branch)).toEqual(["main", "agent/fix-login"]);
+    });
+
+    it("can put it inside the repo, kept out of git status without touching .gitignore", async () => {
+      const { app } = appRepo();
+      harness.config["gitkit.worktrees.location"] = "inside";
+      const panel = await openPanel(app);
+      harness.answers.push("agent/x", "Create", undefined);
+      await panel.send({ type: "newWorktree" });
+
+      expect(existsSync(join(app, ".worktrees", "agent-x", "a.txt"))).toBe(true);
+      expect(readFileSync(join(app, ".git", "info", "exclude"), "utf8")).toContain("/.worktrees/\n");
+      expect(git(app, "status", "--porcelain")).toBe("");
+      expect(readFileSync(join(app, ".gitignore"), "utf8")).toBe(".env\nnode_modules/\n");
+    });
+
+    it("checks out an existing branch without asking where to start, and opens it on request", async () => {
+      const { base, app } = appRepo();
+      git(app, "branch", "old-work");
+      const panel = await openPanel(app);
+      harness.answers.push("old-work", "Create", "Open in New Window");
+      await panel.send({ type: "newWorktree" });
+      const target = join(base, "app.worktrees", "old-work");
+      expect(harness.shown.some((s) => s.kind === "quickPick")).toBe(false);
+      expect(worktreeList(app)).toContain("branch refs/heads/old-work");
+      const opened = harness.executed.find((e) => e.command === "vscode.openFolder")!;
+      expect(samePath((opened.args[0] as Uri).fsPath, target)).toBe(true);
+    });
+
+    it("asks where a new branch starts when there's a choice", async () => {
+      const { app } = appRepo();
+      git(app, "switch", "-q", "-c", "feat/current");
+      commit(app, "on feat/current");
+      const panel = await openPanel(app);
+      harness.answers.push(
+        "agent/y",
+        (items: { ref: string }[]) => items.find((i) => i.ref === "feat/current"),
+        "Create",
+        undefined,
+      );
+      await panel.send({ type: "newWorktree" });
+      expect(git(app, "rev-parse", "agent/y")).toBe(git(app, "rev-parse", "feat/current"));
+    });
+
+    it("creates nothing when cancelled", async () => {
+      const { base, app } = appRepo();
+      const panel = await openPanel(app);
+      harness.answers.push("agent/z", undefined);
+      await panel.send({ type: "newWorktree" });
+      expect(existsSync(join(base, "app.worktrees"))).toBe(false);
+      expect(worktreeList(app)).not.toContain("agent/z");
+    });
+
+    it("says where a branch is open instead of letting git fail", async () => {
+      const { app } = repoWithWorktree();
+      const panel = await openPanel(app);
+      harness.answers.push("feature/login");
+      await panel.send({ type: "newWorktree" });
+      expect(panel.posted("error").at(-1)?.error.message).toMatch(/^feature\/login is open in another worktree/);
+    });
+  });
+
+  describe("removing and cleaning up", () => {
+    it("warns about uncommitted files, removes it, then offers to delete its merged branch", async () => {
+      const { app, feature } = repoWithWorktree();
+      write(feature, "scratch.txt", "agent output\n");
+      const panel = await openPanel(app);
+      const path = panel.repo().worktrees[1].path;
+      harness.answers.push("Remove worktree", "Delete Branch");
+      await panel.send({ type: "action", request: { type: "removeWorktree", path } });
+
+      const warning = harness.shown.find((s) => s.kind === "warning")!;
+      expect(warning.message).toMatch(/It has 1 uncommitted file, which will be deleted\./);
+      expect(existsSync(feature)).toBe(false);
+      expect(harness.shown.some((s) => s.message.includes("feature/login is merged into main"))).toBe(true);
+      expect(git(app, "branch", "--list", "feature/login")).toBe("");
+      expect(panel.repo().worktrees).toEqual([]);
+    });
+
+    it("keeps an unmerged branch without asking", async () => {
+      const { app, feature } = repoWithWorktree();
+      commit(feature, "work not on main yet");
+      const panel = await openPanel(app);
+      harness.answers.push("Remove worktree");
+      await panel.send({ type: "action", request: { type: "removeWorktree", path: panel.repo().worktrees[1].path } });
+      expect(existsSync(feature)).toBe(false);
+      expect(harness.shown.some((s) => s.message.includes("delete the branch too"))).toBe(false);
+      expect(git(app, "branch", "--list", "feature/login")).toContain("feature/login");
+    });
+
+    it("leaves locked worktrees alone, and locks and unlocks on request", async () => {
+      const { app, feature } = repoWithWorktree();
+      const panel = await openPanel(app);
+      const path = panel.repo().worktrees[1].path;
+      await panel.send({ type: "action", request: { type: "lockWorktree", path } });
+      expect(panel.repo().worktrees[1].locked).toBe("");
+      await panel.send({ type: "action", request: { type: "removeWorktree", path } });
+      expect(panel.posted("error").at(-1)?.error.message).toBe("It's locked. Unlock it first.");
+      expect(existsSync(feature)).toBe(true);
+      await panel.send({ type: "action", request: { type: "unlockWorktree", path } });
+      expect(panel.repo().worktrees[1].locked).toBeNull();
+    });
+
+    it("forgets worktrees whose folder was deleted by hand", async () => {
+      const { app, feature } = repoWithWorktree();
+      rmSync(feature, { recursive: true, force: true });
+      const panel = await openPanel(app);
+      expect(panel.repo().worktrees[1].prunable).not.toBeNull();
+      await panel.send({ type: "action", request: { type: "pruneWorktrees" } });
+      expect(panel.repo().worktrees).toEqual([]);
+    });
+  });
+
+  it("marks branches open in another worktree in the branch switcher, and opens that worktree", async () => {
+    const { app, feature } = repoWithWorktree();
+    const panel = await openPanel(app);
+    harness.answers.push((items: { label: string; description?: string }[]) =>
+      items.find((i) => i.label.includes("feature/login")),
+    );
+    await panel.send({ type: "pickBranch" });
+    const item = (
+      harness.shown.find((s) => s.kind === "quickPick")!.items as { label: string; description?: string }[]
+    ).find((i) => i.label.includes("feature/login"))!;
+    expect(item.label).toBe("$(folder-opened) feature/login");
+    expect(item.description).toMatch(/^open in a worktree: /);
+    const opened = harness.executed.find((e) => e.command === "vscode.openFolder")!;
+    expect(samePath((opened.args[0] as Uri).fsPath, feature)).toBe(true);
+  });
 
   it("lists the repo's worktrees in the panel", async () => {
     const { app } = repoWithWorktree();

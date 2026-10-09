@@ -84,6 +84,12 @@
         "category": "GitKit"
       },
       {
+        "command": "gitkit.newWorktree",
+        "title": "New Worktree…",
+        "category": "GitKit",
+        "icon": "$(folder-library)"
+      },
+      {
         "command": "gitkit.openWorkflowStudio",
         "title": "Open Workflow Studio",
         "category": "GitKit",
@@ -159,6 +165,32 @@
           "default": 10,
           "minimum": 1,
           "description": "Files bigger than this (in MB) get a warning before they're committed."
+        },
+        "gitkit.worktrees.location": {
+          "type": "string",
+          "enum": [
+            "sibling",
+            "inside"
+          ],
+          "enumDescriptions": [
+            "Next to the repo, in <repo>.worktrees/: nothing inside your project changes.",
+            "Inside the repo, in .worktrees/ (kept out of git status through .git/info/exclude, not .gitignore)."
+          ],
+          "default": "sibling",
+          "description": "Where GitKit creates new worktrees. Worktrees made elsewhere (by the CLI or other tools) are listed wherever they are."
+        },
+        "gitkit.worktrees.setupCommand": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "A command to run in a new worktree, in a terminal you can see, e.g. `npm install`. A fresh worktree has no installed dependencies, so agents often need this before their first command."
+        },
+        "gitkit.worktrees.copyFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Files or folders git ignores that a new worktree should get a copy of, relative to the repo, e.g. `[\".vscode/settings.json\"]`. Nothing is copied unless listed here: add `.env` only if you want your secrets duplicated into each worktree."
         },
         "gitkit.identities": {
           "type": "array",

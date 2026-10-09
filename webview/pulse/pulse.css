@@ -1669,3 +1669,14 @@ body {
 .worktree.missing .worktree-name {
   opacity: 0.6;
 }
+
+.worktrees-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 12px;
+}
+
+.worktrees-header .section-toggle {
+  flex: 1;
+}

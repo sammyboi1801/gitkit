@@ -34,7 +34,13 @@ export type ActionRequest =
   | { type: "deleteBranches"; names: string[] }
   | { type: "mergeBranch"; branch: string }
   | { type: "rebaseOnto"; branch: string }
-  | { type: "switchAndMerge"; target: string; source: string };
+  | { type: "switchAndMerge"; target: string; source: string }
+  /** newBranch: create `branch` from `from` (default HEAD); otherwise check out the existing one. */
+  | { type: "addWorktree"; branch: string; path: string; newBranch: boolean; from?: string }
+  | { type: "removeWorktree"; path: string }
+  | { type: "pruneWorktrees" }
+  | { type: "lockWorktree"; path: string; reason?: string }
+  | { type: "unlockWorktree"; path: string };
 
 export interface Plan {
   label: string;
@@ -103,9 +109,68 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
       if (repo.remotes.length === 0) return fail("No remote configured.");
       return ok("Fetch", [["fetch", "--all", "--prune"]]);
 
-    case "switch":
+    case "switch": {
       if (request.branch === status.branch) return fail(`Already on ${request.branch}.`);
+      const elsewhere = openElsewhere(repo, request.branch);
+      if (elsewhere) return fail(elsewhere);
       return ok("Switch", [["switch", request.branch]]);
+    }
+
+    case "addWorktree": {
+      const branch = request.branch.trim();
+      if (!isValidBranchName(branch)) return fail(`"${branch}" isn't a valid branch name.`);
+      if (repo.worktrees.some((w) => w.path === request.path))
+        return fail(`There's already a worktree at ${request.path}.`);
+      if (request.newBranch) {
+        return ok("New worktree", [["worktree", "add", "-b", branch, request.path, request.from ?? "HEAD"]]);
+      }
+      const elsewhere =
+        openElsewhere(repo, branch) ?? (branch === status.branch ? `${branch} is open in this window.` : null);
+      if (elsewhere) return fail(elsewhere);
+      return ok("New worktree", [["worktree", "add", request.path, branch]]);
+    }
+
+    case "removeWorktree": {
+      const w = repo.worktrees.find((t) => t.path === request.path);
+      if (!w) return fail("That worktree isn't there any more.");
+      if (w.main) return fail("That's the main checkout, the one the other worktrees belong to.");
+      if (w.current) return fail("This window has that worktree open. Remove it from another window.");
+      if (w.locked !== null) return fail(`It's locked${w.locked ? ` (${w.locked})` : ""}. Unlock it first.`);
+      if (w.prunable !== null) {
+        return ok("Clean up", [["worktree", "prune"]]);
+      }
+      const what = w.branch ? `Its branch ${w.branch} stays, with all its commits.` : "";
+      if (w.changes) {
+        return ok(
+          "Remove worktree",
+          [["worktree", "remove", "--force", w.path]],
+          `Remove the worktree at ${w.path}? It has ${w.changes} uncommitted file${w.changes === 1 ? "" : "s"}, which will be deleted. ${what}`.trim(),
+        );
+      }
+      return ok(
+        "Remove worktree",
+        [["worktree", "remove", w.path]],
+        `Remove the worktree at ${w.path}? ${what}`.trim(),
+      );
+    }
+
+    case "pruneWorktrees":
+      if (!repo.worktrees.some((w) => w.prunable !== null)) return fail("No worktrees have gone missing.");
+      return ok("Clean up", [["worktree", "prune"]]);
+
+    case "lockWorktree": {
+      const w = repo.worktrees.find((t) => t.path === request.path);
+      if (!w || w.main) return fail("Only an added worktree can be locked.");
+      if (w.locked !== null) return fail("It's already locked.");
+      const reason = request.reason?.trim();
+      return ok("Lock", [["worktree", "lock", ...(reason ? ["--reason", reason] : []), w.path]]);
+    }
+
+    case "unlockWorktree": {
+      const w = repo.worktrees.find((t) => t.path === request.path);
+      if (!w || w.locked === null) return fail("It isn't locked.");
+      return ok("Unlock", [["worktree", "unlock", w.path]]);
+    }
 
     case "createBranch": {
       const name = request.name.trim();
@@ -276,6 +341,8 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
       if (request.target === request.source) return fail("A branch can't be merged into itself.");
       if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
       if (request.target === status.branch) return planAction({ type: "mergeBranch", branch: request.source }, repo);
+      const elsewhere = openElsewhere(repo, request.target);
+      if (elsewhere) return fail(elsewhere);
       return ok(
         `Merge into ${request.target}`,
         [
@@ -296,6 +363,15 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
       );
     }
   }
+}
+
+/**
+ * Why a branch can't be checked out here because another worktree has it, or null. Git refuses
+ * that with an error; saying where it's open lets the user go there instead.
+ */
+function openElsewhere(repo: RepoState, branch: string): string | null {
+  const w = repo.worktrees.find((t) => t.branch === branch && !t.current);
+  return w ? `${branch} is open in another worktree (${w.path}). Open that worktree instead.` : null;
 }
 
 function headIsUnpushed(repo: RepoState): boolean {

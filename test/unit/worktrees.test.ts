@@ -1,14 +1,18 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { discoverRepos, pathKey } from "../../src/git/discover";
 import { realPath } from "../../src/git/paths";
 import {
+  filesToCopy,
   gitFolderKind,
+  newWorktreePath,
   parseStatusPaths,
   parseWorktreeList,
   readWorktreeInfo,
   readWorktrees,
+  withWorktreesExcluded,
+  worktreeFolderName,
 } from "../../src/git/worktrees";
 import { commit, git, initRepo, makeRepo, tempDir, write } from "../fixtures/repos";
 
@@ -130,6 +134,84 @@ describe("readWorktreeInfo", () => {
     expect(parseStatusPaths(git(dir, "status", "--porcelain", "-z", "--untracked-files=all")).sort()).toEqual([
       "new.txt",
       "renamed.txt",
+    ]);
+  });
+});
+
+describe("where new worktrees go", () => {
+  it.each([
+    ["feature/login", "feature-login"],
+    ["agent/fix/deep", "agent-fix-deep"],
+    ["fix:colon*star", "fix-colon-star"],
+    ["release/1.0.", "release-1.0"],
+    [".hidden", "hidden"],
+    ["con", "con-worktree"],
+    ["lpt1", "lpt1-worktree"],
+    ["//", "worktree"],
+  ])("%s → folder %s", (branch, folder) => {
+    expect(worktreeFolderName(branch)).toBe(folder);
+  });
+
+  const root = join("/code", "app");
+  const none = () => false;
+
+  it("puts them next to the repo by default, or inside it in .worktrees", () => {
+    expect(newWorktreePath(root, "feature/login", "sibling", none)).toBe(
+      join("/code", "app.worktrees", "feature-login"),
+    );
+    expect(newWorktreePath(root, "feature/login", "inside", none)).toBe(
+      join("/code", "app", ".worktrees", "feature-login"),
+    );
+  });
+
+  it("numbers names that are taken, including two branches that sanitize alike", () => {
+    const taken = new Set([
+      join("/code", "app.worktrees", "feature-login"),
+      join("/code", "app.worktrees", "feature-login-2"),
+    ]);
+    // feature/login and feature-login both want "feature-login".
+    expect(newWorktreePath(root, "feature-login", "sibling", (p) => taken.has(p))).toBe(
+      join("/code", "app.worktrees", "feature-login-3"),
+    );
+  });
+
+  it("adds the in-repo folder to info/exclude once, keeping what's there", () => {
+    expect(withWorktreesExcluded("")).toBe("# Worktrees created by GitKit\n/.worktrees/\n");
+    expect(withWorktreesExcluded("*.log")).toBe("*.log\n# Worktrees created by GitKit\n/.worktrees/\n");
+    expect(withWorktreesExcluded("*.log\n/.worktrees/\n")).toBeNull();
+    expect(withWorktreesExcluded(".worktrees\r\n")).toBeNull();
+  });
+
+  it("copies only listed files that exist, stay inside the repo and aren't there yet", () => {
+    const from = tempDir();
+    const to = tempDir();
+    write(from, ".env", "SECRET=1\n");
+    write(from, ".vscode/settings.json", "{}");
+    write(from, "already.txt", "a");
+    write(to, "already.txt", "b");
+    const { copy, skipped } = filesToCopy(
+      [
+        ".env",
+        "./.vscode/settings.json",
+        "missing.txt",
+        "already.txt",
+        "../outside",
+        "/etc/passwd",
+        "C:\\Windows",
+        " ",
+      ],
+      from,
+      to,
+      existsSync,
+    );
+    expect(copy.map((c) => c.name)).toEqual([".env", ".vscode/settings.json"]);
+    expect(copy[0]).toEqual({ from: join(from, ".env"), to: join(to, ".env"), name: ".env" });
+    expect(skipped).toEqual([
+      { name: "missing.txt", why: "not found" },
+      { name: "already.txt", why: "already there" },
+      { name: "../outside", why: "must be a path inside the repo" },
+      { name: "/etc/passwd", why: "must be a path inside the repo" },
+      { name: "C:\\Windows", why: "must be a path inside the repo" },
     ]);
   });
 });

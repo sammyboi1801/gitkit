@@ -127,6 +127,8 @@ export const harness = {
   folders: [] as string[],
   focused: true,
   session: undefined as { accessToken: string } | undefined,
+  /** Terminals the extension opened, and what it typed into them. */
+  terminals: [] as { name: string; cwd: string; sent: string[]; shown: boolean }[],
   commands: new Map<string, (...args: unknown[]) => unknown>(),
   panels: [] as { viewType: string; title: string; webview: FakeWebview; dispose(): void }[],
   views: new Map<string, { resolveWebviewView(view: unknown): void }>(),
@@ -143,6 +145,7 @@ export const harness = {
     this.folders = [];
     this.focused = true;
     this.session = undefined;
+    this.terminals = [];
     this.commands.clear();
     this.panels = [];
     this.views.clear();
@@ -207,6 +210,15 @@ export const window = {
     const uri = target instanceof Uri ? target : target.uri;
     harness.opened.push(uri.fsPath);
     return {};
+  },
+  createTerminal(options: { name: string; cwd: string }) {
+    const terminal = { name: options.name, cwd: options.cwd, sent: [] as string[], shown: false };
+    harness.terminals.push(terminal);
+    return {
+      show: () => void (terminal.shown = true),
+      sendText: (text: string) => void terminal.sent.push(text),
+      dispose() {},
+    };
   },
   setStatusBarMessage: (text: string) => {
     harness.shown.push({ kind: "status", message: text });

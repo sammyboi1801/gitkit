@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isValidBranchName, planAction, type PlanResult } from "../../src/git/actions";
-import type { BaseInfo, FileChange, RepoState, StatusInfo } from "../../src/shared/types";
+import type { BaseInfo, FileChange, RepoState, StatusInfo, WorktreeInfo } from "../../src/shared/types";
 
 const repo = (status: Partial<StatusInfo> = {}, remotes = ["origin"]): RepoState => ({
   root: "/repo",
@@ -271,5 +271,124 @@ describe("branch-to-branch actions (Branch Map)", () => {
     ] as const) {
       expect(planAction(request, paused).ok).toBe(false);
     }
+  });
+});
+
+describe("worktrees", () => {
+  const tree = (path: string, extra: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
+    path,
+    head: "abc",
+    branch: null,
+    main: false,
+    bare: false,
+    locked: null,
+    prunable: null,
+    current: false,
+    changes: 0,
+    ahead: 0,
+    behind: 0,
+    lastActivity: null,
+    ...extra,
+  });
+  const withTrees = (...extra: WorktreeInfo[]): RepoState => ({
+    ...repo(),
+    worktrees: [tree("/repo", { branch: "main", main: true, current: true }), ...extra],
+  });
+  const agent = tree("/repo.worktrees/agent", { branch: "agent/auth" });
+  const reason = (result: PlanResult) => (result.ok ? "" : result.reason);
+
+  it("creates a worktree on a new branch from a start point, or on an existing branch", () => {
+    const r = withTrees();
+    expect(
+      steps(
+        planAction({ type: "addWorktree", branch: "agent/x", path: "/w/x", newBranch: true, from: "origin/main" }, r),
+      ),
+    ).toEqual([["worktree", "add", "-b", "agent/x", "/w/x", "origin/main"]]);
+    expect(steps(planAction({ type: "addWorktree", branch: "agent/x", path: "/w/x", newBranch: true }, r))).toEqual([
+      ["worktree", "add", "-b", "agent/x", "/w/x", "HEAD"],
+    ]);
+    expect(steps(planAction({ type: "addWorktree", branch: "old", path: "/w/old", newBranch: false }, r))).toEqual([
+      ["worktree", "add", "/w/old", "old"],
+    ]);
+  });
+
+  it("won't put an existing branch in a second worktree, or reuse a worktree's folder", () => {
+    const r = withTrees(agent);
+    expect(reason(planAction({ type: "addWorktree", branch: "agent/auth", path: "/w/2", newBranch: false }, r))).toBe(
+      "agent/auth is open in another worktree (/repo.worktrees/agent). Open that worktree instead.",
+    );
+    expect(reason(planAction({ type: "addWorktree", branch: "main", path: "/w/2", newBranch: false }, r))).toBe(
+      "main is open in this window.",
+    );
+    expect(planAction({ type: "addWorktree", branch: "x", path: "/repo.worktrees/agent", newBranch: true }, r).ok).toBe(
+      false,
+    );
+    expect(planAction({ type: "addWorktree", branch: "bad name", path: "/w/3", newBranch: true }, r).ok).toBe(false);
+  });
+
+  it("says where a branch is open instead of letting git fail on switch or drag-to-merge", () => {
+    const r = withTrees(agent);
+    expect(reason(planAction({ type: "switch", branch: "agent/auth" }, r))).toMatch(/open in another worktree/);
+    expect(reason(planAction({ type: "switchAndMerge", target: "agent/auth", source: "x" }, r))).toMatch(
+      /open in another worktree/,
+    );
+    expect(planAction({ type: "switch", branch: "other" }, r).ok).toBe(true);
+  });
+
+  it("removes a clean worktree, keeping its branch", () => {
+    const result = planAction({ type: "removeWorktree", path: agent.path }, withTrees(agent));
+    expect(steps(result)).toEqual([["worktree", "remove", "/repo.worktrees/agent"]]);
+    expect(result.ok && result.plan.confirm).toBe(
+      "Remove the worktree at /repo.worktrees/agent? Its branch agent/auth stays, with all its commits.",
+    );
+  });
+
+  it("warns that uncommitted files go with it", () => {
+    const result = planAction({ type: "removeWorktree", path: agent.path }, withTrees({ ...agent, changes: 7 }));
+    expect(steps(result)).toEqual([["worktree", "remove", "--force", "/repo.worktrees/agent"]]);
+    expect(result.ok && result.plan.confirm).toMatch(/It has 7 uncommitted files, which will be deleted\./);
+  });
+
+  it("won't remove the main checkout, this window's own, a locked one, or one that's gone", () => {
+    const locked = tree("/w/locked", { locked: "agent session running" });
+    const silent = tree("/w/silent", { locked: "" });
+    const gone = tree("/w/gone", { prunable: "gitdir file points to non-existent location" });
+    const here = tree("/w/here", { current: true });
+    const r = {
+      ...withTrees(locked, silent, gone, here),
+      worktrees: [tree("/repo", { main: true }), locked, silent, gone, here],
+    };
+    expect(reason(planAction({ type: "removeWorktree", path: "/repo" }, r))).toMatch(/main checkout/);
+    expect(reason(planAction({ type: "removeWorktree", path: "/w/here" }, r))).toMatch(
+      /This window has that worktree open/,
+    );
+    expect(reason(planAction({ type: "removeWorktree", path: "/w/locked" }, r))).toBe(
+      "It's locked (agent session running). Unlock it first.",
+    );
+    expect(reason(planAction({ type: "removeWorktree", path: "/w/silent" }, r))).toBe("It's locked. Unlock it first.");
+    expect(steps(planAction({ type: "removeWorktree", path: "/w/gone" }, r))).toEqual([["worktree", "prune"]]);
+    expect(reason(planAction({ type: "removeWorktree", path: "/nowhere" }, r))).toMatch(/isn't there any more/);
+  });
+
+  it("cleans up gone worktrees only when there are some", () => {
+    expect(planAction({ type: "pruneWorktrees" }, withTrees(agent)).ok).toBe(false);
+    expect(steps(planAction({ type: "pruneWorktrees" }, withTrees({ ...agent, prunable: "gone" })))).toEqual([
+      ["worktree", "prune"],
+    ]);
+  });
+
+  it("locks with an optional reason, and unlocks", () => {
+    const r = withTrees(agent);
+    expect(steps(planAction({ type: "lockWorktree", path: agent.path, reason: " agent running " }, r))).toEqual([
+      ["worktree", "lock", "--reason", "agent running", "/repo.worktrees/agent"],
+    ]);
+    expect(steps(planAction({ type: "lockWorktree", path: agent.path }, r))).toEqual([
+      ["worktree", "lock", "/repo.worktrees/agent"],
+    ]);
+    expect(planAction({ type: "unlockWorktree", path: agent.path }, r).ok).toBe(false);
+    expect(
+      steps(planAction({ type: "unlockWorktree", path: agent.path }, withTrees({ ...agent, locked: "" }))),
+    ).toEqual([["worktree", "unlock", "/repo.worktrees/agent"]]);
+    expect(planAction({ type: "lockWorktree", path: "/repo" }, r).ok).toBe(false);
   });
 });

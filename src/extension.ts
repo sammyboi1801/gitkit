@@ -19,6 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
       WorkflowStudioPanel.show(context.extensionUri, repo && { root: repo.root, baseName: repo.base?.name ?? null });
     }),
     vscode.commands.registerCommand("gitkit.cleanupBranches", () => pulse.cleanupBranches()),
+    vscode.commands.registerCommand("gitkit.newWorktree", () => pulse.newWorktree()),
   );
 }
 

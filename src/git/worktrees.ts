@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Worktree, WorktreeInfo } from "../shared/types";
 import { samePath } from "./paths";
 import { runGit } from "./runner";
@@ -48,6 +48,83 @@ export function parseWorktreeList(out: string): Worktree[] {
 export async function readWorktrees(root: string): Promise<Worktree[]> {
   const { stdout } = await runGit(["worktree", "list", "--porcelain", "-z"], root);
   return parseWorktreeList(stdout);
+}
+
+// Names Windows won't allow as a file or folder, whatever the extension.
+const RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+
+/** "feature/login" → "feature-login": one folder (not nested ones), valid on every OS. */
+export function worktreeFolderName(branch: string): string {
+  const name = [...branch]
+    // Control characters, then the ones Windows forbids in file names.
+    .map((c) => (c.charCodeAt(0) < 32 ? "-" : c))
+    .join("")
+    .replace(/[\\/]+/g, "-")
+    .replace(/[<>:"|?*]/g, "-")
+    .replace(/-{2,}/g, "-")
+    // Windows drops trailing dots and spaces; a leading dot would hide the folder.
+    .replace(/^[.\s-]+|[.\s-]+$/g, "");
+  if (!name) return "worktree";
+  return RESERVED.test(name) ? `${name}-worktree` : name;
+}
+
+export type WorktreeLocation = "sibling" | "inside";
+
+/**
+ * Where GitKit creates a worktree for `branch`: next to the repo in <repo>.worktrees/, or inside it
+ * in .worktrees/. A name that's taken (by a folder or another worktree) gets -2, -3 and so on.
+ */
+export function newWorktreePath(
+  mainRoot: string,
+  branch: string,
+  location: WorktreeLocation,
+  taken: (path: string) => boolean,
+): string {
+  const parent =
+    location === "inside" ? join(mainRoot, ".worktrees") : join(dirname(mainRoot), `${basename(mainRoot)}.worktrees`);
+  const name = worktreeFolderName(branch);
+  for (let n = 1; ; n++) {
+    const path = join(parent, n === 1 ? name : `${name}-${n}`);
+    if (!taken(path)) return path;
+  }
+}
+
+/**
+ * The repo's info/exclude with `.worktrees/` added, or null when it's already there. Excluded there,
+ * not in .gitignore, so choosing in-repo worktrees doesn't leave a change to commit.
+ */
+export function withWorktreesExcluded(exclude: string): string | null {
+  if (exclude.split(/\r?\n/).some((line) => /^\/?\.worktrees\/?$/.test(line.trim()))) return null;
+  const sep = exclude && !exclude.endsWith("\n") ? "\n" : "";
+  return `${exclude}${sep}# Worktrees created by GitKit\n/.worktrees/\n`;
+}
+
+/**
+ * Which of the files the user listed to copy into a new worktree (things git ignores, like .env)
+ * can be copied: they must exist, stay inside the repo, and not already be there.
+ */
+export function filesToCopy(
+  listed: readonly string[],
+  from: string,
+  to: string,
+  exists: (path: string) => boolean,
+): { copy: { from: string; to: string; name: string }[]; skipped: { name: string; why: string }[] } {
+  const copy: { from: string; to: string; name: string }[] = [];
+  const skipped: { name: string; why: string }[] = [];
+  for (const raw of listed) {
+    const name = raw.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+    if (!name) continue;
+    if (isAbsolute(name) || /^[a-z]:/i.test(name) || name.split("/").includes("..")) {
+      skipped.push({ name: raw, why: "must be a path inside the repo" });
+      continue;
+    }
+    const source = join(from, name);
+    const target = join(to, name);
+    if (!exists(source)) skipped.push({ name, why: "not found" });
+    else if (exists(target)) skipped.push({ name, why: "already there" });
+    else copy.push({ from: source, to: target, name });
+  }
+  return { copy, skipped };
 }
 
 /** More would mean many git calls on every refresh; past this, the rest are listed without details. */

@@ -115,7 +115,7 @@
     {#key view.repo.root}
       <Remote repo={view.repo} {busy} {fetching} />
       <Changes repo={view.repo} {busy} {conflictBlocks} />
-      <Worktrees repo={view.repo} />
+      <Worktrees repo={view.repo} {busy} />
       <Stashes repo={view.repo} {busy} />
       <History repo={view.repo} {busy} />
       <Graph repo={view.repo} {busy} {details} />

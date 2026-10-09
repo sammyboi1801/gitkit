@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { RepoState, WorktreeInfo } from "../../src/shared/types";
-  import { ago, worktreeLabel } from "./util";
+  import { ago, preview, worktreeLabel } from "./util";
   import { loadCollapsed, saveCollapsed, send } from "./vscode";
 
   // Every checkout of this repo, including ones made by the CLI or agent tools: which branch each
   // has, whether there's uncommitted work in it, and how far it is from main.
 
-  let { repo }: { repo: RepoState } = $props();
+  let { repo, busy }: { repo: RepoState; busy: string | null } = $props();
 
   let collapsed = $state(loadCollapsed("worktrees", false));
   $effect(() => saveCollapsed("worktrees", collapsed));
@@ -26,14 +26,33 @@
   }
 
   const open = (w: WorktreeInfo, newWindow: boolean) => send({ type: "openWorktree", path: w.path, newWindow });
+  const prune = $derived(preview({ type: "pruneWorktrees" }, repo));
+  const missing = $derived(repo.worktrees.filter((w) => w.prunable !== null).length);
 </script>
 
 {#if repo.worktrees.length > 1}
   <section class="section worktrees">
-    <button class="group-header section-toggle" aria-expanded={!collapsed} onclick={() => (collapsed = !collapsed)}>
-      <span class="codicon codicon-chevron-{collapsed ? 'right' : 'down'}"></span>
-      <span>Worktrees</span><span class="count">{repo.worktrees.length}</span>
-    </button>
+    <div class="worktrees-header">
+      <button class="group-header section-toggle" aria-expanded={!collapsed} onclick={() => (collapsed = !collapsed)}>
+        <span class="codicon codicon-chevron-{collapsed ? 'right' : 'down'}"></span>
+        <span>Worktrees</span><span class="count">{repo.worktrees.length}</span>
+      </button>
+      {#if missing}
+        <button
+          class="small-button"
+          title={`Forget the ${missing} worktree${missing === 1 ? "" : "s"} whose folder is gone\n${prune.text}`}
+          disabled={!prune.ok || !!busy}
+          onclick={() => send({ type: "action", request: { type: "pruneWorktrees" } })}>Clean up</button
+        >
+      {/if}
+      <button
+        class="icon-button"
+        title="New worktree: work on a branch in its own folder"
+        aria-label="New worktree"
+        disabled={!!busy}
+        onclick={() => send({ type: "newWorktree" })}><span class="codicon codicon-add"></span></button
+      >
+    </div>
 
     {#if !collapsed}
       <ul class="worktree-list" aria-label="Worktrees">
@@ -76,12 +95,36 @@
               </span>
             </button>
             {#if openable}
+              {@const remove = preview({ type: "removeWorktree", path: w.path }, repo)}
+              {@const lock = preview(
+                { type: w.locked === null ? "lockWorktree" : "unlockWorktree", path: w.path },
+                repo,
+              )}
               <span class="file-actions">
                 <button
                   class="icon-button"
                   title="Add to this window (it becomes a multi-folder workspace)"
                   aria-label="Add {name(w)} to this window"
                   onclick={() => open(w, false)}><span class="codicon codicon-root-folder"></span></button
+                >
+                <button
+                  class="icon-button"
+                  title={`${w.locked === null ? "Lock, so it can't be removed or cleaned up by accident" : "Unlock"}\n${lock.text}`}
+                  aria-label="{w.locked === null ? 'Lock' : 'Unlock'} {name(w)}"
+                  disabled={!lock.ok || !!busy}
+                  onclick={() =>
+                    send({
+                      type: "action",
+                      request: { type: w.locked === null ? "lockWorktree" : "unlockWorktree", path: w.path },
+                    })}><span class="codicon codicon-{w.locked === null ? 'lock' : 'unlock'}"></span></button
+                >
+                <button
+                  class="icon-button"
+                  title={remove.ok ? `Remove this worktree (its branch stays)\n${remove.text}` : remove.text}
+                  aria-label="Remove {name(w)}"
+                  disabled={!remove.ok || !!busy}
+                  onclick={() => send({ type: "action", request: { type: "removeWorktree", path: w.path } })}
+                  ><span class="codicon codicon-trash"></span></button
                 >
               </span>
             {/if}

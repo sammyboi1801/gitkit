@@ -1,3 +1,4 @@
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
@@ -12,6 +13,7 @@ import {
   readSummary,
 } from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
+import { filesToCopy, newWorktreePath, withWorktreesExcluded, type WorktreeLocation } from "../../git/worktrees";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, CiStatus, PrState, RepoState, RepoSummary } from "../../shared/types";
 import { COMMIT_LOG_FORMAT, parseCommitLog, prDraft } from "../../github/pr";
@@ -291,6 +293,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       case "openFolder":
         await vscode.commands.executeCommand("vscode.openFolder");
         return;
+      case "newWorktree":
+        return this.newWorktree();
       case "openWorktree":
         return this.openWorktree(message.path, message.newWindow);
       case "initRepo": {
@@ -456,16 +460,36 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private async pickBranch(): Promise<void> {
     if (!this.repo) return;
     const branches = await readBranches(this.repo.root);
-    type Item = vscode.QuickPickItem & { branch?: string; create?: boolean };
+    type Item = vscode.QuickPickItem & { branch?: string; create?: boolean; worktree?: string; newWorktree?: boolean };
+    const elsewhere = new Map(
+      this.repo.worktrees.filter((w) => w.branch && !w.current).map((w) => [w.branch!, w.path] as const),
+    );
     const items: Item[] = [
       { label: "$(add) Create new branch…", create: true, alwaysShow: true },
+      {
+        label: "$(folder-library) New worktree…",
+        description: "work on a branch in its own folder",
+        newWorktree: true,
+        alwaysShow: true,
+      },
       { label: "Branches", kind: vscode.QuickPickItemKind.Separator },
-      ...branches.map((b) => ({
-        label: `${b.current ? "$(check)" : "$(git-branch)"} ${b.name}`,
-        description: describeTracking(b),
-        detail: b.subject,
-        branch: b.name,
-      })),
+      ...branches.map((b) => {
+        const where = elsewhere.get(b.name);
+        return where
+          ? {
+              label: `$(folder-opened) ${b.name}`,
+              // Git won't check out a branch another worktree has; open that worktree instead.
+              description: `open in a worktree: ${where}`,
+              detail: b.subject,
+              worktree: where,
+            }
+          : {
+              label: `${b.current ? "$(check)" : "$(git-branch)"} ${b.name}`,
+              description: describeTracking(b),
+              detail: b.subject,
+              branch: b.name,
+            };
+      }),
     ];
     const choice = await vscode.window.showQuickPick(items, {
       title: "Switch branch",
@@ -476,9 +500,145 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (choice.create) {
       const name = await askBranchName("Create a new branch from the current commit");
       if (name) await this.runAction({ type: "createBranch", name });
+    } else if (choice.newWorktree) {
+      await this.newWorktree();
+    } else if (choice.worktree) {
+      await this.openWorktree(choice.worktree, true);
     } else if (choice.branch) {
       await this.runAction({ type: "switch", branch: choice.branch });
     }
+  }
+
+  /**
+   * "New worktree": a branch (new, or an existing one no other worktree has), where a new branch
+   * starts from, then one confirmation showing every command. After that, the listed ignored
+   * files are copied over and the setup command runs in a terminal there, visibly.
+   */
+  async newWorktree(): Promise<void> {
+    const repo = this.repo;
+    if (!repo || this.busy) return;
+    const mainRoot = repo.worktrees.find((w) => w.main)?.path ?? repo.root;
+    const branch = (
+      await vscode.window.showInputBox({
+        title: "New worktree",
+        prompt: "The branch to work on in it: a new name, or a branch that already exists",
+        placeHolder: "agent/fix-login",
+        validateInput: (v) => (isValidBranchName(v.trim()) ? undefined : "That isn't a valid branch name."),
+      })
+    )?.trim();
+    if (!branch) return;
+
+    const exists = await runGit(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], repo.root).then(
+      () => true,
+      () => false,
+    );
+    let from: string | undefined;
+    if (!exists) {
+      const starts: (vscode.QuickPickItem & { ref: string })[] = [];
+      if (repo.base) {
+        starts.push({ label: repo.base.ref, description: "the main branch, as of the last fetch", ref: repo.base.ref });
+      }
+      if (repo.status.branch && repo.status.branch !== repo.base?.name) {
+        starts.push({ label: repo.status.branch, description: "the branch you're on", ref: repo.status.branch });
+      }
+      if (starts.length > 1) {
+        const pick = await vscode.window.showQuickPick(starts, { title: `Start ${branch} from` });
+        if (!pick) return;
+        from = pick.ref;
+      } else from = starts[0]?.ref;
+    }
+
+    const config = vscode.workspace.getConfiguration("gitkit");
+    const location = config.get<WorktreeLocation>("worktrees.location", "sibling");
+    const taken = new Set(repo.worktrees.map((w) => pathKey(w.path)));
+    const target = newWorktreePath(mainRoot, branch, location, (p) => taken.has(pathKey(p)) || existsSync(p));
+    const result = planAction({ type: "addWorktree", branch, path: target, newBranch: !exists, from }, repo);
+    if (!result.ok) {
+      this.post({ type: "error", error: { command: "", message: result.reason } });
+      return;
+    }
+
+    const copies = filesToCopy(config.get<string[]>("worktrees.copyFiles", []), mainRoot, target, existsSync);
+    const setup = config.get<string>("worktrees.setupCommand", "").trim();
+    const then = [
+      location === "inside"
+        ? "add /.worktrees/ to .git/info/exclude (not .gitignore, so there's nothing to commit)"
+        : "",
+      copies.copy.length ? `copy ${copies.copy.map((c) => c.name).join(", ")} from the main checkout` : "",
+      setup ? `run "${setup}" in a terminal there` : "",
+    ].filter(Boolean);
+    const skipped = copies.skipped.map((c) => `${c.name} (${c.why})`);
+    const detail = [
+      ...result.plan.steps.map(formatCommand),
+      ...(then.length ? ["", `Then: ${then.join("; ")}.`] : []),
+      ...(skipped.length ? ["", `Not copied: ${skipped.join(", ")}.`] : []),
+    ].join("\n");
+    const choice = await vscode.window.showInformationMessage(
+      `Create a worktree for ${branch}${exists ? "" : ` (new, from ${from ?? "HEAD"})`} at ${target}?`,
+      { modal: true, detail },
+      "Create",
+    );
+    if (choice !== "Create") return;
+
+    try {
+      if (location === "inside") await this.excludeWorktreesFolder(repo.root);
+    } catch (error) {
+      this.post({
+        type: "error",
+        error: { command: "", message: `Couldn't update .git/info/exclude: ${describe(error)}` },
+      });
+      return;
+    }
+    if (!(await this.run(result.plan.label, result.plan.steps, repo.root))) return;
+
+    for (const c of copies.copy) {
+      try {
+        cpSync(c.from, c.to, { recursive: true, force: false, errorOnExist: false });
+      } catch (error) {
+        this.post({ type: "error", error: { command: "", message: `Couldn't copy ${c.name}: ${describe(error)}` } });
+      }
+    }
+    if (setup) {
+      const terminal = vscode.window.createTerminal({ name: `Setup: ${path.basename(target)}`, cwd: target });
+      terminal.show(true);
+      terminal.sendText(setup);
+    }
+    const open = await vscode.window.showInformationMessage(
+      `Created a worktree for ${branch}.`,
+      "Open in New Window",
+      "Add to This Window",
+    );
+    if (open) await this.openWorktree(target, open === "Open in New Window");
+  }
+
+  /** Keeps in-repo worktrees out of git status, without a change to .gitignore to commit. */
+  private async excludeWorktreesFolder(root: string): Promise<void> {
+    const out = (await runGit(["rev-parse", "--git-common-dir"], root)).stdout.trim();
+    const file = path.join(path.resolve(root, out), "info", "exclude");
+    const current = existsSync(file) ? readFileSync(file, "utf8") : "";
+    const updated = withWorktreesExcluded(current);
+    if (updated === null) return;
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, updated);
+  }
+
+  /** After a worktree is removed: its branch can go too, if it's merged, and only if the user says so. */
+  private async offerBranchCleanup(branch: string): Promise<void> {
+    const repo = this.repo;
+    if (!repo || branch === repo.status.branch || repo.worktrees.some((w) => w.branch === branch)) return;
+    const base = repo.base?.ref ?? "main";
+    const merged = await runGit(["branch", "--merged", base, "--list", branch], repo.root).then(
+      (r) => r.stdout.trim() !== "",
+      () => false,
+    );
+    if (!merged) return;
+    const choice = await vscode.window.showInformationMessage(
+      `Removed the worktree. ${branch} is merged into ${repo.base?.name ?? "main"}: delete the branch too?`,
+      "Delete Branch",
+    );
+    if (choice !== "Delete Branch") return;
+    const result = planAction({ type: "deleteBranches", names: [branch] }, repo);
+    if (result.ok) await this.run("Delete branch", result.plan.steps, repo.root);
   }
 
   /**
@@ -616,14 +776,18 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       if (!guarded) return;
       steps = guarded;
     }
-    await this.run(plan.label, steps, this.repo.root);
+    const removed =
+      request.type === "removeWorktree" ? this.repo.worktrees.find((w) => w.path === request.path) : undefined;
+    const worked = await this.run(plan.label, steps, this.repo.root);
+    if (worked && removed?.branch && removed.prunable === null) await this.offerBranchCleanup(removed.branch);
   }
 
-  private async run(label: string, steps: string[][], cwd: string): Promise<void> {
+  /** Runs the steps in order, stopping at the first failure; true when all of them worked. */
+  private async run(label: string, steps: string[][], cwd: string): Promise<boolean> {
     this.busy = true;
     this.post({ type: "busy", label });
+    let failed = false;
     try {
-      let failed = false;
       for (const args of steps) {
         try {
           await runGit(args, cwd);
@@ -639,6 +803,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       this.post({ type: "busy", label: null });
       await this.refresh();
     }
+    return !failed;
   }
 
   /** Lets another webview (the Branch Map) receive the same live state as the sidebar. */
