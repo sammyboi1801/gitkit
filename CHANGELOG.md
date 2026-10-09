@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Workflow Studio does all of GitHub Actions with controls:**
+  - Any event can be a trigger, each with its own options: branch, tag and file filters (only these, or all except), activity types, several schedules with timezones, Run-button inputs, a reusable workflow's inputs, secrets and outputs, and which workflows to run after. Nothing is locked as "kept as written" any more.
+  - Job cards say when the job runs ("only on pushes to main"), picked from a list of common conditions; steps get their own list (like "even if a step failed").
+  - Warnings that don't block saving: a deploy that would run on every pull request (with a one-click fix), and running a pull request's own code on pull_request_target.
+  - Saving a hand-written workflow edits only what changed, keeping its comments and formatting.
+  - Jobs get an environment URL, concurrency, outputs, a default shell, matrix combinations to add or skip, a limit on how many run at once, runner label lists, and can run a reusable workflow. The workflow gets custom permissions, concurrency and a default shell.
+  - Save catches trigger mistakes GitHub would reject, like a cron without five fields or a choice input without options.
 - **Clearer wording throughout:** the header says "in sync with remote" and leads with main's conflicts; nothing claims to be up to date before the first check; the fork picture uses the graph's colors; your own pushes fold into one line of the activity feed; the Undo list says "Went back to <commit>" instead of a hash; Checkpoint and "Commit 2 files" say what they do; worktree overlaps say whose change is committed; and the update button is "Merge main" everywhere.
 - The Branch Map and graph draw every fetched commit you haven't pulled as "not pulled yet", including teammates' new commits on main.
 - **A clearer paused merge:** one instruction instead of two, conflicts right under it (ahead of the Remote card), and Continue shows how many files are left. Pull, Push and Sync are off until the merge is finished or aborted, the outdated conflict forecast is hidden, and Open in the merge editor leads each conflicted file while Keep both is the quieter choice.
