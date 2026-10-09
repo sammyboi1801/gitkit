@@ -151,6 +151,39 @@ describe("Oops", () => {
   });
 });
 
+describe("refreshing", () => {
+  it("waits for a fresh read when one is already running, so actions see their own result", async () => {
+    const dir = makeRepo();
+    const panel = await openPanel(dir);
+    const provider = panel.provider as unknown as { readState: () => Promise<unknown> };
+    const read = provider.readState.bind(panel.provider);
+    let started = 0;
+    let finished = 0;
+    provider.readState = async () => {
+      started++;
+      const state = await read();
+      finished++;
+      return state;
+    };
+
+    const running = panel.provider.refresh(); // e.g. the file watcher, before an action finished
+    write(dir, "new.txt", "made by the action\n");
+    await panel.provider.refresh();
+    // The second call must not reuse the read that started before it.
+    expect(started).toBe(2);
+    expect(finished).toBe(2);
+    expect(panel.repo().status.files.map((f) => f.path)).toContain("new.txt");
+    await running;
+
+    // Callers arriving while one is queued share it rather than piling up reads.
+    const a = panel.provider.refresh();
+    const b = panel.provider.refresh();
+    const c = panel.provider.refresh();
+    await Promise.all([a, b, c]);
+    expect(started).toBe(4);
+  });
+});
+
 describe("conflicts", () => {
   function conflicted() {
     const dir = makeRepo();

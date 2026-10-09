@@ -43,8 +43,9 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private selected?: string;
   private lastPosted = "";
   private refreshTimer?: NodeJS.Timeout;
-  private refreshing = false;
-  private refreshQueued = false;
+  /** The refresh running now, and the one queued to start after it. */
+  private refreshing?: Promise<void>;
+  private refreshQueued?: Promise<void>;
   private busy = false;
   private fetching = false;
   private fetchError?: string;
@@ -134,24 +135,30 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return this.refresh();
   }
 
+  /**
+   * Re-reads the repo and posts it. A refresh already running started before this call, so it may
+   * miss what just happened (an action's result): callers then wait for one more that starts after
+   * it, which every caller arriving meanwhile shares.
+   */
   async refresh(): Promise<void> {
     if (!this.view) return;
     if (this.refreshing) {
-      this.refreshQueued = true;
-      return;
+      this.refreshQueued ??= this.refreshing.then(() => {
+        this.refreshQueued = undefined;
+        return this.refresh();
+      });
+      return this.refreshQueued;
     }
-    this.refreshing = true;
-    try {
-      this.postState(await this.readState());
-      void this.maybeAutoFetch();
-      void this.maybeCheckCi();
-    } finally {
-      this.refreshing = false;
-      if (this.refreshQueued) {
-        this.refreshQueued = false;
-        void this.refresh();
+    this.refreshing = (async () => {
+      try {
+        this.postState(await this.readState());
+        void this.maybeAutoFetch();
+        void this.maybeCheckCi();
+      } finally {
+        this.refreshing = undefined;
       }
-    }
+    })();
+    return this.refreshing;
   }
 
   private scheduleRefresh(): void {
