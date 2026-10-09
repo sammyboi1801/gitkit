@@ -1283,6 +1283,75 @@ describe("auto-fetch", () => {
     await vi.waitFor(() => expect(panel.repo().lastFetch).not.toBeNull(), { timeout: 20_000 });
     await vi.waitFor(() => expect(panel.repo().status.behind).toBe(2), { timeout: 20_000 });
   });
+
+  describe("telling you about new commits", () => {
+    /** A clone on main, then teammates' commits pushed to the remote behind its back. */
+    function teammatesPushed(...authors: [string, string][]) {
+      const { work, remote } = makeDivergedClone();
+      git(work, "stash", "-q", "--include-untracked");
+      git(work, "reset", "-q", "--hard", "origin/main");
+      const other = join(work, "..", "other");
+      git(join(work, ".."), "clone", "-q", remote, other);
+      for (const [name, email] of authors) {
+        git(other, "-c", `user.name=${name}`, "-c", `user.email=${email}`, "commit", "-q", "--allow-empty", "-m", name);
+      }
+      git(other, "push", "-q", "origin", "HEAD:main");
+      harness.config["gitkit.autoFetchMinutes"] = 5;
+      return work;
+    }
+    const popups = () => harness.shown.filter((s) => s.kind === "info");
+
+    it("pops up who pushed, puts a count on GitKit's icon while it's hidden, and clears it once seen", async () => {
+      const work = teammatesPushed(["Alex Chen", "alex@acme.dev"], ["Priya Patel", "priya@acme.dev"]);
+      harness.viewVisible = false;
+      harness.answers.push("Pull");
+      const panel = await openPanel(work);
+
+      await vi.waitFor(() => expect(popups()).toHaveLength(1), { timeout: 20_000 });
+      expect(popups()[0].message).toBe("Priya Patel and Alex Chen pushed 2 commits to origin/main.");
+      expect(harness.view?.badge).toEqual({ value: 2, tooltip: "2 new commits from others" });
+      // Pull, from the pop-up: it was only behind, so it fast-forwards.
+      await vi.waitFor(() => expect(git(work, "rev-parse", "HEAD")).toBe(git(work, "rev-parse", "origin/main")));
+
+      harness.setViewVisible(true);
+      expect(harness.view?.badge).toBeUndefined();
+      expect(panel.posted("error")).toEqual([]);
+    });
+
+    it("only counts while the panel is in view, and can be just the count, or nothing", async () => {
+      const seen = teammatesPushed(["Alex Chen", "alex@acme.dev"]);
+      await openPanel(seen);
+      await vi.waitFor(() => expect(popups()).toHaveLength(1), { timeout: 20_000 });
+      expect(harness.view?.badge).toBeUndefined();
+
+      harness.reset();
+      harness.config["gitkit.ciStatus"] = false;
+      harness.config["gitkit.newCommitAlerts"] = "badge";
+      harness.viewVisible = false;
+      const quiet = await openPanel(teammatesPushed(["Alex Chen", "alex@acme.dev"]));
+      await vi.waitFor(() => expect(quiet.repo().lastFetch).not.toBeNull(), { timeout: 20_000 });
+      await vi.waitFor(() => expect(harness.view?.badge?.value).toBe(1));
+      expect(popups()).toEqual([]);
+
+      harness.reset();
+      harness.config["gitkit.ciStatus"] = false;
+      harness.config["gitkit.newCommitAlerts"] = "off";
+      harness.viewVisible = false;
+      const off = await openPanel(teammatesPushed(["Alex Chen", "alex@acme.dev"]));
+      await vi.waitFor(() => expect(off.repo().lastFetch).not.toBeNull(), { timeout: 20_000 });
+      expect(harness.view?.badge).toBeUndefined();
+      expect(popups()).toEqual([]);
+    });
+
+    it("says nothing about your own commits pushed from somewhere else", async () => {
+      const work = teammatesPushed(["Test", "test@example.com"]);
+      harness.viewVisible = false;
+      const panel = await openPanel(work);
+      await vi.waitFor(() => expect(panel.repo().status.behind).toBe(1), { timeout: 20_000 });
+      expect(popups()).toEqual([]);
+      expect(harness.view?.badge).toBeUndefined();
+    });
+  });
 });
 
 // Keeps the unused-import linter honest about writeFileSync being available for future tests.

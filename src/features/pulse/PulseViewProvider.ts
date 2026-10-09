@@ -6,6 +6,7 @@ import { isValidBranchName, planAction, type ActionRequest } from "../../git/act
 import { parseConflicts, resolveConflict, sideNames, type Resolution } from "../../git/conflicts";
 import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discover";
 import { realPath, samePath } from "../../git/paths";
+import { arrivalMessage, arrivedCount, readArrivals, remoteTips, type Arrival } from "../../git/arrivals";
 import {
   findWorkspaceRepo,
   predictConflicts,
@@ -65,6 +66,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private readonly ciLogs = new CiLogProvider();
   private ciInFlight?: Promise<void>;
   private lastFetchAttempt = 0;
+  /** Commits by others that arrived while the panel was out of sight: the badge on GitKit's icon. */
+  private unseen = 0;
   private readonly fetchTimer: NodeJS.Timeout;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly panels = new Set<vscode.Webview>();
@@ -132,7 +135,11 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     // Returning the promise lets tests await the handling; VS Code ignores it.
     view.webview.onDidReceiveMessage((message: WebviewToHost) => this.receive(message));
-    view.onDidChangeVisibility(() => view.visible && this.scheduleRefresh());
+    view.onDidChangeVisibility(() => {
+      if (!view.visible) return;
+      this.setUnseen(0);
+      this.scheduleRefresh();
+    });
     view.onDidDispose(() => (this.view = undefined));
   }
 
@@ -295,7 +302,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const minutes = vscode.workspace.getConfiguration("gitkit").get<number>("autoFetchMinutes", 5);
     const repo = this.repo;
     if (minutes <= 0 || !repo || repo.remotes.length === 0) return;
-    if (!vscode.window.state.focused || !this.view?.visible || this.busy || this.fetching) return;
+    // Also while the panel is hidden, so new commits can be announced while you work.
+    if (!vscode.window.state.focused || !this.view || this.busy || this.fetching) return;
 
     const now = Date.now() / 1000;
     const interval = minutes * 60;
@@ -304,9 +312,14 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.lastFetchAttempt = now;
     this.fetching = true;
     this.post({ type: "fetching", active: true });
+    // Your branch's remote branch and main: where other people's commits matter to you.
+    const watched = [repo.status.upstream, repo.base?.ref].filter((r): r is string => !!r);
+    const before = await remoteTips(repo.root, watched);
+    let arrivals: Arrival[] = [];
     try {
       await runGit(["fetch", "--all", "--prune", "--quiet"], repo.root, { env: { GCM_INTERACTIVE: "never" } });
       this.fetchError = undefined;
+      arrivals = await readArrivals(repo.root, before, repo.status.upstream);
     } catch (error) {
       this.fetchError = describe(error).split("\n")[0];
     } finally {
@@ -314,6 +327,34 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       this.post({ type: "fetching", active: false });
       await this.refresh();
     }
+    if (this.repo?.root === repo.root) this.announce(arrivals);
+  }
+
+  /** Tells you about other people's new commits, the way `gitkit.newCommitAlerts` says to. */
+  private announce(arrivals: Arrival[]): void {
+    const count = arrivedCount(arrivals);
+    const mode = vscode.workspace.getConfiguration("gitkit").get<string>("newCommitAlerts", "popup");
+    if (!count || mode === "off") return;
+    if (!this.view?.visible) this.setUnseen(this.unseen + count);
+    const message = arrivalMessage(arrivals);
+    if (mode !== "popup" || !message) return;
+    // Pull only when it would just fast-forward: someone pushed to your branch and you've nothing to push.
+    const status = this.repo?.status;
+    const canPull = arrivals.some((a) => a.yours) && !!status?.behind && !status.ahead;
+    void vscode.window
+      .showInformationMessage(message, ...(canPull ? ["Pull", "Show"] : ["Show"]))
+      .then(async (choice) => {
+        if (choice === "Pull") await this.runAction({ type: "pull" });
+        else if (choice === "Show") await vscode.commands.executeCommand("gitkit.pulse.focus");
+      });
+  }
+
+  private setUnseen(count: number): void {
+    this.unseen = count;
+    if (!this.view) return;
+    this.view.badge = count
+      ? { value: count, tooltip: `${count} new commit${count === 1 ? "" : "s"} from others` }
+      : undefined;
   }
 
   /** Handles a message from the sidebar or the Branch Map; both speak the same protocol. */

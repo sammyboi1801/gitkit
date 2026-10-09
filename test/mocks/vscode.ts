@@ -154,6 +154,8 @@ export const harness = {
   }>(),
   activeEditor: new Emitter<unknown>(),
   reset() {
+    this.viewVisible = true;
+    this.view = undefined;
     this.answers = [];
     this.shown = [];
     this.executed = [];
@@ -179,13 +181,24 @@ export const harness = {
     const visibility = new Emitter<void>();
     const view = {
       webview,
-      visible: true,
+      visible: this.viewVisible,
+      badge: undefined as { value: number; tooltip: string } | undefined,
       onDidDispose: disposed.event,
       onDidChangeVisibility: visibility.event,
+    };
+    this.view = view;
+    this.setViewVisible = (visible: boolean) => {
+      view.visible = visible;
+      visibility.fire();
     };
     provider.resolveWebviewView(view);
     return webview;
   },
+  /** Whether the next resolved view starts on screen. */
+  viewVisible: true,
+  /** The last resolved view: its badge, and a way to show or hide it. */
+  view: undefined as { visible: boolean; badge?: { value: number; tooltip: string } } | undefined,
+  setViewVisible: (() => {}) as (visible: boolean) => void,
 };
 
 const openTerminals: { name: string; dispose(): void }[] = [];

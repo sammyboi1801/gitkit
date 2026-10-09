@@ -149,6 +149,21 @@
           "minimum": 0,
           "description": "How often GitKit checks the remote for new commits while VS Code is focused, in minutes. 0 turns it off."
         },
+        "gitkit.newCommitAlerts": {
+          "type": "string",
+          "enum": [
+            "popup",
+            "badge",
+            "off"
+          ],
+          "enumDescriptions": [
+            "A pop-up when someone pushes to your branch or to main, and a count on the GitKit icon until you look.",
+            "Only the count on the GitKit icon.",
+            "Don't announce new commits."
+          ],
+          "default": "popup",
+          "description": "How GitKit tells you about other people's new commits that it finds while checking the remote."
+        },
         "gitkit.repoScanDepth": {
           "type": "number",
           "default": 2,
