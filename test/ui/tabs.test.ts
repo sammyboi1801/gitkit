@@ -116,12 +116,68 @@ describe("Branch Map", () => {
     await fireEvent.keyDown(canvas, { key: "Escape" });
   });
 
-  it("zooms in and out", async () => {
-    await open();
-    const width = () => Number(document.querySelector(".canvas svg")?.getAttribute("width"));
-    const before = width();
-    await fireEvent.click(screen.getByTitle("Zoom in"));
-    expect(width()).toBeGreaterThan(before);
+  describe("zoom and pan", () => {
+    const svg = () => document.querySelector(".canvas svg")!;
+    const width = () => Number(svg().getAttribute("width"));
+    const level = () => screen.getByTitle(/Back to 100%/).textContent?.trim();
+    const wheel = async (init: WheelEventInit) => {
+      screen
+        .getByRole("application")
+        .dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init }));
+      await tick();
+    };
+
+    it("scales the whole picture, not just the spacing", async () => {
+      await open();
+      const viewBox = svg().getAttribute("viewBox");
+      const before = width();
+      await fireEvent.click(screen.getByTitle("Zoom in"));
+      expect(width()).toBeGreaterThan(before);
+      expect(svg().getAttribute("viewBox")).toBe(viewBox);
+      expect(level()).toBe("125%");
+    });
+
+    it("zooms with the scroll wheel and trackpad pinch", async () => {
+      await open();
+      const before = width();
+      await wheel({ deltaY: -200 });
+      expect(width()).toBeGreaterThan(before);
+      const zoomedIn = width();
+      await wheel({ deltaY: 40, ctrlKey: true }); // pinch out
+      expect(width()).toBeLessThan(zoomedIn);
+    });
+
+    it("lets sideways scrolling pan instead of zoom", async () => {
+      await open();
+      const before = width();
+      await wheel({ deltaY: -200, shiftKey: true });
+      await wheel({ deltaX: 120, deltaY: 5 });
+      expect(width()).toBe(before);
+    });
+
+    it("zooms with + and -, fits with 0, and resets to 100% from the toolbar", async () => {
+      await open();
+      const canvas = screen.getByRole("application");
+      await fireEvent.keyDown(canvas, { key: "+" });
+      expect(level()).toBe("125%");
+      await fireEvent.keyDown(canvas, { key: "-" });
+      await fireEvent.keyDown(canvas, { key: "-" });
+      expect(level()).toBe("80%");
+      await fireEvent.click(screen.getByTitle(/Back to 100%/));
+      expect(level()).toBe("100%");
+    });
+
+    it("pans when dragging empty space, but not when pressing a commit", async () => {
+      await open();
+      const canvas = screen.getByRole("application");
+      await fireEvent.pointerDown(svg(), { button: 0, clientX: 100, clientY: 100 });
+      expect(canvas.classList.contains("panning")).toBe(true);
+      await fireEvent.pointerUp(window);
+      expect(canvas.classList.contains("panning")).toBe(false);
+
+      await fireEvent.pointerDown(node(/feat: login form/), { button: 0, clientX: 10, clientY: 10 });
+      expect(canvas.classList.contains("panning")).toBe(false);
+    });
   });
 
   it("explains when there's no repo", async () => {

@@ -66,10 +66,13 @@
   const unpushed = $derived(new Set(repo?.unpushed ?? []));
   const incoming = $derived(new Set(repo?.incoming ?? []));
   const onHead = $derived(repo ? headAncestors(repo) : new Set<string>());
-  const col = $derived(BASE_COL * zoom);
-  const R = $derived(zoom >= 0.75 ? 11 : 7);
-  const width = $derived(display ? LEFT * 2 + Math.max(display.columns - 1, 0) * col + 140 : 0);
-  const height = $derived(graph ? TOP + Math.max(graph.rows - 1, 0) * ROW_H + 72 : 0);
+  // Everything is drawn at a fixed base size and the whole picture is scaled (viewBox), so zooming
+  // grows dots, labels and lanes together, like a map.
+  const col = BASE_COL;
+  const R = 11;
+  const showInitials = $derived(zoom >= 0.6);
+  const baseWidth = $derived(display ? LEFT * 2 + Math.max(display.columns - 1, 0) * col + 140 : 0);
+  const baseHeight = $derived(graph ? TOP + Math.max(graph.rows - 1, 0) * ROW_H + 72 : 0);
   const selectedCommit = $derived(graph?.commits.find((c) => c.hash === selected) ?? null);
   const localBranches = $derived(
     new Set(graph?.commits.flatMap((c) => c.refs.filter((r) => r.kind === "local").map((r) => r.name)) ?? []),
@@ -221,7 +224,7 @@
     const next = now === -1 ? commitNodes.length - 1 : Math.min(commitNodes.length - 1, Math.max(0, now + step));
     const node = commitNodes[next];
     select(node.id, true);
-    scroller?.scrollTo({ left: x(node) - scroller.clientWidth / 2, behavior: "smooth" });
+    scroller?.scrollTo({ left: x(node) * zoom - scroller.clientWidth / 2, behavior: "smooth" });
   }
 
   async function scrollToNewest() {
@@ -230,20 +233,74 @@
     scrolledOnce = true;
   }
 
-  function setZoom(next: number) {
-    // Keep the view centred on the same moment in time while zooming.
-    const ratio = scroller ? (scroller.scrollLeft + scroller.clientWidth / 2) / scroller.scrollWidth : 1;
-    zoom = Math.min(2, Math.max(0.3, next));
+  const MIN_ZOOM = 0.25;
+  const MAX_ZOOM = 3;
+
+  /**
+   * Zooms keeping one point still: the pointer for the wheel, otherwise the middle of the view.
+   * `anchor` is in pixels from the canvas's top-left corner.
+   */
+  function setZoom(next: number, anchor?: { x: number; y: number }) {
+    const target = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+    if (!scroller || target === zoom) {
+      zoom = target;
+      return;
+    }
+    const point = anchor ?? { x: scroller.clientWidth / 2, y: scroller.clientHeight / 2 };
+    // The spot under the anchor, in unzoomed map units.
+    const mapX = (scroller.scrollLeft + point.x) / zoom;
+    const mapY = (scroller.scrollTop + point.y) / zoom;
+    zoom = target;
     void tick().then(() => {
-      if (scroller) scroller.scrollLeft = ratio * scroller.scrollWidth - scroller.clientWidth / 2;
+      if (!scroller) return;
+      scroller.scrollLeft = mapX * zoom - point.x;
+      scroller.scrollTop = mapY * zoom - point.y;
     });
   }
 
-  /** Zoom so the whole (compacted) history fits the window width. */
+  /** The zoom at which the whole (compacted) map fits the window. */
+  function fitZoom(): number {
+    if (!scroller || !baseWidth || !baseHeight) return 1;
+    return Math.min(scroller.clientWidth / baseWidth, scroller.clientHeight / baseHeight);
+  }
+
   function fit() {
-    if (!display || !scroller) return;
-    const available = scroller.clientWidth - LEFT * 2 - 140;
-    setZoom(display.columns > 1 ? available / ((display.columns - 1) * BASE_COL) : 1);
+    setZoom(fitZoom());
+  }
+
+  /** Wheel or pinch zooms around the pointer; sideways scrolling (shift, trackpad swipe) pans. */
+  function onWheel(event: WheelEvent) {
+    if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    const box = scroller!.getBoundingClientRect();
+    // Pinch gestures arrive as ctrl+wheel with small deltas; scale them up so both feel alike.
+    const delta = event.ctrlKey ? event.deltaY * 3 : event.deltaY;
+    setZoom(zoom * Math.exp(-delta * 0.0015), { x: event.clientX - box.left, y: event.clientY - box.top });
+  }
+
+  /** Dragging empty space pans the map, like a map app. */
+  let pan: { x: number; y: number; left: number; top: number } | null = $state(null);
+
+  function startPan(event: PointerEvent) {
+    if (event.button !== 0 || !scroller) return;
+    if ((event.target as Element).closest(".map-node, .map-group, .flag, .menu")) return;
+    pan = { x: event.clientX, y: event.clientY, left: scroller.scrollLeft, top: scroller.scrollTop };
+  }
+
+  // Non-passive, so the wheel can zoom instead of scrolling the page.
+  $effect(() => {
+    const el = scroller;
+    if (!el) return;
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  });
+
+  function onCanvasKey(event: KeyboardEvent) {
+    if (event.key === "+" || event.key === "=") setZoom(zoom * 1.25);
+    else if (event.key === "-" || event.key === "_") setZoom(zoom / 1.25);
+    else if (event.key === "0") fit();
+    else return onKey(event);
+    event.preventDefault();
   }
 
   function startDrag(event: PointerEvent, branch: string) {
@@ -258,7 +315,13 @@
       if (message.type === "state") {
         const firstGraph = !graph;
         view = message.state;
-        if (firstGraph) void scrollToNewest();
+        if (firstGraph) {
+          // Small histories open zoomed in to fill the window; long ones open at their real size.
+          void tick().then(() => {
+            zoom = Math.min(1.8, Math.max(1, fitZoom() * 0.9));
+            return scrollToNewest();
+          });
+        }
       } else if (message.type === "busy") {
         busy = message.label;
         if (busy) error = null;
@@ -269,11 +332,17 @@
     // Branch drag-and-drop: a press on a flag becomes a drag once the pointer moves a little;
     // a press without movement is a click and opens that branch's menu.
     const onMove = (e: PointerEvent) => {
+      if (pan && scroller) {
+        scroller.scrollLeft = pan.left - (e.clientX - pan.x);
+        scroller.scrollTop = pan.top - (e.clientY - pan.y);
+        return;
+      }
       if (!drag) return;
       const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 5;
       drag = { ...drag, x: e.clientX, y: e.clientY, active: drag.active || moved };
     };
     const onUp = (e: PointerEvent) => {
+      pan = null;
       if (!drag) return;
       const { branch, active, over } = drag;
       drag = null;
@@ -326,13 +395,16 @@
       >
         <span class="codicon codicon-{compact ? 'unfold' : 'fold'}"></span>
       </button>
-      <button class="icon-button" title="Zoom out" onclick={() => setZoom(zoom - 0.25)}>
+      <button class="icon-button" title="Zoom out" onclick={() => setZoom(zoom / 1.25)}>
         <span class="codicon codicon-zoom-out"></span>
       </button>
-      <button class="icon-button" title="Zoom in" onclick={() => setZoom(zoom + 0.25)}>
+      <button class="icon-button" title="Zoom in" onclick={() => setZoom(zoom * 1.25)}>
         <span class="codicon codicon-zoom-in"></span>
       </button>
-      <button class="icon-button" title="Fit to window" onclick={fit}>
+      <button class="zoom-level" title="Back to 100% (0 fits the window)" onclick={() => setZoom(1)}>
+        {Math.round(zoom * 100)}%
+      </button>
+      <button class="icon-button" title="Fit to window (0)" onclick={fit}>
         <span class="codicon codicon-screen-normal"></span>
       </button>
       <button class="icon-button" title="Jump to the newest commits" onclick={scrollToNewest}>
@@ -381,11 +453,19 @@
       role="application"
       aria-label="Branch map. Arrow keys move between commits, Escape closes."
       onscroll={() => (hovered = null)}
-      onkeydown={onKey}
+      class:panning={!!pan}
+      onpointerdown={startPan}
+      onkeydown={onCanvasKey}
     >
-      <svg {width} {height} role="img" aria-label="Branch map of {repo.root}">
+      <svg
+        width={baseWidth * zoom}
+        height={baseHeight * zoom}
+        viewBox="0 0 {baseWidth} {baseHeight}"
+        role="img"
+        aria-label="Branch map of {repo.root}"
+      >
         {#each { length: graph.rows } as _, row (row)}
-          <line x1="0" x2={width} y1={TOP + row * ROW_H} y2={TOP + row * ROW_H} class="guide" />
+          <line x1="0" x2={baseWidth} y1={TOP + row * ROW_H} y2={TOP + row * ROW_H} class="guide" />
         {/each}
 
         {#each display.edges as edge (edge.from + ">" + edge.to)}
@@ -465,7 +545,7 @@
                 class:hollow={unpushed.has(commit.hash)}
                 style="fill: {color}; stroke: {color}"
               />
-              {#if R >= 10}
+              {#if showInitials}
                 <text
                   class="initials"
                   class:on-hollow={unpushed.has(commit.hash)}
@@ -511,7 +591,11 @@
 
       {#if hovered && !drag?.active}
         {@const scrollLeft = scroller?.scrollLeft ?? 0}
-        <div class="tooltip" style="left: {hovered.x - scrollLeft}px; top: {hovered.y + R + 30}px">
+        {@const scrollTop = scroller?.scrollTop ?? 0}
+        <div
+          class="tooltip"
+          style="left: {hovered.x * zoom - scrollLeft}px; top: {(hovered.y + R + 30) * zoom - scrollTop}px"
+        >
           <b>{hovered.commit.subject}</b>
           <span class="muted"
             >{hovered.commit.hash.slice(0, 7)} · {hovered.commit.author} · {ago(hovered.commit.time)}</span
@@ -534,8 +618,8 @@
     {/if}
 
     <footer class="map-hint muted">
-      {compact ? "Quiet stretches are folded into +N; click one to open it. " : ""}Click a branch name for actions, or
-      drag it onto another branch to merge or rebase.
+      {compact ? "Quiet stretches are folded into +N; click one to open it. " : ""}Scroll to zoom, drag to pan. Click a
+      branch name for actions, or drag it onto another branch to merge or rebase.
     </footer>
 
     {#if selectedCommit}

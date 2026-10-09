@@ -363,3 +363,29 @@ body {
   font-size: 0.85em;
   border-top: 1px solid var(--gk-border);
 }
+
+/* Zoom and pan */
+
+.canvas {
+  cursor: grab;
+}
+
+.canvas.panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.zoom-level {
+  min-width: 52px;
+  padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
+  background: transparent;
+  border: 1px solid var(--gk-border);
+  color: var(--vscode-foreground);
+}
+
+.map-node,
+.map-group,
+.flag {
+  cursor: pointer;
+}
