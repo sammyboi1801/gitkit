@@ -1,7 +1,21 @@
 // The Workflow Studio model: a small, visual-friendly description of a GitHub Actions workflow.
 // Pure, so the webview previews exactly what the extension will save.
 
-export type Runner = "ubuntu-latest" | "windows-latest" | "macos-latest";
+/** A runner label: GitHub's own (ubuntu-latest…) or any other, like self-hosted. */
+export type Runner = string;
+
+/**
+ * One step of a job, exactly as it appears in YAML. Studio edits name/run/uses/with/if and keeps
+ * any other keys (env, shell, working-directory…) untouched.
+ */
+export interface Step {
+  name?: string;
+  run?: string;
+  uses?: string;
+  with?: Record<string, string | number | boolean>;
+  if?: string;
+  [key: string]: unknown;
+}
 
 export interface Triggers {
   push: { enabled: boolean; branches: string[] };
@@ -23,6 +37,10 @@ export interface Job {
   needs: string[];
   /** Free-form inputs a template asks for, e.g. the command for "custom". */
   inputs: Record<string, string>;
+  /** For "steps" jobs: the steps, in order. Other templates generate theirs. */
+  steps?: Step[];
+  /** Job settings Studio doesn't model (services, container, environment, timeout…), kept as written. */
+  extra?: Record<string, unknown>;
 }
 
 export interface WorkflowModel {
@@ -30,11 +48,15 @@ export interface WorkflowModel {
   /** File name inside .github/workflows, e.g. "ci.yml". */
   file: string;
   triggers: Triggers;
+  /** Triggers Studio can't represent exactly (paths filters, other events…), kept as written. */
+  rawOn?: unknown;
   jobs: Job[];
   /** Only read repo contents by default: least privilege. */
   readOnlyPermissions: boolean;
   /** Cancel an older run of the same branch when a new one starts. */
   cancelSuperseded: boolean;
+  /** Top-level settings Studio doesn't model (env, defaults, run-name, custom permissions…). */
+  extra?: Record<string, unknown>;
 }
 
 export type TemplateId =
@@ -49,7 +71,8 @@ export type TemplateId =
   | "docker-publish"
   | "github-release"
   | "pages-deploy"
-  | "custom";
+  | "custom"
+  | "steps";
 
 export type Stack = "node" | "python" | "docker" | "go" | "rust";
 
@@ -68,6 +91,8 @@ export interface Template {
   stack: Stack | null;
   /** Where it sits in the "add a job" menu. */
   group: "check" | "build" | "ship" | "other";
+  /** Codicon shown on cards and in the picker. */
+  icon: string;
   description: string;
   /** What the matrix varies, if anything, e.g. "node-version". */
   matrixKey?: string;
@@ -86,6 +111,7 @@ export const TEMPLATES: Template[] = [
     id: "node-lint",
     label: "Lint (Node)",
     stack: "node",
+    icon: "checklist",
     group: "check",
     description: "Install dependencies and run the lint script.",
     defaultVersions: [],
@@ -96,6 +122,7 @@ export const TEMPLATES: Template[] = [
     id: "node-test",
     label: "Test (Node)",
     stack: "node",
+    icon: "beaker",
     group: "check",
     versionChoices: ["20", "22", "24"],
     description: "Run tests on each Node version.",
@@ -108,6 +135,7 @@ export const TEMPLATES: Template[] = [
     id: "node-build",
     label: "Build (Node)",
     stack: "node",
+    icon: "tools",
     group: "build",
     description: "Build the project to catch compile errors.",
     defaultVersions: [],
@@ -118,6 +146,7 @@ export const TEMPLATES: Template[] = [
     id: "python-lint",
     label: "Lint (Python)",
     stack: "python",
+    icon: "checklist",
     group: "check",
     description: "Check style and common bugs with Ruff.",
     defaultVersions: [],
@@ -128,6 +157,7 @@ export const TEMPLATES: Template[] = [
     id: "python-test",
     label: "Test (Python)",
     stack: "python",
+    icon: "beaker",
     group: "check",
     versionChoices: ["3.9", "3.10", "3.11", "3.12", "3.13"],
     description: "Run pytest on each Python version.",
@@ -148,6 +178,7 @@ export const TEMPLATES: Template[] = [
     id: "docker-build",
     label: "Docker image",
     stack: "docker",
+    icon: "package",
     group: "build",
     description: "Build the Dockerfile to make sure the image still builds.",
     defaultVersions: [],
@@ -158,6 +189,7 @@ export const TEMPLATES: Template[] = [
     id: "go-test",
     label: "Test (Go)",
     stack: "go",
+    icon: "beaker",
     group: "check",
     versionChoices: ["1.21", "1.22", "1.23", "1.24"],
     description: "Run go test on each Go version.",
@@ -170,6 +202,7 @@ export const TEMPLATES: Template[] = [
     id: "rust-test",
     label: "Test (Rust)",
     stack: "rust",
+    icon: "beaker",
     group: "check",
     description: "Run cargo test.",
     defaultVersions: [],
@@ -180,6 +213,7 @@ export const TEMPLATES: Template[] = [
     id: "docker-publish",
     label: "Publish Docker image",
     stack: "docker",
+    icon: "cloud-upload",
     group: "ship",
     description: "Build the Dockerfile and push the image to GitHub Container Registry (ghcr.io).",
     defaultVersions: [],
@@ -191,6 +225,7 @@ export const TEMPLATES: Template[] = [
     id: "github-release",
     label: "GitHub release",
     stack: null,
+    icon: "tag",
     group: "ship",
     description: "Create a GitHub release for the tag that triggered the run, with notes generated from the commits.",
     defaultVersions: [],
@@ -202,6 +237,7 @@ export const TEMPLATES: Template[] = [
     id: "pages-deploy",
     label: "Deploy to GitHub Pages",
     stack: null,
+    icon: "globe",
     group: "ship",
     description: "Publish a folder as your GitHub Pages site, optionally building it first.",
     defaultVersions: [],
@@ -216,11 +252,23 @@ export const TEMPLATES: Template[] = [
     id: "custom",
     label: "Custom command",
     stack: null,
+    icon: "terminal",
     group: "other",
     description: "Run any shell command after checkout.",
     defaultVersions: [],
     defaultId: "custom",
     inputs: [{ key: "command", label: "Command", placeholder: "./scripts/check.sh", default: "echo hello" }],
+  },
+  {
+    id: "steps",
+    label: "Your own steps",
+    stack: null,
+    icon: "list-ordered",
+    group: "other",
+    description: "Build a job step by step: run commands, use any action from the Marketplace.",
+    defaultVersions: [],
+    defaultId: "job",
+    inputs: [],
   },
 ];
 
@@ -230,15 +278,219 @@ export function newJob(id: TemplateId, existing: readonly Job[]): Job {
   const t = template(id);
   let jobId = t.defaultId;
   for (let n = 2; existing.some((j) => j.id === jobId); n++) jobId = `${t.defaultId}-${n}`;
-  return {
+  const job: Job = {
     id: jobId,
-    name: t.label.replace(/ \(.*\)$/, ""),
+    name: id === "steps" ? "New job" : t.label.replace(/ \(.*\)$/, ""),
     template: id,
     runsOn: "ubuntu-latest",
     versions: [...t.defaultVersions],
     needs: [],
     inputs: Object.fromEntries(t.inputs.map((i) => [i.key, i.default])),
   };
+  if (id === "steps") job.steps = [{ ...STEP_PRESETS.checkout.step }, { name: "Run a command", run: "echo hello" }];
+  return job;
+}
+
+// --- Steps ----------------------------------------------------------------------------------
+
+export const ACTIONS = {
+  checkout: "actions/checkout@v5",
+  node: "actions/setup-node@v5",
+  python: "actions/setup-python@v6",
+  go: "actions/setup-go@v6",
+  cache: "actions/cache@v4",
+  upload: "actions/upload-artifact@v4",
+  buildx: "docker/setup-buildx-action@v3",
+  dockerBuild: "docker/build-push-action@v6",
+  dockerLogin: "docker/login-action@v3",
+  dockerMeta: "docker/metadata-action@v5",
+  pagesConfigure: "actions/configure-pages@v5",
+  pagesUpload: "actions/upload-pages-artifact@v3",
+  pagesDeploy: "actions/deploy-pages@v4",
+};
+
+/** Ready-made steps offered by "Add a step". */
+export const STEP_PRESETS: Record<string, { label: string; icon: string; step: Step }> = {
+  run: { label: "Run a command", icon: "terminal", step: { name: "Run a command", run: "" } },
+  action: { label: "Use an action", icon: "extensions", step: { uses: "", with: {} } },
+  checkout: { label: "Check out the code", icon: "repo-clone", step: { uses: ACTIONS.checkout } },
+  node: {
+    label: "Set up Node.js",
+    icon: "symbol-event",
+    step: { uses: ACTIONS.node, with: { "node-version": "lts/*" } },
+  },
+  python: {
+    label: "Set up Python",
+    icon: "symbol-namespace",
+    step: { uses: ACTIONS.python, with: { "python-version": "3.12" } },
+  },
+  go: { label: "Set up Go", icon: "symbol-method", step: { uses: ACTIONS.go, with: { "go-version": "stable" } } },
+  upload: {
+    label: "Save files from the run",
+    icon: "cloud-upload",
+    step: { name: "Upload files", uses: ACTIONS.upload, with: { name: "output", path: "dist" } },
+  },
+};
+
+/** The steps a template job generates; "steps" jobs return their own. */
+export function stepsFor(job: Job): Step[] {
+  if (job.template === "steps") return job.steps ?? [];
+  const input = (key: string) => job.inputs[key] ?? "";
+  const version = (key: string) => (job.versions.length ? `\${{ matrix.${key} }}` : undefined);
+  const checkout: Step = { uses: ACTIONS.checkout };
+
+  switch (job.template) {
+    case "node-lint":
+    case "node-test":
+    case "node-build":
+      return [
+        checkout,
+        { uses: ACTIONS.node, with: { "node-version": version("node-version") ?? "lts/*", cache: "npm" } },
+        { run: "npm ci" },
+        { run: input("command") },
+      ];
+    case "python-lint":
+      return [
+        checkout,
+        { uses: ACTIONS.python, with: { "python-version": "3.12" } },
+        { run: "pip install ruff" },
+        { run: input("command") },
+      ];
+    case "python-test":
+      return [
+        checkout,
+        { uses: ACTIONS.python, with: { "python-version": version("python-version") ?? "3.12", cache: "pip" } },
+        { run: input("install") },
+        { run: input("command") },
+      ];
+    case "go-test":
+      return [
+        checkout,
+        { uses: ACTIONS.go, with: { "go-version": version("go-version") ?? "stable" } },
+        { run: input("command") },
+      ];
+    case "rust-test":
+      return [checkout, { run: input("command") }];
+    case "docker-build":
+      return [
+        checkout,
+        { uses: ACTIONS.buildx },
+        { uses: ACTIONS.dockerBuild, with: { context: input("context"), push: false } },
+      ];
+    case "docker-publish":
+      return [
+        checkout,
+        { uses: ACTIONS.buildx },
+        {
+          uses: ACTIONS.dockerLogin,
+          with: { registry: "ghcr.io", username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" },
+        },
+        // Tags the image from the git ref: branch name, tag (v1.2.3) and commit sha.
+        { id: "meta", uses: ACTIONS.dockerMeta, with: { images: "ghcr.io/${{ github.repository }}" } },
+        {
+          uses: ACTIONS.dockerBuild,
+          with: {
+            context: input("context"),
+            push: true,
+            tags: "${{ steps.meta.outputs.tags }}",
+            labels: "${{ steps.meta.outputs.labels }}",
+          },
+        },
+      ];
+    case "github-release":
+      // gh ships with GitHub's runners, so no third-party action is needed.
+      return [
+        checkout,
+        {
+          name: "Create the release",
+          run: 'gh release create "$GITHUB_REF_NAME" --generate-notes',
+          env: { GH_TOKEN: "${{ github.token }}" },
+        },
+      ];
+    case "pages-deploy":
+      return [
+        checkout,
+        ...(input("build").trim() ? [{ name: "Build", run: input("build") }] : []),
+        { uses: ACTIONS.pagesConfigure },
+        { uses: ACTIONS.pagesUpload, with: { path: input("folder") } },
+        { id: "deployment", uses: ACTIONS.pagesDeploy },
+      ];
+    case "custom":
+      return [checkout, { run: input("command") }];
+  }
+}
+
+/** Job-level keys a template adds besides steps: matrix, extra permissions, environment. */
+export function templateKeys(job: Job): Record<string, unknown> {
+  if (job.template === "steps") return {};
+  const t = template(job.template);
+  const keys: Record<string, unknown> = {};
+  // Extra permissions go on the job that needs them, never the whole workflow.
+  if (t.permissions) keys.permissions = { contents: "read", ...t.permissions };
+  if (job.template === "pages-deploy") {
+    keys.environment = { name: "github-pages", url: "${{ steps.deployment.outputs.page_url }}" };
+  }
+  if (t.matrixKey && job.versions.length) keys.strategy = { matrix: { [t.matrixKey]: job.versions } };
+  return keys;
+}
+
+/** Turns a template job into a "steps" job with the same behaviour, so every step can be edited. */
+export function toOwnSteps(job: Job): Job {
+  if (job.template === "steps") return job;
+  return {
+    ...job,
+    template: "steps",
+    steps: structuredClone(stepsFor(job)),
+    extra: { ...templateKeys(job), ...job.extra },
+    inputs: {},
+    versions: [],
+  };
+}
+
+// --- Schedules ------------------------------------------------------------------------------
+
+export type Frequency = "hourly" | "daily" | "weekly" | "monthly";
+
+export interface ScheduleSpec {
+  frequency: Frequency;
+  minute: number;
+  hour: number;
+  /** 0 = Sunday … 6 = Saturday. */
+  weekday: number;
+  /** Day of the month, 1–28 (29–31 don't exist every month). */
+  day: number;
+}
+
+export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+export function cronFor(s: ScheduleSpec): string {
+  switch (s.frequency) {
+    case "hourly":
+      return `${s.minute} * * * *`;
+    case "daily":
+      return `${s.minute} ${s.hour} * * *`;
+    case "weekly":
+      return `${s.minute} ${s.hour} * * ${s.weekday}`;
+    case "monthly":
+      return `${s.minute} ${s.hour} ${s.day} * *`;
+  }
+}
+
+/** Reads back a cron written by cronFor; anything fancier returns null (shown as a custom schedule). */
+export function scheduleSpec(cron: string): ScheduleSpec | null {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5 || parts[3] !== "*") return null;
+  const [m, h, d, , w] = parts;
+  const n = (v: string) => (/^\d+$/.test(v) ? Number(v) : NaN);
+  const base = { minute: n(m), hour: 6, weekday: 1, day: 1 };
+  if (Number.isNaN(base.minute) || base.minute > 59) return null;
+  if (h === "*" && d === "*" && w === "*") return { ...base, frequency: "hourly" };
+  const hour = n(h);
+  if (Number.isNaN(hour) || hour > 23) return null;
+  if (d === "*" && w === "*") return { ...base, hour, frequency: "daily" };
+  if (d === "*" && n(w) <= 6) return { ...base, hour, weekday: n(w), frequency: "weekly" };
+  if (w === "*" && n(d) >= 1 && n(d) <= 28) return { ...base, hour, day: n(d), frequency: "monthly" };
+  return null;
 }
 
 // --- Stack detection ------------------------------------------------------------------------
@@ -327,7 +579,9 @@ export function validate(model: WorkflowModel): Problem[] {
   if (!model.name.trim()) problems.push({ message: "Give the workflow a name." });
   if (!FILE.test(model.file))
     problems.push({ message: "The file name must end in .yml and use only letters, numbers, dots, dashes." });
-  if (!t.push.enabled && !t.pullRequest.enabled && !t.tags.enabled && !t.schedule.enabled && !t.manual) {
+  const noTriggers = !t.push.enabled && !t.pullRequest.enabled && !t.tags.enabled && !t.schedule.enabled && !t.manual;
+  // Triggers kept as written (rawOn) count, even though the chips can't show them.
+  if (model.rawOn === undefined && noTriggers) {
     problems.push({ message: "Pick at least one trigger, or the workflow never runs." });
   }
   if (t.schedule.enabled && t.schedule.cron.trim().split(/\s+/).length !== 5) {
@@ -348,6 +602,16 @@ export function validate(model: WorkflowModel): Problem[] {
     for (const need of job.needs) {
       if (!model.jobs.some((j) => j.id === need))
         problems.push({ job: job.id, message: `Runs after "${need}", which doesn't exist.` });
+    }
+    // A job that calls a reusable workflow (uses: at job level) has no steps of its own.
+    if (job.template === "steps" && !job.extra?.uses) {
+      const steps = job.steps ?? [];
+      if (steps.length === 0) problems.push({ job: job.id, message: `${job.name} has no steps yet.` });
+      steps.forEach((step, i) => {
+        if (!String(step.run ?? "").trim() && !String(step.uses ?? "").trim()) {
+          problems.push({ job: job.id, message: `${job.name}, step ${i + 1}: add a command or an action.` });
+        }
+      });
     }
     if (template(job.template).inputs.some((i) => !i.optional && !job.inputs[i.key]?.trim())) {
       problems.push({ job: job.id, message: `${job.name}: fill in every field.` });
@@ -532,16 +796,22 @@ export function goals(facts: ProjectFacts): Goal[] {
 
 // --- Plain English for the builder ----------------------------------------------------------
 
-export const SCHEDULES = [
-  { cron: "0 * * * *", label: "every hour" },
-  { cron: "0 6 * * *", label: "every day at 06:00 UTC" },
-  { cron: "0 2 * * *", label: "every night at 02:00 UTC" },
-  { cron: "0 6 * * 1", label: "every Monday at 06:00 UTC" },
-  { cron: "0 6 1 * *", label: "on the 1st of every month" },
-];
-
 export function describeSchedule(cron: string): string {
-  return SCHEDULES.find((s) => s.cron === cron.trim())?.label ?? `on schedule "${cron.trim()}"`;
+  const spec = scheduleSpec(cron);
+  if (!spec) return `on schedule "${cron.trim()}"`;
+  const time = `${String(spec.hour).padStart(2, "0")}:${String(spec.minute).padStart(2, "0")} UTC`;
+  const nth = (d: number) =>
+    `${d}${d % 10 === 1 && d !== 11 ? "st" : d % 10 === 2 && d !== 12 ? "nd" : d % 10 === 3 && d !== 13 ? "rd" : "th"}`;
+  switch (spec.frequency) {
+    case "hourly":
+      return spec.minute ? `every hour at :${String(spec.minute).padStart(2, "0")}` : "every hour";
+    case "daily":
+      return `every day at ${time}`;
+    case "weekly":
+      return `every ${WEEKDAYS[spec.weekday]} at ${time}`;
+    case "monthly":
+      return `on the ${nth(spec.day)} of every month at ${time}`;
+  }
 }
 
 /** The triggers as sentence parts: "on pushes to main", "on pull requests", and so on. */

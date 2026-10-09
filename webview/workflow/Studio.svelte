@@ -19,7 +19,7 @@
     | { kind: "loading" }
     | { kind: "start" }
     | { kind: "build"; file: string | null }
-    | { kind: "explain"; file: string; explanation: Explanation; model: WorkflowModel | null; editedByHand: boolean };
+    | { kind: "explain"; file: string; explanation: Explanation };
 
   let mode: Mode = $state({ kind: "loading" });
   let model: WorkflowModel | null = $state(null);
@@ -28,6 +28,8 @@
   let repoName = $state("");
   let error: string | null = $state(null);
   let savedNote: string | null = $state(null);
+  /** Set when the open workflow was read from a hand-written file. */
+  let importedNote: string | null = $state(null);
   let showYaml = $state(false);
   let copied = $state(false);
 
@@ -40,6 +42,7 @@
     model = structuredClone($state.snapshot(goal.model) as WorkflowModel);
     mode = { kind: "build", file: null };
     savedNote = null;
+    importedNote = null;
   }
 
   function save() {
@@ -62,15 +65,20 @@
         files = message.files;
         mode = { kind: "start" };
       } else if (message.type === "opened") {
-        if (message.model && !message.editedByHand) {
+        savedNote = null;
+        importedNote = message.imported
+          ? `Opened ${message.file} from the file itself. Saving keeps its jobs, steps and settings, but not its comments.`
+          : null;
+        if (message.model) {
           model = message.model;
           mode = { kind: "build", file: message.file };
         } else {
-          mode = { kind: "explain", ...message };
+          mode = { kind: "explain", file: message.file, explanation: message.explanation };
         }
       } else if (message.type === "saved") {
         files = message.files;
         mode = { kind: "build", file: message.file };
+        importedNote = null;
         savedNote = `Saved .github/workflows/${message.file}. Commit and push it to run it.`;
       } else if (message.type === "error") error = message.message;
     };
@@ -126,6 +134,9 @@
   {#if savedNote && mode.kind === "build"}
     <p class="saved-note" role="status"><span class="codicon codicon-check"></span>{savedNote}</p>
   {/if}
+  {#if importedNote && mode.kind === "build"}
+    <p class="saved-note" role="note"><span class="codicon codicon-info"></span>{importedNote}</p>
+  {/if}
 
   {#if mode.kind === "loading"}
     <p class="muted pad">Looking at your project…</p>
@@ -162,21 +173,7 @@
         <button onclick={() => send({ type: "openFile", file: mode.kind === "explain" ? mode.file : "" })}>
           <span class="codicon codicon-go-to-file"></span>Open the file
         </button>
-        {#if mode.model}
-          <button
-            onclick={() => {
-              if (mode.kind !== "explain" || !mode.model) return;
-              model = mode.model;
-              mode = { kind: "build", file: mode.file };
-            }}
-          >
-            <span class="codicon codicon-edit"></span>Edit visually (replaces hand edits)
-          </button>
-        {/if}
       </div>
-      {#if mode.editedByHand}
-        <p class="hint">This file was made in Workflow Studio, then edited by hand. Showing it as-is.</p>
-      {/if}
     </section>
   {:else if model}
     <div class="studio-body" class:with-yaml={showYaml}>

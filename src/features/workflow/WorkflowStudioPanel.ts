@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { HostToStudio, StudioToHost, WorkflowFile } from "../../shared/messages";
 import { suggestWorkflow, validate, type ProjectFacts, type WorkflowModel } from "../../workflow/model";
+import { importWorkflow } from "../../workflow/import";
 import { explain, readModel, toYaml } from "../../workflow/yaml";
 import { renderWebviewHtml } from "../webviewHtml";
 
@@ -117,14 +118,26 @@ export class WorkflowStudioPanel {
 
   private async open(file: string): Promise<void> {
     const text = await readFile(path.join(this.workflowsDir, file), "utf8");
+    const explanation = explain(text);
     const embedded = readModel(text);
-    this.post({
-      type: "opened",
-      file,
-      model: embedded?.model ?? null,
-      editedByHand: embedded?.editedByHand ?? false,
-      explanation: explain(text),
-    });
+    if (embedded && !embedded.editedByHand) {
+      this.post({ type: "opened", file, model: embedded.model, imported: false, explanation });
+      return;
+    }
+    // Hand-written, or edited by hand since Studio wrote it: read the file itself, so hand edits
+    // show up as editable jobs and steps.
+    try {
+      this.post({ type: "opened", file, model: importWorkflow(text, file), imported: true, explanation });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.post({
+        type: "opened",
+        file,
+        model: null,
+        imported: false,
+        explanation: { ...explanation, error: explanation.error ?? message },
+      });
+    }
   }
 
   private async save(model: WorkflowModel): Promise<void> {
@@ -140,7 +153,7 @@ export class WorkflowStudioPanel {
       const handWritten = !embedded || embedded.editedByHand;
       const choice = await vscode.window.showWarningMessage(
         handWritten
-          ? `${model.file} already exists and wasn't written by Workflow Studio (or was edited by hand). Replace it?`
+          ? `${model.file} was written or edited by hand. Saving rewrites it in Studio's layout: jobs, steps and settings are kept, but YAML comments and formatting are not. Replace it?`
           : `Update ${model.file}?`,
         { modal: true },
         handWritten ? "Replace" : "Update",

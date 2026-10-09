@@ -257,10 +257,38 @@ describe("Workflow Studio", () => {
     ]);
 
     await studio.webview.send({ type: "open", file: "ci.yml" });
-    expect(posted("opened").at(-1)).toMatchObject({ file: "ci.yml", editedByHand: false, model: suggestion });
+    expect(posted("opened").at(-1)).toMatchObject({ file: "ci.yml", imported: false, model: suggestion });
   });
 
-  it("explains hand-written workflows and asks before replacing them", async () => {
+  it("reads hand edits to a Studio file back as jobs and steps", async () => {
+    const dir = makeRepo();
+    commit(dir, "node project", { "package.json": JSON.stringify({ scripts: { test: "vitest" } }) });
+    const { studio, posted } = await openStudio(dir);
+    await studio.webview.send({ type: "ready" });
+    await studio.webview.send({ type: "save", model: posted("init").at(-1)!.suggestion });
+    const file = join(dir, ".github", "workflows", "ci.yml");
+    writeFileSync(file, readFileSync(file, "utf8").replace("run: npm ci", "run: npm ci --ignore-scripts"));
+
+    await studio.webview.send({ type: "open", file: "ci.yml" });
+    const opened = posted("opened").at(-1)!;
+    expect(opened.imported).toBe(true);
+    expect(opened.model?.jobs[0].steps).toContainEqual({ run: "npm ci --ignore-scripts" });
+  });
+
+  it("shows why a broken workflow file can't be opened", async () => {
+    const dir = makeRepo();
+    write(dir, ".github/workflows/broken.yml", "name: [oops\n");
+    write(dir, ".github/workflows/list.yml", "- not\n- a workflow\n");
+    const { studio, posted } = await openStudio(dir);
+    await studio.webview.send({ type: "ready" });
+
+    await studio.webview.send({ type: "open", file: "broken.yml" });
+    expect(posted("opened").at(-1)).toMatchObject({ model: null, explanation: { error: expect.any(String) } });
+    await studio.webview.send({ type: "open", file: "list.yml" });
+    expect(posted("opened").at(-1)).toMatchObject({ model: null, explanation: { error: /isn't a workflow/ } });
+  });
+
+  it("opens hand-written workflows as editable jobs and asks before replacing them", async () => {
     const dir = makeRepo();
     write(
       dir,
@@ -272,8 +300,8 @@ describe("Workflow Studio", () => {
 
     await studio.webview.send({ type: "open", file: "release.yml" });
     expect(posted("opened").at(-1)).toMatchObject({
-      model: null,
-      explanation: { name: "Release", triggers: ["manually from the Actions tab"] },
+      imported: true,
+      model: { name: "Release", triggers: { manual: true }, jobs: [{ id: "go", steps: [{ run: "echo hi" }] }] },
     });
 
     const model: WorkflowModel = { ...posted("init").at(-1)!.suggestion, file: "release.yml" };

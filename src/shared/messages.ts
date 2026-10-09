@@ -68,6 +68,6 @@ export type StudioToHost =
 
 export type HostToStudio =
   | { type: "init"; repoName: string; facts: ProjectFacts; suggestion: WorkflowModel; files: WorkflowFile[] }
-  | { type: "opened"; file: string; model: WorkflowModel | null; editedByHand: boolean; explanation: Explanation }
+  | { type: "opened"; file: string; model: WorkflowModel | null; imported: boolean; explanation: Explanation }
   | { type: "saved"; file: string; files: WorkflowFile[] }
   | { type: "error"; message: string };

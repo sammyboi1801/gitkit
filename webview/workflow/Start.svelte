@@ -41,7 +41,7 @@
               <span class="mono">{f.file}</span>
               <span class="muted">{f.summary}</span>
             </span>
-            <span class="pill-soft">{f.byGitKit ? "Editable here" : "Hand-written"}</span>
+            <span class="pill-soft">{f.byGitKit ? "Made in Studio" : "Hand-written"}</span>
           </button>
         </li>
       {/each}
