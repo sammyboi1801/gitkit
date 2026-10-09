@@ -80,9 +80,14 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
       if (!message) return fail("Write a commit message first.");
       const staged = status.files.some((f) => f.index && !f.conflicted);
       if (status.files.some((f) => f.conflicted)) return fail("Resolve the conflicts before committing.");
-      if (staged) return ok("Commit", [["commit", "-m", message]]);
+      // The label says exactly what goes in: "Commit 2 files" rather than a vaguer "Commit all".
+      const files = (n: number) => `${n} file${n === 1 ? "" : "s"}`;
+      if (staged) {
+        const n = status.files.filter((f) => f.index && !f.conflicted).length;
+        return ok(`Commit ${files(n)}`, [["commit", "-m", message]]);
+      }
       if (status.files.length === 0) return fail("Nothing to commit.");
-      return ok("Commit all", [
+      return ok(`Commit ${files(status.files.length)}`, [
         ["add", "-A"],
         ["commit", "-m", message],
       ]);

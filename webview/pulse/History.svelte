@@ -44,12 +44,13 @@
           <span class="toggle-hint" title={latest.summary}>last: {latest.summary}</span>
         {/if}
       </button>
+      <!-- Words, not a floppy disk: "save" alone doesn't say what gets saved. -->
       <button
-        class="icon-button"
-        title="Save a checkpoint: a snapshot of every file here, new ones included. Your files, staging area and stashes aren't touched."
+        class="small-button checkpoint-button"
+        title="Save a checkpoint: a snapshot of every file here, new ones included, to come back to. Your files, staging area and stashes aren't touched."
         aria-label="Save checkpoint"
         disabled={!!busy}
-        onclick={() => send({ type: "checkpoint" })}><span class="codicon codicon-save"></span></button
+        onclick={() => send({ type: "checkpoint" })}><span class="codicon codicon-bookmark"></span>Checkpoint</button
       >
     </div>
 
@@ -86,7 +87,7 @@
           {#each repo.checkpoints.slice(0, CHECKPOINTS_SHOWN) as c (c.ref)}
             {@const restore = preview({ type: "restoreCheckpoint", hash: c.hash }, repo)}
             <li class="step" title="{c.reason} · {new Date(c.time * 1000).toLocaleString()} · {c.hash.slice(0, 7)}">
-              <span class="codicon codicon-save step-icon"></span>
+              <span class="codicon codicon-bookmark step-icon"></span>
               <span class="step-text">{c.reason}</span>
               <span class="time">{ago(c.time)}</span>
               <button
@@ -113,7 +114,7 @@
             {@const name = recoveredName(c)}
             {@const recover = preview({ type: "recoverBranch", name, hash: c.hash }, repo)}
             <li class="step" title="{c.worktree}: {c.reason} · {new Date(c.time * 1000).toLocaleString()}">
-              <span class="codicon codicon-save step-icon"></span>
+              <span class="codicon codicon-bookmark step-icon"></span>
               <span class="step-text">{c.worktree}: {c.reason}</span>
               <span class="time">{ago(c.time)}</span>
               <button

@@ -47,11 +47,12 @@ describe("planAction", () => {
   it("commits staged changes only when something is staged", () => {
     const staged = repo({ files: [file("a.py", { index: "M", worktree: null }), file("b.py")] });
     expect(steps(planAction({ type: "commit", message: "fix" }, staged))).toEqual([["commit", "-m", "fix"]]);
+    expect(planAction({ type: "commit", message: "fix" }, staged)).toMatchObject({ plan: { label: "Commit 1 file" } });
   });
 
   it("stages everything first when nothing is staged", () => {
     const result = planAction({ type: "commit", message: "fix" }, repo({ files: [file("b.py")] }));
-    expect(result.ok && result.plan.label).toBe("Commit all");
+    expect(result.ok && result.plan.label).toBe("Commit 1 file");
     expect(steps(result)).toEqual([
       ["add", "-A"],
       ["commit", "-m", "fix"],

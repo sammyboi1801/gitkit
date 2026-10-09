@@ -77,11 +77,11 @@ describe("Changes", () => {
     expect(lastSent()).toEqual({ type: "action", request: { type: "commit", message: "fix: login" } });
   });
 
-  it("says Commit all when nothing is staged", async () => {
+  it("says how many files it commits when nothing is staged", async () => {
     const unstaged = repoState({ status: { files: [file("a.txt")] } });
     render(Changes, { props: { repo: unstaged, busy: null, conflictBlocks: {} } });
     await fireEvent.input(screen.getByRole("textbox"), { target: { value: "wip" } });
-    expect(button(/Commit all/)).toBeTruthy();
+    expect(button("Commit 1 file")).toBeTruthy();
     expect(screen.getByText("git add -A && git commit -m wip")).toBeTruthy();
   });
 
