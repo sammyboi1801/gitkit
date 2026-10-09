@@ -8,6 +8,12 @@ describe("formatCommand", () => {
     );
   });
 
+  it("leaves revisions like HEAD~1 and main^ unquoted, but not a leading ~", () => {
+    expect(formatCommand(["reset", "--soft", "HEAD~1"])).toBe("git reset --soft HEAD~1");
+    expect(formatCommand(["show", "main^"])).toBe("git show main^");
+    expect(formatCommand(["add", "~/notes"])).toBe('git add "~/notes"');
+  });
+
   it("quotes args with spaces", () => {
     expect(formatCommand(["commit", "-m", "fix login bug"])).toBe('git commit -m "fix login bug"');
   });
