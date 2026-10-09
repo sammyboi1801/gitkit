@@ -861,20 +861,20 @@ button.primary .count-pill {
 
 .track.mine,
 .dot-mine {
-  stroke: var(--vscode-charts-blue);
+  stroke: var(--gk-mine, var(--vscode-charts-purple));
 }
 
 .track.theirs,
 .dot-theirs {
-  stroke: var(--gk-incoming);
+  stroke: var(--gk-theirs, var(--vscode-charts-blue));
 }
 
 .dot-mine {
-  fill: var(--vscode-charts-blue);
+  fill: var(--gk-mine, var(--vscode-charts-purple));
 }
 
 .dot-theirs {
-  fill: var(--gk-incoming);
+  fill: var(--gk-theirs, var(--vscode-charts-blue));
 }
 
 .fork {
@@ -936,6 +936,11 @@ button.primary .count-pill {
   font-weight: 400;
   color: var(--vscode-foreground);
   font-family: var(--gk-mono);
+}
+
+.activity .yours-more {
+  font-size: inherit;
+  color: var(--gk-muted);
 }
 
 .activity .time {

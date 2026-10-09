@@ -88,7 +88,7 @@
               class="small-button"
               disabled={!update.ok || !!busy}
               title={update.text}
-              onclick={() => run({ type: "updateFromBase" })}>{update.label || `Update from ${base.name}`}</button
+              onclick={() => run({ type: "updateFromBase" })}>{update.label || `Merge ${base.name}`}</button
             >
           {/if}
         {/if}

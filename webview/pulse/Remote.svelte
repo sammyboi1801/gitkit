@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ActivityItem, CiError, RepoState } from "../../src/shared/types";
   import PrStatus from "../shared/PrStatus.svelte";
+  import { laneColor } from "../shared/graph";
   import { ago, preview } from "./util";
   import { send } from "./vscode";
 
@@ -10,6 +11,17 @@
   const base = $derived(repo.base && !repo.base.isCurrent ? repo.base : null);
   const fetch = $derived(preview({ type: "fetch" }, repo));
   const update = $derived(preview({ type: "updateFromBase" }, repo));
+  /** Never fetched: what the remote had when last seen (a clone, a push) may be long out of date. */
+  const unchecked = $derived(!repo.lastFetch);
+  // The fork picture uses the same colors as the graph and the Branch Map: main's, and your branch's lane.
+  const mineColor = $derived(
+    laneColor(repo.graph.lanes.find((l) => l.name === status.branch && l.kind !== "base")?.color ?? 1),
+  );
+  const theirsColor = laneColor(0);
+  /** Other people's updates; your own pushes are folded into one line, since you know about them. */
+  const theirs = $derived(repo.activity.filter((a) => !a.byYou));
+  const yours = $derived(repo.activity.filter((a) => a.byYou));
+  let showYours = $state(false);
 
   const ciIcon: Record<string, string> = {
     success: "pass-filled",
@@ -103,6 +115,8 @@
           <span class="muted">detached</span>
         {:else if !status.upstream}
           <span class="muted">only on your machine</span>
+        {:else if !status.ahead && !status.behind && unchecked}
+          <span class="muted" title="GitKit hasn't checked the remote yet">not checked yet</span>
         {:else if !status.ahead && !status.behind}
           <span class="ok"><span class="codicon codicon-check"></span>in sync</span>
         {:else}
@@ -122,7 +136,9 @@
         <span class="codicon codicon-git-merge row-icon"></span>
         <span class="row-label">{base.ref}</span>
         <span class="row-status">
-          {#if base.behind === 0}
+          {#if base.behind === 0 && unchecked}
+            <span class="muted" title="GitKit hasn't checked the remote yet">not checked yet</span>
+          {:else if base.behind === 0}
             <span class="ok"><span class="codicon codicon-check"></span>up to date</span>
           {:else}
             <span class="pill in">{base.behind} new since you branched</span>
@@ -130,7 +146,11 @@
         </span>
       </div>
 
-      <div class="divergence" title="Your branch and {base.name}, from where you branched off">
+      <div
+        class="divergence"
+        title="Your branch and {base.name}, from where you branched off"
+        style="--gk-mine: {mineColor}; --gk-theirs: {theirsColor}"
+      >
         <svg width="86" height="30" viewBox="0 0 86 30" aria-hidden="true">
           <path d="M4 15 C 14 15, 14 6, 24 6 L 82 6" class="track mine" />
           <path d="M4 15 C 14 15, 14 24, 24 24 L 82 24" class="track theirs" />
@@ -168,7 +188,7 @@
           title={update.text}
           onclick={() => send({ type: "action", request: { type: "updateFromBase" } })}
         >
-          <span class="codicon codicon-git-pull-request"></span>{update.label || `Update from ${base.name}`}
+          <span class="codicon codicon-git-pull-request"></span>{update.label || `Merge ${base.name}`}
         </button>
       {/if}
     {/if}
@@ -254,7 +274,7 @@
 
     {#if repo.activity.length}
       <ul class="activity">
-        {#each repo.activity.slice(0, 4) as item (item.ref + item.time)}
+        {#each [...theirs.slice(0, 3), ...(showYours ? yours.slice(0, 3) : [])] as item (item.ref + item.time)}
           <li title="{item.ref} · {new Date(item.time * 1000).toLocaleString()}">
             <span class="codicon codicon-{icon(item)} kind-{item.kind}"></span>
             <span class="who">{who(item)}</span>
@@ -262,6 +282,13 @@
             <span class="time">{ago(item.time)}</span>
           </li>
         {/each}
+        {#if yours.length && !showYours}
+          <li>
+            <button class="link-button yours-more" onclick={() => (showYours = true)}
+              >{theirs.length ? "and " : ""}{yours.length} of your own update{yours.length === 1 ? "" : "s"}</button
+            >
+          </li>
+        {/if}
       </ul>
     {/if}
   </section>

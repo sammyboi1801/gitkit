@@ -515,6 +515,67 @@ describe("Remote card", () => {
     });
   });
 
+  it("doesn't claim to be up to date before it has ever checked the remote", () => {
+    const base = {
+      ref: "origin/main",
+      name: "main",
+      ahead: 1,
+      behind: 0,
+      forkPoint: null,
+      conflicts: null,
+      isCurrent: false,
+    };
+    render(Remote, { props: { repo: repoState({ lastFetch: null, base }), busy: null, fetching: false } });
+    expect(screen.getAllByText("not checked yet")).toHaveLength(2);
+    expect(screen.queryByText("in sync")).toBeNull();
+    expect(screen.queryByText("up to date")).toBeNull();
+  });
+
+  it("draws the fork in the graph's colors: main's lane, and your branch's", () => {
+    const base = {
+      ref: "origin/main",
+      name: "main",
+      ahead: 2,
+      behind: 1,
+      forkPoint: null,
+      conflicts: null,
+      isCurrent: false,
+    };
+    const repo = repoState({ base });
+    repo.graph.lanes = [
+      { name: "main", kind: "base", row: 0, color: 0 },
+      { name: repo.status.branch!, kind: "branch", row: 1, color: 3 },
+    ];
+    render(Remote, { props: { repo, busy: null, fetching: false } });
+    const style = document.querySelector<HTMLElement>(".divergence")!.getAttribute("style");
+    expect(style).toContain("--gk-mine: var(--vscode-charts-orange)");
+    expect(style).toContain("--gk-theirs: var(--gk-main-color, var(--vscode-charts-blue))");
+  });
+
+  it("lists teammates' updates, with your own folded into one line", async () => {
+    const at = Math.floor(Date.now() / 1000) - 60;
+    const item = (byYou: boolean, ref: string) =>
+      ({
+        ref,
+        time: at,
+        kind: byYou ? "push" : "fetch",
+        byYou,
+        commits: 1,
+        authors: byYou ? [] : ["Alex Chen"],
+      }) as const;
+    render(Remote, {
+      props: {
+        repo: repoState({ activity: [item(true, "origin/feat"), item(false, "origin/main"), item(true, "origin/x")] }),
+        busy: null,
+        fetching: false,
+      },
+    });
+    expect(screen.queryByText("You")).toBeNull();
+    expect(screen.getByText("Alex Chen")).toBeTruthy();
+    await fireEvent.click(screen.getByText("and 2 of your own updates"));
+    expect(screen.getAllByText("You")).toHaveLength(2);
+  });
+
   it("is hidden for repos without a remote", () => {
     const { container } = render(Remote, { props: { repo: repoState({ remotes: [] }), busy: null, fetching: false } });
     expect(container.textContent?.trim()).toBe("");
