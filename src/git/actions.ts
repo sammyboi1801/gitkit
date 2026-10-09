@@ -31,7 +31,10 @@ export type ActionRequest =
   | { type: "unstageAll" }
   | { type: "discardAll" }
   | { type: "untrack"; path: string }
-  | { type: "deleteBranches"; names: string[] };
+  | { type: "deleteBranches"; names: string[] }
+  | { type: "mergeBranch"; branch: string }
+  | { type: "rebaseOnto"; branch: string }
+  | { type: "switchAndMerge"; target: string; source: string };
 
 export interface Plan {
   label: string;
@@ -240,6 +243,46 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
         "Delete branches",
         [["branch", "-D", ...request.names]],
         `Delete ${request.names.length} local branch${request.names.length === 1 ? "" : "es"}: ${request.names.join(", ")}? Recover them later from Oops → Recover a deleted branch.`,
+      );
+    }
+
+    case "mergeBranch": {
+      if (!status.branch) return fail("HEAD is detached. Check out a branch to merge into.");
+      if (request.branch === status.branch) return fail("A branch can't be merged into itself.");
+      if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
+      return ok(
+        `Merge into ${status.branch}`,
+        [["merge", "--autostash", "--no-edit", request.branch]],
+        `Merge ${request.branch} into ${status.branch}?`,
+      );
+    }
+
+    case "rebaseOnto": {
+      if (!status.branch) return fail("HEAD is detached. Check out a branch to rebase.");
+      if (request.branch === status.branch) return fail("A branch can't be rebased onto itself.");
+      if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
+      const published = status.upstream ? " It's already published, so you'll need to force-push afterwards." : "";
+      return ok(
+        "Rebase",
+        [
+          ["update-ref", `refs/gitkit/backup/${status.branch}`, "HEAD"],
+          ["rebase", "--autostash", request.branch],
+        ],
+        `Replay ${status.branch}'s commits on top of ${request.branch}?${published} A backup is saved first.`,
+      );
+    }
+
+    case "switchAndMerge": {
+      if (request.target === request.source) return fail("A branch can't be merged into itself.");
+      if (repo.operation) return fail(`Finish or abort the ${repo.operation} first.`);
+      if (request.target === status.branch) return planAction({ type: "mergeBranch", branch: request.source }, repo);
+      return ok(
+        `Merge into ${request.target}`,
+        [
+          ["switch", request.target],
+          ["merge", "--autostash", "--no-edit", request.source],
+        ],
+        `Switch to ${request.target} and merge ${request.source} into it?`,
       );
     }
 

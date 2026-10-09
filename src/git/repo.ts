@@ -198,9 +198,9 @@ async function readBase(root: string, status: StatusInfo, remotes: string[], ref
 }
 
 /** Test-merges in memory with merge-tree: no files, index or refs are touched. */
-async function predictConflicts(root: string, ref: string): Promise<string[] | null> {
+export async function predictConflicts(root: string, theirs: string, ours = "HEAD"): Promise<string[] | null> {
   try {
-    await read(["merge-tree", "--write-tree", "--name-only", "--no-messages", "HEAD", ref], root);
+    await read(["merge-tree", "--write-tree", "--name-only", "--no-messages", ours, theirs], root);
     return [];
   } catch (error) {
     // Exit code 1 means "merged with conflicts"; anything else (old git, odd history) means unknown.

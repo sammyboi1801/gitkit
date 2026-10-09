@@ -399,3 +399,48 @@ describe("auto-fetch", () => {
 
 // Keeps the unused-import linter honest about writeFileSync being available for future tests.
 void writeFileSync;
+
+describe("branch-to-branch actions from the Branch Map", () => {
+  it("forecasts conflicts in the confirmation before merging", async () => {
+    const dir = makeRepo();
+    git(dir, "switch", "-q", "-c", "feat");
+    commit(dir, "feat edit", { "a.txt": "feat\n" });
+    git(dir, "switch", "-q", "main");
+    commit(dir, "main edit", { "a.txt": "main\n" });
+    const panel = await openPanel(dir);
+
+    harness.answers.push(undefined); // Look, then cancel.
+    await panel.send({ type: "action", request: { type: "mergeBranch", branch: "feat" } });
+    expect(harness.shown.at(-1)?.message).toMatch(/Merge feat into main\? Expect conflicts in a\.txt\./);
+    expect(panel.repo().operation).toBeNull();
+  });
+
+  it("says when a merge is clean, and merges into another branch by switching first", async () => {
+    const dir = makeRepo();
+    git(dir, "branch", "release");
+    git(dir, "switch", "-q", "-c", "feat");
+    commit(dir, "feature", { "f.txt": "f\n" });
+    const panel = await openPanel(dir);
+
+    harness.answers.push("Merge into release");
+    await panel.send({ type: "action", request: { type: "switchAndMerge", target: "release", source: "feat" } });
+    expect(harness.shown.at(-1)?.message).toMatch(/It merges cleanly/);
+    expect(git(dir, "branch", "--show-current").trim()).toBe("release");
+    expect(git(dir, "log", "-1", "--format=%s").trim()).toBe("feature");
+  });
+
+  it("rebases the current branch onto another", async () => {
+    const dir = makeRepo();
+    git(dir, "switch", "-q", "-c", "feat");
+    commit(dir, "feature", { "f.txt": "f\n" });
+    git(dir, "switch", "-q", "main");
+    commit(dir, "main moved", { "m.txt": "m\n" });
+    git(dir, "switch", "-q", "feat");
+    const panel = await openPanel(dir);
+
+    harness.answers.push("Rebase");
+    await panel.send({ type: "action", request: { type: "rebaseOnto", branch: "main" } });
+    expect(git(dir, "log", "--format=%s").trim().split("\n")).toEqual(["feature", "main moved", "first"]);
+    expect(git(dir, "rev-parse", "refs/gitkit/backup/feat").trim()).toBeTruthy();
+  });
+});

@@ -3,7 +3,14 @@ import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
 import { parseConflicts, resolveConflict, sideNames, type Resolution } from "../../git/conflicts";
 import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discover";
-import { findWorkspaceRepo, readBranches, readCommitDetails, readRepo, readSummary } from "../../git/repo";
+import {
+  findWorkspaceRepo,
+  predictConflicts,
+  readBranches,
+  readCommitDetails,
+  readRepo,
+  readSummary,
+} from "../../git/repo";
 import { GitError, formatCommand, runGit } from "../../git/runner";
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, CiStatus, RepoState, RepoSummary } from "../../shared/types";
@@ -377,6 +384,22 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     return this.repo;
   }
 
+  /** For merges and rebases between branches: a test merge in memory, so the dialog can say what will happen. */
+  private async mergeForecast(request: ActionRequest, root: string): Promise<string> {
+    const pair =
+      request.type === "mergeBranch"
+        ? { ours: "HEAD", theirs: request.branch }
+        : request.type === "switchAndMerge"
+          ? { ours: request.target, theirs: request.source }
+          : request.type === "rebaseOnto"
+            ? { ours: request.branch, theirs: "HEAD" }
+            : null;
+    if (!pair) return "";
+    const conflicts = await predictConflicts(root, pair.theirs, pair.ours).catch(() => null);
+    if (conflicts === null) return "";
+    return conflicts.length ? ` Expect conflicts in ${conflicts.join(", ")}.` : " It merges cleanly, no conflicts.";
+  }
+
   /** The Oops menu: plain-English fixes for common mistakes. */
   async oops(): Promise<void> {
     if (!this.repo || this.busy) return;
@@ -453,7 +476,12 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const { plan } = result;
     if (plan.confirm) {
       const detail = plan.steps.map(formatCommand).join("\n");
-      const choice = await vscode.window.showWarningMessage(plan.confirm, { modal: true, detail }, plan.label);
+      const forecast = await this.mergeForecast(request, this.repo.root);
+      const choice = await vscode.window.showWarningMessage(
+        plan.confirm + forecast,
+        { modal: true, detail },
+        plan.label,
+      );
       if (choice !== plan.label) return;
     }
     let steps = plan.steps;

@@ -229,3 +229,46 @@ describe("undo and fix-ups", () => {
     expect(steps(planAction({ type: "deleteBranches", names: ["old"] }, repo()))).toEqual([["branch", "-D", "old"]]);
   });
 });
+
+describe("branch-to-branch actions (Branch Map)", () => {
+  it("merges another branch into the current one", () => {
+    const result = planAction({ type: "mergeBranch", branch: "feat" }, repo());
+    expect(result.ok && result.plan.label).toBe("Merge into main");
+    expect(steps(result)).toEqual([["merge", "--autostash", "--no-edit", "feat"]]);
+    expect(planAction({ type: "mergeBranch", branch: "main" }, repo()).ok).toBe(false);
+  });
+
+  it("rebases with a backup, warning when the branch is published", () => {
+    const result = planAction(
+      { type: "rebaseOnto", branch: "main" },
+      repo({ branch: "feat", upstream: "origin/feat" }),
+    );
+    expect(steps(result)).toEqual([
+      ["update-ref", "refs/gitkit/backup/feat", "HEAD"],
+      ["rebase", "--autostash", "main"],
+    ]);
+    expect(result.ok && result.plan.confirm).toMatch(/force-push/);
+  });
+
+  it("switches first when merging into a branch you're not on", () => {
+    expect(steps(planAction({ type: "switchAndMerge", target: "release", source: "feat" }, repo()))).toEqual([
+      ["switch", "release"],
+      ["merge", "--autostash", "--no-edit", "feat"],
+    ]);
+    // Onto the current branch it's a plain merge.
+    expect(steps(planAction({ type: "switchAndMerge", target: "main", source: "feat" }, repo()))).toEqual([
+      ["merge", "--autostash", "--no-edit", "feat"],
+    ]);
+  });
+
+  it("refuses while a merge or rebase is paused", () => {
+    const paused = { ...repo(), operation: "merge" as const };
+    for (const request of [
+      { type: "mergeBranch", branch: "x" },
+      { type: "rebaseOnto", branch: "x" },
+      { type: "switchAndMerge", target: "y", source: "x" },
+    ] as const) {
+      expect(planAction(request, paused).ok).toBe(false);
+    }
+  });
+});
