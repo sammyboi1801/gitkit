@@ -91,3 +91,49 @@ describe("updateYaml", () => {
     expect(updateYaml("jobs: [unclosed", { jobs: {} })).toBeNull();
   });
 });
+
+describe("updateYaml with anchors", () => {
+  // One env block written once (&shared) and reused (*shared): GitHub reads both jobs as having it.
+  const anchored = [
+    "# Shared setup for both jobs.",
+    "name: CI",
+    "on: push",
+    "jobs:",
+    "  a:",
+    "    runs-on: ubuntu-latest",
+    "    env: &shared",
+    "      CI: 'true' # some tools read it as a string",
+    "      NODE_ENV: test",
+    "    steps:",
+    "      - run: echo a",
+    "  b:",
+    "    runs-on: ubuntu-latest",
+    "    env: *shared",
+    "    steps:",
+    "      - run: echo b",
+    "",
+  ].join("\n");
+  const read = (text: string) => importWorkflow(text, "ci.yml");
+
+  it("keeps anchors, aliases and comments when they aren't what changed", () => {
+    expect(edit(() => {}, anchored)).toBe(anchored);
+    const saved = edit((m) => (m.jobs[1].steps![0].run = "echo bee"), anchored);
+    expect(diff(anchored, saved)).toEqual({ added: ["      - run: echo bee"], removed: ["      - run: echo b"] });
+  });
+
+  it("changes only the reused spot when that's what was edited, leaving the original alone", () => {
+    const saved = edit((m) => (m.jobs[1].extra!.env = { CI: "true", NODE_ENV: "production" }), anchored);
+    expect(saved).toContain("    env: &shared\n      CI: 'true' # some tools read it as a string");
+    expect(saved).not.toContain("*shared");
+    expect(read(saved).jobs[0].extra!.env).toEqual({ CI: "true", NODE_ENV: "test" });
+    expect(read(saved).jobs[1].extra!.env).toEqual({ CI: "true", NODE_ENV: "production" });
+  });
+
+  it("gives the other uses their own copy before the anchored original is edited", () => {
+    const saved = edit((m) => (m.jobs[0].extra!.env = { CI: "true", NODE_ENV: "staging" }), anchored);
+    expect(read(saved).jobs[0].extra!.env).toEqual({ CI: "true", NODE_ENV: "staging" });
+    expect(read(saved).jobs[1].extra!.env).toEqual({ CI: "true", NODE_ENV: "test" });
+    expect(saved).toContain("# Shared setup for both jobs.");
+    expect(saved).toContain("# some tools read it as a string");
+  });
+});

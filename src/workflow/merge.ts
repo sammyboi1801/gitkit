@@ -16,8 +16,27 @@ function stable(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-const js = (node: unknown): unknown =>
-  node && typeof (node as { toJSON?: unknown }).toJSON === "function" ? (node as { toJSON(): unknown }).toJSON() : node;
+/** A node's value, with aliases resolved: what GitHub reads there. */
+const js = (doc: Document, node: unknown): unknown =>
+  node && typeof (node as { toJS?: unknown }).toJS === "function"
+    ? (node as { toJS(doc: Document): unknown }).toJS(doc)
+    : node;
+
+/**
+ * Before an anchored node (&name) is edited, every alias of it (*name) gets its own copy of the
+ * old value, so the edit changes this place only, as it did in Studio.
+ */
+function detachAliases(doc: Document, node: Node): void {
+  const anchor = (node as { anchor?: string }).anchor;
+  if (!anchor) return;
+  const old = js(doc, node);
+  visit(doc, {
+    Alias(_, alias) {
+      if (alias.source === anchor) return doc.createNode(old);
+    },
+  });
+  (node as { anchor?: string }).anchor = undefined;
+}
 
 /** `on: push` and `on: [push]` mean the same as the mapping form with nulls. */
 function normalizeOn(on: unknown): unknown {
@@ -53,7 +72,10 @@ function replace(doc: Document, old: Node | null, value: unknown): Node {
 }
 
 function merge(doc: Document, node: Node | null, value: unknown, path: readonly string[]): Node {
-  if (node && sameMeaning(js(node), value, path)) return node;
+  if (node && sameMeaning(js(doc, node), value, path)) return node;
+  // A changed alias becomes a value of its own: the anchor and its other uses stay as they were.
+  if (isAlias(node)) return replace(doc, node, value);
+  if (node) detachAliases(doc, node);
   if (isMap(node) && isObj(value)) {
     for (const pair of [...node.items]) if (!(keyOf(pair) in value)) node.items.splice(node.items.indexOf(pair), 1);
     const order = Object.keys(value);
@@ -91,7 +113,7 @@ function merge(doc: Document, node: Node | null, value: unknown, path: readonly 
  * are edited rather than replaced.
  */
 function mergeList(doc: Document, items: Node[], values: unknown[], path: readonly string[]): Node[] {
-  const before = items.map((n) => stable(js(n)));
+  const before = items.map((n) => stable(js(doc, n)));
   const after = values.map(stable);
   const table = Array.from({ length: before.length + 1 }, () => new Array<number>(after.length + 1).fill(0));
   for (let i = before.length - 1; i >= 0; i--) {
@@ -170,21 +192,10 @@ function layoutOf(text: string): { indent: number; indentSeq: boolean } {
   return { indent: indent ?? 2, indentSeq: indentSeq ?? true };
 }
 
-/**
- * `original` with `next` saved into it, or null when it can't be done safely (it doesn't parse, or
- * uses anchors and aliases, which an edit could break): then the caller rewrites the whole file.
- */
+/** `original` with `next` saved into it, or null when it isn't a YAML mapping to edit (it doesn't parse). */
 export function updateYaml(original: string, next: Obj): string | null {
   const doc = parseDocument(original);
   if (doc.errors.length || !isMap(doc.contents)) return null;
-  let aliases = false;
-  visit(doc, {
-    Alias() {
-      aliases = true;
-      return visit.BREAK;
-    },
-  });
-  if (aliases || isAlias(doc.contents)) return null;
   hoistComments(doc.contents);
   doc.contents = merge(doc, doc.contents as Node, next, []) as typeof doc.contents;
   const { indent, indentSeq } = layoutOf(original);

@@ -190,7 +190,7 @@ export class WorkflowStudioPanel {
         merged !== null
           ? `Update ${model.file}? Only what you changed is edited: its comments and formatting are kept.`
           : handWritten
-            ? `${model.file} uses YAML anchors, so Studio can't edit it in place. Saving rewrites it in Studio's layout: jobs, steps and settings are kept, but comments and formatting are not. Replace it?`
+            ? `${model.file} on disk isn't valid YAML any more, so it can't be edited in place. Saving replaces it with what Studio shows. Replace it?`
             : `Update ${model.file}?`,
         { modal: true },
         handWritten && merged === null ? "Replace" : "Update",
