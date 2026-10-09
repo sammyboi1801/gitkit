@@ -20,6 +20,24 @@ export function refColor(graph: BranchGraph, ref: Ref): string | undefined {
   return lane ? laneColor(lane.color) : undefined;
 }
 
+/** The colour of a branch flag with no lane of its own, like a branch that has no commits yet. */
+export const NO_LANE_COLOR = "var(--vscode-charts-yellow)";
+
+/**
+ * The current branch when it has no commits of its own yet (just created, or reset onto another
+ * branch's commit). Git has nothing to draw for it, so its name only sits on someone else's commit.
+ */
+export function emptyBranch(
+  graph: BranchGraph,
+  branch: string | null,
+  head: string | null,
+): { name: string; index: number } | null {
+  if (!branch || !head) return null;
+  const index = graph.commits.findIndex((c) => c.hash === head);
+  if (index < 0) return null;
+  return graph.lanes[graph.placement[index].lane].name === branch ? null : { name: branch, index };
+}
+
 /** Newest commit index of each lane: where its name label goes. */
 export function laneTips(graph: BranchGraph): Map<number, number> {
   const tips = new Map<number, number>();

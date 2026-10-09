@@ -164,6 +164,67 @@ describe("Branch Map", () => {
     expect(within(screen.getByRole("tooltip")).queryByText(/you're on it/)).toBeNull();
   });
 
+  describe("a branch with no commits yet", () => {
+    const fresh = [
+      commitOf("c", ["b"], "fix: bump version", { refs: [{ name: "origin/main", kind: "remote", isHead: false }] }),
+      commitOf("b", ["a"], "feat: version endpoint"),
+      commitOf("a", [], "feat: health endpoint", {
+        refs: [
+          { name: "testing-1", kind: "local", isHead: true },
+          { name: "main", kind: "local", isHead: false },
+        ],
+      }),
+    ];
+    const ghost = () => screen.queryByRole("img", { name: /has no commits of its own yet/ });
+
+    it("gets a dashed lane of its own that says where its first commit goes", async () => {
+      await open(repoState({ status: { branch: "testing-1", oid: "a", upstream: null }, commits: fresh }));
+      expect(ghost()?.getAttribute("aria-label")).toMatch(/^testing-1 has no commits/);
+      expect(within(ghost()!).getByText("testing-1")).toBeTruthy();
+      expect(within(ghost()!).getByText(/your next commit starts here/)).toBeTruthy();
+    });
+
+    it("goes away once the branch has its own commit, or on a branch with a lane", async () => {
+      await open(repoState({ status: { branch: "testing-1", oid: "a", upstream: null }, commits: fresh }));
+      await update(repoState({ status: { branch: "main", oid: "a" }, commits: fresh }));
+      expect(ghost()).toBeNull();
+
+      const committed = [
+        commitOf("d", ["a"], "feat: my work", { refs: [{ name: "testing-1", kind: "local", isHead: true }] }),
+        ...fresh,
+      ];
+      await update(repoState({ status: { branch: "testing-1", oid: "d", upstream: null }, commits: committed }));
+      expect(ghost()).toBeNull();
+    });
+
+    it("isn't drawn for a detached HEAD", async () => {
+      await open(repoState({ status: { branch: null, oid: "a" }, commits: fresh }));
+      expect(ghost()).toBeNull();
+    });
+  });
+
+  it("colours a remote branch's flag text, not just its outline", async () => {
+    // The colour variable has to sit on the whole flag: set on the outline only, the text fell
+    // back to black and origin/main was unreadable on dark themes.
+    await open(
+      repoState({
+        status: { branch: "feat/login", oid: "x" },
+        commits: [
+          commitOf("x", ["b"], "feat: login form", { refs: [{ name: "feat/login", kind: "local", isHead: true }] }),
+          commitOf("b", [], "docs: readme", {
+            refs: [
+              { name: "main", kind: "local", isHead: false },
+              { name: "origin/main", kind: "remote", isHead: false },
+            ],
+          }),
+        ],
+      }),
+    );
+    const remote = document.querySelector(".flag-remote")!;
+    expect(remote.getAttribute("style")).toMatch(/--chip:/);
+    expect(flag("main").getAttribute("style")).toMatch(/--chip:/);
+  });
+
   it("keeps hover tooltips next to the commit when the map is scrolled", async () => {
     await open();
     const hoverLeft = async () => {

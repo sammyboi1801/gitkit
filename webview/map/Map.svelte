@@ -5,7 +5,7 @@
   import type { ActionError, HostToWebview, PulseState } from "../../src/shared/messages";
   import type { Commit, CommitDetails } from "../../src/shared/types";
   import CommitPanel from "../shared/CommitPanel.svelte";
-  import { applyMainColor, laneColor, laneStarts, refColor } from "../shared/graph";
+  import { NO_LANE_COLOR, applyMainColor, emptyBranch, laneColor, laneStarts, refColor } from "../shared/graph";
   import { ago, headAncestors, preview } from "../pulse/util";
   import { send } from "../pulse/vscode";
   import Menu from "./Menu.svelte";
@@ -75,8 +75,17 @@
   const col = BASE_COL;
   const R = 11;
   const showInitials = $derived(zoom >= 0.6);
-  const baseWidth = $derived(display ? LEFT * 2 + Math.max(display.columns - 1, 0) * col + 140 : 0);
-  const baseHeight = $derived(graph ? TOP + Math.max(graph.rows - 1, 0) * ROW_H + 72 : 0);
+  const baseWidth = $derived.by(() => {
+    if (!display) return 0;
+    const width = LEFT * 2 + Math.max(display.columns - 1, 0) * col + 140;
+    // Room for the ghost lane's dot and its "no commits yet" note to the right of HEAD.
+    return ghostFrom ? Math.max(width, x(ghostFrom) + col + 300) : width;
+  });
+  // A branch with no commits yet gets a dashed lane of its own under the others, so it's visible.
+  const ghost = $derived(graph ? emptyBranch(graph, current, repo?.status.oid ?? null) : null);
+  const ghostFrom = $derived(ghost ? nodeById.get(graph!.commits[ghost.index].hash) : undefined);
+  const rowCount = $derived((graph?.rows ?? 0) + (ghostFrom ? 1 : 0));
+  const baseHeight = $derived(graph ? TOP + Math.max(rowCount - 1, 0) * ROW_H + 72 : 0);
   const selectedCommit = $derived(graph?.commits.find((c) => c.hash === selected) ?? null);
   const localBranches = $derived(
     new Set(graph?.commits.flatMap((c) => c.refs.filter((r) => r.kind === "local").map((r) => r.name)) ?? []),
@@ -517,6 +526,24 @@
           <line x1="0" x2={baseWidth} y1={TOP + row * ROW_H} y2={TOP + row * ROW_H} class="guide" />
         {/each}
 
+        {#if ghost && ghostFrom}
+          {@const gx = x(ghostFrom) + col}
+          {@const gy = TOP + graph.rows * ROW_H}
+          <g
+            class="ghost-lane"
+            role="img"
+            aria-label="{ghost.name} has no commits of its own yet. Your next commit starts its lane here."
+            style="--ghost: {NO_LANE_COLOR}"
+          >
+            <path
+              d="M {x(ghostFrom)} {y(ghostFrom)} V {gy - 12} Q {x(ghostFrom)} {gy} {x(ghostFrom) + 12} {gy} H {gx - R}"
+            />
+            <circle cx={gx} cy={gy} r={R} />
+            <text class="ghost-name" x={gx + R + 8} y={gy - 2}>{ghost.name}</text>
+            <text class="ghost-hint" x={gx + R + 8} y={gy + 12}>no commits yet: your next commit starts here</text>
+          </g>
+        {/if}
+
         {#each display.edges as edge (edge.from + ">" + edge.to)}
           <path
             d={edgePath(edge)}
@@ -605,13 +632,14 @@
               {/if}
               <!-- Branch and tag flags above the commit they point at, stacked if several. -->
               {#each commit.refs as ref, k (ref.kind + ref.name)}
-                {@const chip = refColor(graph, ref) ?? "var(--vscode-charts-yellow)"}
+                {@const chip = refColor(graph, ref) ?? NO_LANE_COLOR}
                 {@const full = ref.kind === "tag" ? `🏷 ${ref.name}` : ref.name}
                 {@const label = clip(full, flagRoom.get(commit.hash) ?? Infinity)}
                 {@const w = label.length * 6.4 + 12}
                 {@const branch = ref.kind === "local" && localBranches.has(ref.name) ? ref.name : null}
                 <g
                   class="flag flag-{ref.kind}"
+                  style="--chip: {chip}"
                   class:draggable={!!branch}
                   class:drop-target={!!branch && drag?.active && drag.branch !== branch}
                   class:drop-over={!!branch && drag?.active && drag.over === branch}
@@ -632,7 +660,7 @@
                     hoveredFlag = null;
                   }}
                 >
-                  <rect width={w} height="16" rx="3" style="--chip: {chip}" />
+                  <rect width={w} height="16" rx="3" />
                   <text x={w / 2} y="11.5" text-anchor="middle">{label}</text>
                 </g>
               {/each}

@@ -126,6 +126,26 @@ body {
   fill: var(--vscode-editor-background);
 }
 
+/* A branch with no commits yet: a dashed lane that says where its first commit will go. */
+.ghost-lane path,
+.ghost-lane circle {
+  fill: none;
+  stroke: var(--ghost);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+}
+
+.ghost-name {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ghost);
+}
+
+.ghost-hint {
+  font-size: 11px;
+  fill: var(--vscode-descriptionForeground);
+}
+
 .flag-remote rect {
   fill: var(--vscode-editor-background);
   stroke: var(--chip);
