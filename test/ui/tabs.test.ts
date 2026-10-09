@@ -795,11 +795,11 @@ describe("Workflow Studio", () => {
 
     it("sets a job's condition, services, matrix, permissions and timeout", async () => {
       const editor = await editJob(/^Lint\b/, "Lint", true);
-      await open(editor, "More options");
-      const options = within(editor.querySelector(".job-options") as HTMLElement);
-      await fireEvent.input(options.getByRole("textbox", { name: /Only run if/ }), {
+      await fireEvent.change(within(editor).getByRole("combobox", { name: "When this job runs" }), {
         target: { value: "github.ref == 'refs/heads/main'" },
       });
+      await open(editor, "More options");
+      const options = within(editor.querySelector(".job-options") as HTMLElement);
       await fireEvent.click(options.getByRole("button", { name: /Add a database or other service/ }));
       await fireEvent.input(options.getByRole("textbox", { name: "Service name" }), { target: { value: "postgres" } });
       await fireEvent.input(options.getByRole("textbox", { name: "Image of postgres" }), {
@@ -826,6 +826,59 @@ describe("Workflow Studio", () => {
       expect(lint.strategy).toEqual({ matrix: { os: ["ubuntu-latest", "windows-latest"] } });
       expect(lint.permissions).toEqual({ "pull-requests": "write" });
       expect(lint["timeout-minutes"]).toBe(20);
+    });
+
+    it("picks when a job runs from a list, says it on the card, and takes any other condition", async () => {
+      const editor = await editJob(/^Lint\b/, "Lint");
+      const when = within(editor).getByRole("combobox", { name: "When this job runs" }) as HTMLSelectElement;
+      expect(when.value).toBe("");
+      await fireEvent.change(when, {
+        target: { value: "github.event_name == 'push' && github.ref == 'refs/heads/main'" },
+      });
+      expect(yaml().jobs.lint.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
+      expect(
+        within(editor).getByText("if: github.event_name == 'push' && github.ref == 'refs/heads/main'"),
+      ).toBeTruthy();
+      const card = screen.getByRole("button", { name: /^Lint\b/, pressed: true });
+      expect(within(card).getByText("only on pushes to main")).toBeTruthy();
+
+      await fireEvent.change(when, { target: { value: "custom" } });
+      await fireEvent.input(within(editor).getByRole("textbox", { name: "Condition" }), {
+        target: { value: "needs.changes.outputs.web == 'true'" },
+      });
+      expect(yaml().jobs.lint.if).toBe("needs.changes.outputs.web == 'true'");
+      expect(within(card).getByText("if needs.changes.outputs.web == 'true'")).toBeTruthy();
+
+      await fireEvent.change(when, { target: { value: "" } });
+      expect(yaml().jobs.lint.if).toBeUndefined();
+      expect(card.querySelector(".job-when")).toBeNull();
+    });
+
+    it("gives steps their own choices, like running a cleanup even after a failure", async () => {
+      const editor = await editJob(/^Test\b/, "Test", true);
+      await fireEvent.click(within(editor).getAllByRole("button", { name: /^\d+/ }).at(-1)!);
+      await fireEvent.change(within(editor).getByRole("combobox", { name: "When this step runs" }), {
+        target: { value: "always()" },
+      });
+      expect(yaml().jobs.test.steps.at(-1).if).toBe("always()");
+    });
+
+    it("warns, without blocking Save, when a deploy would run on every pull request, and fixes it", async () => {
+      await startWith(/Check every push/);
+      await fireEvent.click(screen.getByRole("button", { name: /Show YAML/ }));
+      await fireEvent.click(screen.getByRole("button", { name: /Add a job after Lint/ }));
+      const picker = screen.getByRole("group", { name: "Choose a job to add" });
+      await fireEvent.click(within(picker).getByRole("button", { name: /Deploy to GitHub Pages/ }));
+
+      const message = /also runs on pull requests, so every pull request would deploy\. Limit it to main\./;
+      expect(screen.getAllByText(message).length).toBeGreaterThan(0);
+      expect(document.querySelector("header .status")?.textContent).toMatch(/Ready to save · 1 warning/);
+      expect((screen.getByRole("button", { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(false);
+
+      await fireEvent.click(screen.getByRole("button", { name: "Only run on main" }));
+      expect(screen.queryAllByText(message)).toEqual([]);
+      expect(yaml().jobs["deploy-pages"].if).toBe("github.ref == 'refs/heads/main'");
+      expect(document.querySelector("header .status")?.textContent).toMatch(/^\s*Ready to save\s*$/);
     });
 
     it("writes anything else into a job as YAML, and says what's wrong with invalid YAML", async () => {

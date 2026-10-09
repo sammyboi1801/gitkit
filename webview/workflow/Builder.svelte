@@ -23,6 +23,10 @@
     type Triggers,
     type WorkflowModel,
   } from "../../src/workflow/model";
+  import { describeCondition } from "../../src/workflow/conditions";
+  import { setPath } from "../../src/workflow/options";
+  import { mainBranch, warnings } from "../../src/workflow/warnings";
+  import ConditionField from "./ConditionField.svelte";
   import JobOptions from "./JobOptions.svelte";
   import StepOptions from "./StepOptions.svelte";
   import StepPicker from "./StepPicker.svelte";
@@ -101,6 +105,13 @@
   const active = $derived(TRIGGERS.filter((t) => isOn(t.key)));
   const columns = $derived(stages(model.jobs).map((ids) => ids.map((id) => model.jobs.find((j) => j.id === id)!)));
   const problemsFor = (job: Job) => problems.filter((p) => p.job === job.id);
+  // Warnings don't block saving: the workflow is valid, it just probably doesn't do what was meant.
+  const warns = $derived(warnings(model));
+  const warningsFor = (job: Job) => warns.filter((w) => w.job === job.id);
+  const branch = $derived(mainBranch(model));
+  const setCondition = (job: Job, condition: string) => {
+    job.extra = setPath(job.extra ? { ...job.extra } : undefined, ["if"], condition);
+  };
   const general = $derived(problems.filter((p) => !p.job));
 
   function chipText(key: TriggerKey, t: Triggers): string {
@@ -520,11 +531,14 @@
             {#each column as job (job)}
               {@const look = jobLook(job)}
               {@const issues = problemsFor(job)}
+              {@const cautions = warningsFor(job)}
+              {@const when = describeCondition(job.extra?.if)}
               <li>
                 <button
                   class="job-card group-{look.group}"
                   class:selected={selected === job}
                   class:problem={issues.length > 0}
+                  class:caution={!issues.length && cautions.length > 0}
                   aria-pressed={selected === job}
                   onclick={() => edit(selected === job ? null : job)}
                 >
@@ -532,8 +546,16 @@
                   <span class="job-body">
                     <span class="job-name">{job.name}</span>
                     <span class="job-meta">{meta(job)}</span>
+                    {#if when}
+                      <span class="job-when" title="if: {job.extra?.if}"
+                        ><span class="codicon codicon-filter" aria-hidden="true"></span>{when}</span
+                      >
+                    {/if}
                     {#if issues.length}
                       <span class="job-issue"><span class="codicon codicon-warning"></span>{issues[0].message}</span>
+                    {:else if cautions.length}
+                      <span class="job-caution"><span class="codicon codicon-warning"></span>{cautions[0].message}</span
+                      >
                     {/if}
                   </span>
                 </button>
@@ -817,10 +839,15 @@
                         <span class="field-hint">Several lines run one after another.</span>
                       </label>
                     {/if}
-                    <label class="field">
-                      <span class="field-label">Only if<span class="optional"> optional</span></span>
-                      <input class="mono" bind:value={step.if} placeholder="github.ref == 'refs/heads/main'" />
-                    </label>
+                    <ConditionField
+                      kind="step"
+                      {branch}
+                      value={typeof step.if === "string" ? step.if : ""}
+                      onchange={(v) => {
+                        if (v) step.if = v;
+                        else delete step.if;
+                      }}
+                    />
                     <StepOptions {step} />
                     {#if otherKeys(step).length}
                       <span class="field-hint"
@@ -879,6 +906,22 @@
           </div>
         </div>
       {/if}
+
+      <ConditionField
+        kind="job"
+        {branch}
+        value={typeof job.extra?.if === "string" ? job.extra.if : ""}
+        onchange={(v) => setCondition(job, v)}
+      />
+      {#each warningsFor(job) as w (w.message)}
+        <p class="notice caution" role="status">
+          <span class="codicon codicon-warning" aria-hidden="true"></span>
+          <span
+            >{w.message}{#if w.fix}
+              <button class="link" onclick={() => setCondition(job, w.fix!.condition)}>{w.fix.label}</button>{/if}</span
+          >
+        </p>
+      {/each}
 
       {#if t.permissions}
         <p class="notice">

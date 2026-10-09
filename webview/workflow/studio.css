@@ -687,6 +687,60 @@ textarea:focus-visible {
   color: var(--vscode-editorWarning-foreground);
 }
 
+/* When the job runs (its if:), in words, and things that probably aren't meant. */
+.job-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.82em;
+  color: var(--vscode-textLink-foreground);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.job-when .codicon {
+  font-size: 12px;
+}
+
+.job-card.caution {
+  border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground) 60%, transparent);
+}
+
+.job-caution {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.82em;
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.job-caution .codicon {
+  font-size: 12px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.notice.caution {
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 12%, transparent);
+}
+
+.notice.caution .codicon {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.notice .link {
+  margin-left: 6px;
+  font-weight: 600;
+}
+
+.condition-field select {
+  justify-self: start;
+  max-width: 100%;
+}
+
 .ghost-card {
   width: 100%;
   gap: 6px;

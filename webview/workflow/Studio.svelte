@@ -9,6 +9,7 @@
     type ProjectFacts,
     type WorkflowModel,
   } from "../../src/workflow/model";
+  import { warnings } from "../../src/workflow/warnings";
   import { toYaml, type Explanation } from "../../src/workflow/yaml";
   import { send } from "./api";
   import Builder from "./Builder.svelte";
@@ -36,6 +37,7 @@
   const goalList = $derived(facts ? goals(facts) : []);
   const stacks = $derived(facts ? detectStacks(facts) : []);
   const problems = $derived(model ? validate(model) : []);
+  const cautions = $derived(model ? warnings(model).length : 0);
   const yaml = $derived(model ? toYaml(model).replace(/\n# gitkit-model: .*\n$/, "\n") : "");
 
   function pick(goal: Goal) {
@@ -106,7 +108,9 @@
         {#if problems.length}
           <span class="codicon codicon-warning"></span>{problems.length} thing{problems.length === 1 ? "" : "s"} to fix
         {:else}
-          <span class="codicon codicon-pass"></span>Ready to save
+          <span class="codicon codicon-pass"></span>Ready to save{cautions
+            ? ` · ${cautions} warning${cautions === 1 ? "" : "s"}`
+            : ""}
         {/if}
       </span>
       <button class="yaml-toggle" aria-pressed={showYaml} onclick={() => (showYaml = !showYaml)}>

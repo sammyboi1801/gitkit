@@ -72,17 +72,6 @@
         hint={"For every step in this job. Secrets: ${{ secrets.NAME }}."}
       />
 
-      <label class="field">
-        <span class="field-label">Only run if<span class="optional"> optional</span></span>
-        <input
-          class="mono"
-          placeholder="github.ref == 'refs/heads/main'"
-          value={text(["if"])}
-          oninput={(e) => set(["if"], e.currentTarget.value.trim())}
-        />
-        <span class="field-hint">A condition, e.g. only on main, or always() to run even after a failure.</span>
-      </label>
-
       {#if ownMatrix}
         <div class="field" role="group" aria-label="Run for each">
           <span class="field-label">Run for each<span class="optional"> optional</span></span>
