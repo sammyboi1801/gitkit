@@ -207,7 +207,7 @@ describe("undo and fix-ups", () => {
     expect(steps(planAction({ type: "undoLastCommit" }, withHead(true)))).toEqual([["reset", "--soft", "HEAD~1"]]);
     expect(planAction({ type: "undoLastCommit" }, withHead(false)).ok).toBe(false);
     expect(steps(planAction({ type: "amendMessage", message: "better" }, withHead(true)))).toEqual([
-      ["commit", "--amend", "--only", "-m", "better"],
+      ["commit", "--amend", "--only", "--allow-empty", "-m", "better"],
     ]);
     expect(planAction({ type: "amendMessage", message: "better" }, withHead(false)).ok).toBe(false);
   });

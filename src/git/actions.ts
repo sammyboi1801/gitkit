@@ -165,7 +165,8 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
       if (!headIsUnpushed(repo))
         return fail("The last commit is already pushed; changing it would rewrite shared history.");
       // --only with no paths changes just the message, even if other changes are staged.
-      return ok("Reword", [["commit", "--amend", "--only", "-m", message]]);
+      // --allow-empty: rewording an empty commit (e.g. "trigger CI") must not fail.
+      return ok("Reword", [["commit", "--amend", "--only", "--allow-empty", "-m", message]]);
     }
 
     case "amendAdd":
