@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 
 /** The HTML shell for a bundled webview entry (dist/webview/<entry>.js and .css), with a strict CSP. */
@@ -27,7 +28,7 @@ export function renderWebviewHtml(webview: vscode.Webview, distUri: vscode.Uri, 
 </html>`;
 }
 
+/** 128 bits from the OS's secure random source: a script can't guess it to sneak past the CSP. */
 function createNonce(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return randomBytes(16).toString("base64");
 }
