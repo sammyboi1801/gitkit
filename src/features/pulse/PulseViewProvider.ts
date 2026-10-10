@@ -249,6 +249,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.selected = root;
     void this.state.update(SELECTED_KEY, root);
     this.lastPosted = "";
+    // CI and the pull request belong to the repo just left; the new one gets checked straight away.
+    this.ci = null;
+    this.pr = null;
+    this.ciCheckedAt = 0;
     await this.refresh();
   }
 
@@ -283,25 +287,26 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const moved = !!this.ci && !!upstreamSha && this.ci.sha !== upstreamSha;
     if (!force && !moved && Date.now() - this.ciCheckedAt < interval) return;
 
+    let stale = false;
     this.ciInFlight = (async () => {
-      try {
-        // Offline or GitHub unreachable: hide the rows rather than nag.
-        [this.ci, this.pr] = await Promise.all([
-          readCi(repo, prompt).catch(() => null),
-          readPullRequest(repo).catch(() => null),
-        ]);
-      } catch {
-        this.ci = null;
-        this.pr = null;
-      } finally {
-        this.ciCheckedAt = Date.now();
-      }
+      // Offline or GitHub unreachable: hide the rows rather than nag.
+      const [ci, pr] = await Promise.all([
+        readCi(repo, prompt).catch(() => null),
+        readPullRequest(repo).catch(() => null),
+      ]);
+      // Switched to another repo meanwhile: this answer is about the one left behind.
+      stale = !this.repo || pathKey(this.repo.root) !== pathKey(repo.root);
+      if (stale) return;
+      this.ci = ci;
+      this.pr = pr;
+      this.ciCheckedAt = Date.now();
     })();
     try {
       await this.ciInFlight;
     } finally {
       this.ciInFlight = undefined;
     }
+    if (stale) return this.maybeCheckCi();
     this.lastPosted = "";
     if (this.repo) {
       // Keep the host's own copy current too: actions like "Open a PR" read it.

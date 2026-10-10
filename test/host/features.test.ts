@@ -575,6 +575,41 @@ describe("CI status", () => {
     return calls;
   }
 
+  it("never shows one repo's CI on another after switching between them", async () => {
+    const a = githubClone();
+    const b = githubClone();
+    git(b, "remote", "set-url", "origin", "https://github.com/octo/other.git");
+    // Both clones are built alike; give B's remote branch a commit of its own.
+    commit(b, "only in b");
+    git(b, "update-ref", "refs/remotes/origin/main", "HEAD");
+    const shaA = git(a, "rev-parse", "origin/main").trim();
+    expect(git(b, "rev-parse", "origin/main").trim()).not.toBe(shaA);
+    harness.config["gitkit.ciStatus"] = true;
+    stubGitHub((url) =>
+      url.includes("/repos/octo/demo/")
+        ? { status: 200, body: { check_runs: [{ name: "a-tests", status: "completed", conclusion: "success" }] } }
+        : url.includes("/check-runs?")
+          ? { status: 200, body: { check_runs: [{ name: "b-tests", status: "in_progress", conclusion: null }] } }
+          : { status: 200, body: [] },
+    );
+    const panel = await openPanel(a, b);
+    await panel.send({ type: "selectRepo", root: a });
+    await panel.provider.whenIdle();
+    expect(panel.repo().ci).toMatchObject({ sha: shaA, state: "success" });
+
+    const before = panel.posted("state").length;
+    await panel.send({ type: "selectRepo", root: b });
+    await panel.provider.whenIdle();
+    const forB = panel
+      .posted("state")
+      .slice(before)
+      .map((m) => m.state)
+      .filter((s) => s.kind === "repo" && samePath(s.repo.root, b));
+    expect(forB.length).toBeGreaterThan(0);
+    for (const s of forB) expect(s.kind === "repo" && s.repo.ci?.sha).not.toBe(shaA);
+    expect(panel.repo().ci).toMatchObject({ state: "pending" });
+  });
+
   it("stops asking GitHub once its rate limit is used up, until the limit resets", async () => {
     const work = githubClone();
     harness.config["gitkit.ciStatus"] = true;
