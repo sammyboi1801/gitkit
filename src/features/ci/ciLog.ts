@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import * as path from "node:path";
 import * as vscode from "vscode";
+import { insideRoot } from "../../git/paths";
 import { readFailedLog } from "../../github/client";
 import type { CiError, CiFailure, RepoState } from "../../shared/types";
 
@@ -46,7 +46,8 @@ export async function openCiLog(provider: CiLogProvider, repo: RepoState, failur
 
 /** Opens the file and line an error points at, or the line on GitHub when the file isn't here. */
 export async function openCiError(repo: RepoState, error: CiError): Promise<void> {
-  const local = error.file ? path.join(repo.root, error.file) : null;
+  // The path comes from GitHub: one that climbs out of the repo is shown on GitHub instead.
+  const local = error.file ? insideRoot(repo.root, error.file) : null;
   if (local && existsSync(local)) {
     const line = Math.max(0, (error.line ?? 1) - 1);
     await vscode.window.showTextDocument(vscode.Uri.file(local), { selection: new vscode.Range(line, 0, line, 0) });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isValidBranchName, planAction, type PlanResult } from "../../src/git/actions";
+import { isValidBranchName, planAction, type ActionRequest, type PlanResult } from "../../src/git/actions";
 import type { BaseInfo, FileChange, RepoState, StatusInfo, WorktreeInfo } from "../../src/shared/types";
 
 const repo = (status: Partial<StatusInfo> = {}, remotes = ["origin"]): RepoState => ({
@@ -110,6 +110,47 @@ describe("isValidBranchName", () => {
     for (const ok of ["main", "feat/login", "fix-123", "v1.2"]) expect(isValidBranchName(ok)).toBe(true);
     for (const bad of ["", "@", "a b", "a..b", "-x", "x/", "x.lock", "a~1", "a:b", "a//b", "@{x}"])
       expect(isValidBranchName(bad)).toBe(false);
+  });
+});
+
+describe("requests from the webview", () => {
+  // The webview names branches, commits and stashes; git must never read one as an option.
+  const sneaky = "--exec=calc.exe";
+  const requests: ActionRequest[] = [
+    { type: "switch", branch: sneaky },
+    { type: "createBranch", name: "ok", from: sneaky },
+    { type: "revert", hash: sneaky },
+    { type: "cherryPick", hash: sneaky },
+    { type: "moveToNewBranch", name: "ok", keepAt: sneaky, count: 1 },
+    { type: "recoverBranch", name: "ok", hash: sneaky },
+    { type: "stashApply", ref: sneaky },
+    { type: "stashPop", ref: "-q" },
+    { type: "stashDrop", ref: "stash@{0} --quiet" },
+    { type: "deleteBranches", names: ["old", "-f"] },
+    { type: "mergeBranch", branch: sneaky },
+    { type: "rebaseOnto", branch: sneaky },
+    { type: "switchAndMerge", target: "dev", source: sneaky },
+    { type: "switchAndMerge", target: sneaky, source: "dev" },
+  ];
+
+  it("refuses anything git could take for an option", () => {
+    for (const request of requests) {
+      const result = planAction(request, repo());
+      expect(result.ok, JSON.stringify(request)).toBe(false);
+    }
+  });
+
+  it("still plans real branches, commits and stashes", () => {
+    expect(steps(planAction({ type: "rebaseOnto", branch: "origin/main" }, repo({ branch: "feat" })))).toEqual([
+      ["update-ref", "refs/gitkit/backup/feat", "HEAD"],
+      ["rebase", "--autostash", "origin/main"],
+    ]);
+    expect(steps(planAction({ type: "stashDrop", ref: "stash@{12}" }, repo()))).toEqual([
+      ["stash", "drop", "stash@{12}"],
+    ]);
+    expect(steps(planAction({ type: "revert", hash: "0a1b2c3d" }, repo()))).toEqual([
+      ["revert", "--no-edit", "0a1b2c3d"],
+    ]);
   });
 });
 

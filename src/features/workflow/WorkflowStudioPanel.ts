@@ -106,7 +106,7 @@ export class WorkflowStudioPanel {
         case "save":
           return await this.save(message.model);
         case "openFile":
-          await vscode.window.showTextDocument(vscode.Uri.file(path.join(this.workflowsDir, message.file)));
+          await vscode.window.showTextDocument(vscode.Uri.file(this.workflowPath(message.file)));
           return;
       }
     } catch (error) {
@@ -134,8 +134,16 @@ export class WorkflowStudioPanel {
     );
   }
 
+  /** A file in .github/workflows, by the bare name the webview sends; nothing outside that folder. */
+  private workflowPath(file: string): string {
+    if (!/^[^\\/]+\.ya?ml$/i.test(file) || file.startsWith("..")) {
+      throw new Error(`"${file}" isn't a workflow file in .github/workflows.`);
+    }
+    return path.join(this.workflowsDir, file);
+  }
+
   private async open(file: string): Promise<void> {
-    const text = await readFile(path.join(this.workflowsDir, file), "utf8");
+    const text = await readFile(this.workflowPath(file), "utf8");
     const explanation = explain(text);
     const embedded = readModel(text);
     if (embedded && !embedded.editedByHand) {

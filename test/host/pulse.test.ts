@@ -197,6 +197,34 @@ describe("Pulse panel: branches", () => {
       files: [{ path: "b.txt", stats: { added: 2, removed: 0, binary: false } }],
     });
   });
+
+  it("never lets a message from the webview become a git option or reach outside the repo", async () => {
+    const base = tempDir();
+    const dir = initRepo(join(base, "repo"));
+    commit(dir, "first", { "a.txt": "one\n" });
+    write(base, "outside.txt", "not yours\n");
+    const panel = await openPanel(dir);
+
+    // git show --output=<file> would write a file anywhere.
+    const target = join(dir, "written-by-git-show.txt");
+    await panel.send({ type: "commitDetails", hash: `--output=${target}` });
+    expect(existsSync(target)).toBe(false);
+    expect(panel.posted("error").at(-1)?.error.message).toMatch(/isn't a commit/);
+
+    for (const message of [
+      { type: "openFile", path: "../outside.txt" },
+      { type: "conflictDetails", path: "../x" },
+      { type: "resolveConflict", path: "../x", block: "all", choice: "ours" },
+      { type: "openMergeEditor", path: "../x" },
+    ] as const) {
+      const errors = panel.posted("error").length;
+      await panel.send(message);
+      expect(panel.posted("error").length, message.type).toBe(errors + 1);
+      expect(panel.posted("error").at(-1)?.error.message).toMatch(/isn't in this repository/);
+    }
+    expect(harness.opened).toEqual([]);
+    expect(harness.executed.filter((c) => c.command === "_open.mergeEditor")).toEqual([]);
+  });
 });
 
 describe("Pulse panel: remote", () => {

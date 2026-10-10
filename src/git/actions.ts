@@ -54,6 +54,12 @@ export type PlanResult = { ok: true; plan: Plan } | { ok: false; reason: string 
 
 export function planAction(request: ActionRequest, repo: RepoState): PlanResult {
   const { status } = repo;
+  // Branches, commits and stashes come from the webview: refuse anything git could read as an option.
+  const unsafe = namedRefs(request).find((ref) => !isRevision(ref));
+  if (unsafe !== undefined) return fail(`"${unsafe}" isn't a branch or commit GitKit can use.`);
+  if (request.type === "stashApply" || request.type === "stashPop" || request.type === "stashDrop") {
+    if (!STASH_REF.test(request.ref)) return fail(`"${request.ref}" isn't a stash.`);
+  }
 
   switch (request.type) {
     case "stage":
@@ -456,6 +462,38 @@ function planUpdateFromBase(repo: RepoState): PlanResult {
     `Replay your ${base.ahead} commit${base.ahead === 1 ? "" : "s"} on top of ${n} from ${base.name}? Your branch isn't published yet, so this keeps history linear.${conflictNote}${backupNote}`,
   );
 }
+
+/** The branches and commits a request names, which git receives as arguments. */
+function namedRefs(request: ActionRequest): string[] {
+  switch (request.type) {
+    case "switch":
+    case "mergeBranch":
+    case "rebaseOnto":
+      return [request.branch];
+    case "switchAndMerge":
+      return [request.target, request.source];
+    case "createBranch":
+      return request.from === undefined ? [] : [request.from];
+    case "revert":
+    case "cherryPick":
+    case "recoverBranch":
+      return [request.hash];
+    case "moveToNewBranch":
+      return [request.keepAt];
+    case "deleteBranches":
+      return request.names;
+    default:
+      return [];
+  }
+}
+
+const STASH_REF = /^stash@\{\d+\}$/;
+
+/**
+ * A branch, remote branch or commit hash as git reads it on a command line. Branch-name rules are
+ * enough: they already rule out a leading "-", spaces and everything else git would misread.
+ */
+export const isRevision = (name: string): boolean => isValidBranchName(name);
 
 // A practical subset of git check-ref-format: enough to catch typos before git does.
 export function isValidBranchName(name: string): boolean {

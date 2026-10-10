@@ -5,7 +5,7 @@ import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
 import { parseConflicts, resolveConflict, sideNames, type Resolution } from "../../git/conflicts";
 import { discoverRepos, pathKey, repoForPath, repoLabel } from "../../git/discover";
-import { realPath, samePath } from "../../git/paths";
+import { insideRoot, realPath, samePath } from "../../git/paths";
 import { arrivalMessage, arrivedCount, readArrivals, remoteTips, type Arrival } from "../../git/arrivals";
 import {
   findWorkspaceRepo,
@@ -446,8 +446,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       case "openMergeEditor": {
         const repo = this.repo;
         if (!repo) return;
+        const file = this.repoFile(message.path);
+        if (!file) return;
         const names = sideNames(repo.operation);
-        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(repo.root, message.path)));
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
         const block = parseConflicts(document.getText())[0];
         await openMergeEditor(repo.root, message.path, {
           ours: names.ours,
@@ -469,10 +471,19 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     }
   }
 
+  /** A path the webview named, resolved inside the repo; anywhere else gets an error instead. */
+  private repoFile(relative: string): string | null {
+    const file = this.repo ? insideRoot(this.repo.root, relative) : null;
+    if (!file) this.post({ type: "error", error: { command: "", message: `${relative} isn't in this repository.` } });
+    return file;
+  }
+
   private async postConflicts(relative: string): Promise<void> {
     if (!this.repo) return;
+    const file = this.repoFile(relative);
+    if (!file) return;
     try {
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(this.repo.root, relative)));
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
       this.post({ type: "conflictDetails", path: relative, blocks: parseConflicts(document.getText()) });
     } catch (error) {
       this.post({ type: "error", error: { command: "", message: `Couldn't read ${relative}: ${describe(error)}` } });
@@ -482,7 +493,9 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   /** Edits through the editor rather than the disk, so the change shows up in undo history. */
   private async resolveConflict(relative: string, block: number | "all", choice: Resolution): Promise<void> {
     if (!this.repo) return;
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(this.repo.root, relative)));
+    const file = this.repoFile(relative);
+    if (!file) return;
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
     const text = document.getText();
     const resolved = resolveConflict(text, block, choice);
     if (resolved !== text) {
@@ -535,7 +548,9 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   private async openFile(relative: string): Promise<void> {
     if (!this.repo) return;
-    const uri = vscode.Uri.file(path.join(this.repo.root, relative));
+    const full = this.repoFile(relative);
+    if (!full) return;
+    const uri = vscode.Uri.file(full);
     const file = this.repo.status.files.find((f) => f.path === relative);
     // Show the diff for tracked changes, like the built-in view; new and deleted files open (or fail) as plain files.
     if (file && !file.untracked && file.worktree !== "D") {

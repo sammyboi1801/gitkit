@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** Windows paths are case-insensitive; compare them that way. */
 export function pathKey(path: string): string {
@@ -19,6 +19,17 @@ export function realPath(path: string): string {
     const parent = dirname(full);
     return parent === full ? full : join(realPath(parent), basename(full));
   }
+}
+
+/**
+ * `path` resolved against `root`, or null when it lands outside it (or on `root` itself). Paths
+ * from a webview or from GitHub go through this before they're opened, read or written.
+ */
+export function insideRoot(root: string, path: string): string | null {
+  const full = resolve(root, path);
+  const back = relative(resolve(root), full);
+  const climbs = back === ".." || back.startsWith(`..${sep}`);
+  return back && !climbs && !isAbsolute(back) ? full : null;
 }
 
 export const samePath = (a: string, b: string): boolean => pathKey(realPath(a)) === pathKey(realPath(b));

@@ -12,6 +12,7 @@ import type {
   WorktreeInfo,
   WorktreeOverlap,
 } from "../shared/types";
+import { isRevision } from "./actions";
 import { BRANCH_FORMAT, parseBranches } from "./branches";
 import { pathKey } from "./discover";
 import { readCheckpointState } from "./checkpoints";
@@ -383,6 +384,8 @@ export async function readBranches(root: string): Promise<Branch[]> {
 }
 
 export async function readCommitDetails(root: string, hash: string): Promise<CommitDetails> {
+  // The hash comes from the webview; `git show --output=<file>` would write wherever it says.
+  if (!isRevision(hash)) throw new Error(`"${hash}" isn't a commit.`);
   const [meta, files] = await Promise.all([
     read(["show", "-s", "--format=%an%x1f%ae%x1f%at%x1f%B", hash], root),
     // Merges are compared with their first parent, which is what "what did this merge bring in" means.

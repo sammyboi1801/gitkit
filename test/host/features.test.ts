@@ -8,6 +8,7 @@ import { readRepo } from "../../src/git/repo";
 import type { HostToStudio } from "../../src/shared/messages";
 import type { WorkflowModel } from "../../src/workflow/model";
 import { DEFAULT_AGENTS, explainFailure } from "../../src/features/pulse/PulseViewProvider";
+import { openCiError } from "../../src/features/ci/ciLog";
 import { listCheckpoints, readCheckpointState } from "../../src/git/checkpoints";
 import { formatCommand } from "../../src/git/format";
 import { realPath, samePath } from "../../src/git/paths";
@@ -342,6 +343,16 @@ describe("Workflow Studio", () => {
     // A file that's gone (deleted since the list was shown) says so instead of failing silently.
     await studio.webview.send({ type: "open", file: "gone.yml" });
     expect(posted("error").at(-1)?.message).toMatch(/ENOENT|no such file/i);
+
+    // Only files in .github/workflows: a name from the webview can't climb out of it.
+    for (const file of ["../../package.json", "..\\..\\package.json", join(dir, "package.json")]) {
+      const opened = posted("opened").length;
+      await studio.webview.send({ type: "open", file });
+      await studio.webview.send({ type: "openFile", file });
+      expect(posted("opened").length, file).toBe(opened);
+      expect(posted("error").at(-1)?.message).toMatch(/isn't a workflow file/);
+    }
+    expect(harness.opened.filter((p) => p.endsWith("package.json"))).toEqual([]);
   });
 
   it("reads hand edits to a Studio file back as jobs and steps", async () => {
@@ -699,6 +710,17 @@ describe("CI status", () => {
       expect(harness.opened.at(-1)).toBe(
         "https://github.com/sammyboi1801/gitkit/blob/fc9bb88b0af1fd4a2f6ea17d702742235beb54e8/test/host/features.test.ts#L650",
       );
+      // A path from GitHub that climbs out of the repo opens on GitHub, never as a local file.
+      write(join(work, ".."), "outside.ts", "// not this repo's\n");
+      await openCiError(panel.provider.currentRepo!, {
+        text: "boom",
+        detail: "boom",
+        file: "../outside.ts",
+        line: 1,
+        url: "https://github.com/octo/demo/blob/abc/outside.ts#L1",
+      });
+      expect(harness.opened.at(-1)).toBe("https://github.com/octo/demo/blob/abc/outside.ts#L1");
+      expect(harness.opened.some((p) => p.endsWith("outside.ts") && !p.startsWith("https:"))).toBe(false);
       // Indexes from the webview that point at nothing do nothing.
       await panel.send({ type: "openCiError", failure: 3, error: 0 });
       await panel.send({ type: "openCiLog", failure: -1 });
