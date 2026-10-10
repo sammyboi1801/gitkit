@@ -38,6 +38,21 @@ function detachAliases(doc: Document, node: Node): void {
   (node as { anchor?: string }).anchor = undefined;
 }
 
+/**
+ * Before a node leaves the document (removed, or replaced whole), every anchor inside it gives its
+ * aliases elsewhere their own copy, so they don't point at something that's gone.
+ */
+function detachAnchorsIn(doc: Document, node: unknown): void {
+  if (!node || typeof node !== "object") return;
+  const anchored: Node[] = [];
+  visit(node as Node, {
+    Node(_, inner) {
+      if ((inner as { anchor?: string }).anchor) anchored.push(inner as Node);
+    },
+  });
+  for (const inner of anchored) detachAliases(doc, inner);
+}
+
 /** `on: push` and `on: [push]` mean the same as the mapping form with nulls. */
 function normalizeOn(on: unknown): unknown {
   if (typeof on === "string") return { [on]: null };
@@ -77,7 +92,11 @@ function merge(doc: Document, node: Node | null, value: unknown, path: readonly 
   if (isAlias(node)) return replace(doc, node, value);
   if (node) detachAliases(doc, node);
   if (isMap(node) && isObj(value)) {
-    for (const pair of [...node.items]) if (!(keyOf(pair) in value)) node.items.splice(node.items.indexOf(pair), 1);
+    for (const pair of [...node.items]) {
+      if (keyOf(pair) in value) continue;
+      detachAnchorsIn(doc, pair.value);
+      node.items.splice(node.items.indexOf(pair), 1);
+    }
     const order = Object.keys(value);
     order.forEach((key, k) => {
       const next = value[key];
@@ -112,6 +131,7 @@ function merge(doc: Document, node: Node | null, value: unknown, path: readonly 
     node.value = value;
     return node;
   }
+  detachAnchorsIn(doc, node);
   return replace(doc, node, value);
 }
 
@@ -139,6 +159,8 @@ function mergeList(doc: Document, items: Node[], values: unknown[], path: readon
     added.forEach((value, k) =>
       out.push(k < removed.length ? merge(doc, removed[k], value, path) : replace(doc, null, value)),
     );
+    // Removed items with no added one to become: they leave the document.
+    removed.slice(added.length).forEach((node) => detachAnchorsIn(doc, node));
     removed = [];
     added = [];
   };

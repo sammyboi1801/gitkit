@@ -136,6 +136,34 @@ describe("updateYaml with anchors", () => {
     expect(read(saved).jobs[1].extra!.env).toEqual({ CI: "true", NODE_ENV: "production" });
   });
 
+  it("keeps a job's aliases working when the job holding the anchor is removed", () => {
+    const saved = edit((m) => (m.jobs = m.jobs.filter((j) => j.id !== "a")), anchored);
+    expect(saved).not.toContain("  a:");
+    expect(saved).not.toContain("*shared");
+    expect(read(saved).jobs[0].extra!.env).toEqual({ CI: "true", NODE_ENV: "test" });
+  });
+
+  it("keeps aliases working when the step holding the anchor is removed", () => {
+    const steps = [
+      "on: push",
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - &checkout",
+      "        uses: actions/checkout@v7",
+      "      - run: echo a",
+      "  b:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - *checkout",
+      "      - run: echo b",
+      "",
+    ].join("\n");
+    const saved = edit((m) => m.jobs[0].steps!.splice(0, 1), steps);
+    expect(read(saved).jobs[1].steps![0]).toEqual({ uses: "actions/checkout@v7" });
+  });
+
   it("gives the other uses their own copy before the anchored original is edited", () => {
     const saved = edit((m) => (m.jobs[0].extra!.env = { CI: "true", NODE_ENV: "staging" }), anchored);
     expect(read(saved).jobs[0].extra!.env).toEqual({ CI: "true", NODE_ENV: "staging" });
