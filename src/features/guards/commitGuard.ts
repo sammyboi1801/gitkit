@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { appendFile, readFile, stat } from "node:fs/promises";
+import { appendFile, open, readFile, stat } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Plan } from "../../git/actions";
@@ -11,7 +11,7 @@ import {
   type GuardIssue,
   type IdentityRule,
 } from "../../git/guard";
-import { runGit } from "../../git/runner";
+import { GitError, runGit } from "../../git/runner";
 import type { RepoState } from "../../shared/types";
 
 const MAX_SCAN_BYTES = 1024 * 1024;
@@ -39,28 +39,30 @@ async function checkContent(repo: RepoState, plan: Plan, maxMB: number): Promise
   const commitAll = plan.steps[0]?.[0] === "add";
   const files = repo.status.files.filter((f) => (commitAll ? true : f.index) && f.worktree !== "D" && f.index !== "D");
 
+  // What gets committed: the working copy for "commit all", otherwise the staged version.
   const sized = await Promise.all(
     files.map(async (f) => ({
       path: f.path,
-      size: await stat(path.join(repo.root, f.path)).then(
-        (s) => s.size,
-        () => 0,
-      ),
+      size: commitAll ? await diskSize(path.join(repo.root, f.path)) : await stagedSize(repo.root, f.path),
     })),
   );
 
   // Only scan what this commit adds, so secrets already in history don't nag on every commit.
+  // --no-textconv: a configured text filter could hide what's really in the file.
   const diffArgs = commitAll && repo.status.oid ? ["diff", "HEAD"] : ["diff", "--cached"];
-  const diff = await runGit([...diffArgs, "-U0", "--no-color", "--no-ext-diff"], repo.root).then(
+  let scanError: string | undefined;
+  const diff = await runGit([...diffArgs, "-U0", "--no-color", "--no-ext-diff", "--no-textconv"], repo.root).then(
     (r) => r.stdout,
-    () => "",
+    (error: unknown) => {
+      scanError = error instanceof GitError ? error.stderr.trim() || error.message : String(error);
+      return "";
+    },
   );
   const added = addedLines(diff);
   if (commitAll) {
-    // New files aren't in `git diff HEAD`; read them directly.
+    // New files aren't in `git diff HEAD`; read them directly, the start of big ones.
     for (const f of sized.filter((s) => repo.status.files.find((x) => x.path === s.path)?.untracked)) {
-      if (f.size > MAX_SCAN_BYTES) continue;
-      const text = await readFile(path.join(repo.root, f.path), "utf8").catch(() => "");
+      const text = await readStart(path.join(repo.root, f.path), MAX_SCAN_BYTES);
       added.set(
         f.path,
         text.split(/\r?\n/).map((line, i) => ({ line: i + 1, text: line })),
@@ -69,14 +71,20 @@ async function checkContent(repo: RepoState, plan: Plan, maxMB: number): Promise
   }
 
   const issues = [...checkFiles(sized, maxMB * 1024 * 1024), ...scanForSecrets(added)];
-  if (issues.length === 0) return plan.steps;
+  // A scan that couldn't run isn't a clean scan: say so, rather than let the commit through quietly.
+  const unscanned = scanError
+    ? [`• GitKit couldn't scan the changes for secrets (${scanError.split("\n")[0]}). Check them yourself.`]
+    : [];
+  if (issues.length === 0 && unscanned.length === 0) return plan.steps;
 
   const removable = [...new Set(issues.filter((i) => i.kind !== "secret").map((i) => i.path))];
   const secret = issues.find((i) => i.kind === "secret");
   const buttons = ["Commit Anyway", ...(removable.length ? ["Leave Those Out"] : []), ...(secret ? ["Show Me"] : [])];
   const choice = await vscode.window.showWarningMessage(
-    `This commit might include something it shouldn't (${issues.length} finding${issues.length === 1 ? "" : "s"}).`,
-    { modal: true, detail: issues.map(describe).join("\n") },
+    issues.length
+      ? `This commit might include something it shouldn't (${issues.length} finding${issues.length === 1 ? "" : "s"}).`
+      : "GitKit couldn't check this commit for secrets.",
+    { modal: true, detail: [...unscanned, ...issues.map(describe)].join("\n") },
     ...buttons,
   );
 
@@ -89,6 +97,34 @@ async function checkContent(repo: RepoState, plan: Plan, maxMB: number): Promise
   }
   if (choice === "Leave Those Out") return leaveOut(repo, plan, removable);
   return undefined;
+}
+
+async function diskSize(file: string): Promise<number> {
+  return stat(file).then(
+    (s) => s.size,
+    () => 0,
+  );
+}
+
+/** The size of the staged version, which is what a commit of staged changes stores. */
+async function stagedSize(root: string, file: string): Promise<number> {
+  return runGit(["cat-file", "-s", `:${file}`], root).then(
+    (r) => Number(r.stdout.trim()) || 0,
+    () => diskSize(path.join(root, file)),
+  );
+}
+
+/** Up to `max` bytes from the start of a file, as text. */
+async function readStart(file: string, max: number): Promise<string> {
+  const handle = await open(file, "r").catch(() => null);
+  if (!handle) return "";
+  try {
+    const buffer = Buffer.alloc(max);
+    const { bytesRead } = await handle.read(buffer, 0, max, 0);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    await handle.close();
+  }
 }
 
 function describe(issue: GuardIssue): string {
@@ -105,7 +141,12 @@ async function leaveOut(repo: RepoState, plan: Plan, paths: string[]): Promise<s
   if (newFiles.length) await appendIgnores(repo.root, newFiles);
 
   const staged = paths.filter((p) => file(p)?.index);
-  const unstage = staged.length ? [["restore", "--staged", "--", ...staged]] : [];
+  // Before the first commit there's no HEAD to restore from; rm --cached unstages instead.
+  const unstage = !staged.length
+    ? []
+    : repo.status.oid
+      ? [["restore", "--staged", "--", ...staged]]
+      : [["rm", "--cached", "-q", "--", ...staged]];
   // For "commit all", keep tracked files out of the add with exclude pathspecs. Newly ignored
   // files must not be named: git refuses an add that mentions an ignored path, even to exclude it.
   const steps = plan.steps.map((args) =>

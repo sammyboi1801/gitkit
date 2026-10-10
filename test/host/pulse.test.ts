@@ -140,6 +140,54 @@ describe("Pulse panel: commit guard", () => {
     expect(harness.shown.at(-1)?.detail).toMatch(/config\.ts:1 looks like an AWS access key/);
   });
 
+  it("says so when it couldn't check the changes, instead of passing them", async () => {
+    const dir = makeRepo();
+    // A diff bigger than git's output limit: the scan can't read it.
+    write(dir, "dump.sql", "INSERT INTO t VALUES (1);\n".repeat(1_400_000));
+    git(dir, "add", "dump.sql");
+    const panel = await openPanel(dir);
+    harness.answers.push(undefined);
+    await panel.send({ type: "action", request: { type: "commit", message: "dump" } });
+    expect(git(dir, "log", "-1", "--format=%s").trim()).toBe("first");
+    expect(harness.shown.at(-1)?.detail).toMatch(/couldn't scan the changes for secrets/i);
+  });
+
+  it("scans the start of a big new file rather than skipping it", async () => {
+    const dir = makeRepo();
+    write(dir, "export.csv", "key,AKIAABCDEFGHIJKLMNOP\n" + "x".repeat(2 * 1024 * 1024));
+    const panel = await openPanel(dir);
+    harness.answers.push(undefined);
+    await panel.send({ type: "action", request: { type: "commit", message: "export" } });
+    expect(harness.shown.at(-1)?.detail).toMatch(/export\.csv:1 looks like an AWS access key/);
+  });
+
+  it("leaves a file out of the very first commit too", async () => {
+    const dir = initRepo(tempDir());
+    write(dir, ".env", "SECRET=1\n");
+    write(dir, "app.ts", "export {};\n");
+    git(dir, "add", "-A");
+    const panel = await openPanel(dir);
+    harness.answers.push("Leave Those Out");
+    await panel.send({ type: "action", request: { type: "commit", message: "start" } });
+    expect(panel.posted("error")).toEqual([]);
+    // Only what was staged is committed; the new ignore rule waits to be staged like any change.
+    expect(git(dir, "show", "--name-only", "--format=", "HEAD").trim()).toBe("app.ts");
+    expect(readFileSync(join(dir, ".gitignore"), "utf8")).toContain("/.env");
+    expect(status(dir)).toContain("?? .gitignore");
+  });
+
+  it("sizes a staged file by what's staged, not by the copy on disk", async () => {
+    const dir = makeRepo();
+    write(dir, "model.bin", "0".repeat(2 * 1024 * 1024));
+    git(dir, "add", "model.bin");
+    write(dir, "model.bin", "small now\n");
+    harness.config["gitkit.commitGuard.maxFileSizeMB"] = 1;
+    const panel = await openPanel(dir);
+    harness.answers.push(undefined);
+    await panel.send({ type: "action", request: { type: "commit", message: "model" } });
+    expect(harness.shown.at(-1)?.detail).toMatch(/model\.bin is 2\.0 MB/);
+  });
+
   it("sets the expected email for this repo when identities say so", async () => {
     const dir = makeRepo();
     harness.config["gitkit.identities"] = [{ folder: dir, email: "me@school.edu" }];
