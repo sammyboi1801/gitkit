@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-10)
+
+- **Conflicts where one side deleted the file, or in a binary file,** now ask which version to keep (or whether to delete it) instead of looking already resolved.
+- **Workflow Studio warns about script injection:** text anyone can write, like a pull request's title or a branch name, going straight into a `run:` script, with the `env:` fix. Running a pull request's code on `workflow_run` or from a script on `pull_request_target` is flagged too.
+- **Commit guard:** also checks Add to last commit; catches npm, SendGrid, temporary AWS and PGP keys, `.git-credentials`, AWS credentials and Terraform variable files; scans the start of big new files; and says so when it couldn't check a commit, instead of letting it through.
+- GitKit warns at start-up when git is older than 2.38, which conflict forecasts need, or can't be found.
+- CI checks stay within GitHub's limits when you're not signed in, and switching repositories no longer shows the previous one's checks or pull request.
+- A background fetch no longer collides with your own Pull, Push or Fetch.
+- Anything a click starts that fails now says why in the panel, including in Workflow Studio.
+- Workflow Studio: removing a job or step that holds a YAML anchor no longer breaks saving, and one half-written workflow no longer hides the whole list.
 
 - **Workflow Studio does all of GitHub Actions with controls:**
   - Any event can be a trigger, each with its own options: branch, tag and file filters (only these, or all except), activity types, several schedules with timezones, Run-button inputs, a reusable workflow's inputs, secrets and outputs, and which workflows to run after. Nothing is locked as "kept as written" any more.
