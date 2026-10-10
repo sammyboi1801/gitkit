@@ -638,7 +638,7 @@ describe("CI status", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(start);
     try {
       const panel = await openPanel(work);
-      await vi.waitFor(() => expect(panel.repo().ci?.state).toBe("signin"));
+      await vi.waitFor(() => expect(panel.repo().ci?.state).toBe("signin"), { timeout: 20_000 });
       const asked = calls.length;
       expect(asked).toBeGreaterThan(0);
 
@@ -1510,8 +1510,15 @@ describe("auto-fetch", () => {
       await vi.waitFor(() => expect(popups()).toHaveLength(1), { timeout: 20_000 });
       expect(popups()[0].message).toBe("Priya Patel and Alex Chen pushed 2 commits to origin/main.");
       expect(harness.view?.badge).toEqual({ value: 2, tooltip: "2 new commits from others" });
-      // Pull, from the pop-up: it was only behind, so it fast-forwards.
-      await vi.waitFor(() => expect(git(work, "rev-parse", "HEAD")).toBe(git(work, "rev-parse", "origin/main")));
+      // Pull, from the pop-up: it was only behind, so it fast-forwards. A refresh and a pull can
+      // take more than vitest's default second on a busy CI runner; a failed pull shows its error.
+      await vi.waitFor(
+        () => {
+          expect(panel.posted("error")).toEqual([]);
+          expect(git(work, "rev-parse", "HEAD")).toBe(git(work, "rev-parse", "origin/main"));
+        },
+        { timeout: 20_000 },
+      );
 
       harness.setViewVisible(true);
       expect(harness.view?.badge).toBeUndefined();
@@ -1530,7 +1537,7 @@ describe("auto-fetch", () => {
       harness.viewVisible = false;
       const quiet = await openPanel(teammatesPushed(["Alex Chen", "alex@acme.dev"]));
       await vi.waitFor(() => expect(quiet.repo().lastFetch).not.toBeNull(), { timeout: 20_000 });
-      await vi.waitFor(() => expect(harness.view?.badge?.value).toBe(1));
+      await vi.waitFor(() => expect(harness.view?.badge?.value).toBe(1), { timeout: 20_000 });
       expect(popups()).toEqual([]);
 
       harness.reset();
