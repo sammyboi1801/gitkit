@@ -1,6 +1,6 @@
 {
   "name": "gitkit-vscode",
-  "displayName": "GitKit",
+  "displayName": "GitKit for VS Code",
   "description": "Everyday git and GitHub, made visual and safe: status at a glance, branch lanes, conflict forecasts, undo, and a visual GitHub Actions builder.",
   "version": "0.2.0",
   "publisher": "sammyboi1801",
