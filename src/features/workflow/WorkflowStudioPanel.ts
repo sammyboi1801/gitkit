@@ -100,10 +100,11 @@ export class WorkflowStudioPanel {
           }
           return;
         }
+        // Awaited, so their failures land in the catch below and reach the webview.
         case "open":
-          return this.open(message.file);
+          return await this.open(message.file);
         case "save":
-          return this.save(message.model);
+          return await this.save(message.model);
         case "openFile":
           await vscode.window.showTextDocument(vscode.Uri.file(path.join(this.workflowsDir, message.file)));
           return;

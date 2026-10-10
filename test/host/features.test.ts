@@ -338,6 +338,10 @@ describe("Workflow Studio", () => {
 
     await studio.webview.send({ type: "open", file: "ci.yml" });
     expect(posted("opened").at(-1)).toMatchObject({ file: "ci.yml", imported: false, model: suggestion });
+
+    // A file that's gone (deleted since the list was shown) says so instead of failing silently.
+    await studio.webview.send({ type: "open", file: "gone.yml" });
+    expect(posted("error").at(-1)?.message).toMatch(/ENOENT|no such file/i);
   });
 
   it("reads hand edits to a Studio file back as jobs and steps", async () => {
