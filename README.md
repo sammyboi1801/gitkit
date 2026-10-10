@@ -174,6 +174,7 @@ For example, to use your university email for one GitHub organization and your w
 - GitKit works with the `git` already on your computer. It only goes online when you push or pull, to check for new commits, and, if you leave GitHub checks on, to read your checks and pull request from GitHub.
 - There is no telemetry: nothing about you or your code is collected.
 - GitHub sign-in uses the account VS Code already knows, and GitKit only asks when you click **Sign in** or open a check's log.
+- Signing in grants GitKit GitHub's `repo` permission, the one that covers private repositories: GitKit uses it to read checks and pull requests, open pull requests and re-run failed jobs. The token is only ever sent to GitHub's API, and is never logged or shown.
 - Checkpoints stay on your computer and are never pushed.
 
 ## Contributing
