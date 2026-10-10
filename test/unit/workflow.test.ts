@@ -194,6 +194,14 @@ describe("explain", () => {
     expect(explain("jobs: [unclosed").error).toBeTruthy();
   });
 
+  it("reads a half-written workflow without throwing, so the file list still shows", () => {
+    // Valid YAML, invalid workflow: someone mid-edit, or a typo.
+    for (const text of ["jobs:\n  a:\n    steps: echo hi\n", "jobs: just text\n", "jobs:\n  a: 3\n", "7\n"]) {
+      expect(() => explain(text), text).not.toThrow();
+    }
+    expect(explain("jobs:\n  a:\n    steps: echo hi\n").jobs[0].steps).toEqual([]);
+  });
+
   it("gives new jobs unique ids", () => {
     const jobs = [newJob("node-test", [])];
     expect(newJob("node-test", jobs).id).toBe("test-2");

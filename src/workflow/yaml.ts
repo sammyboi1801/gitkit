@@ -120,10 +120,14 @@ export function explain(text: string): Explanation {
   // YAML 1.1 reads a bare "on:" key as true; GitHub treats it as "on".
   const on = (data.on ?? data[true as unknown as string]) as unknown;
 
+  // Valid YAML can still be a half-written workflow: anything not shaped as expected reads as empty.
+  const record = (v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
   return {
     name: typeof data.name === "string" ? data.name : "(unnamed workflow)",
     triggers: describeTriggers(on),
-    jobs: Object.entries((data.jobs ?? {}) as Record<string, Record<string, unknown>>).map(([id, job]) => {
+    jobs: Object.entries(record(data.jobs)).map(([id, value]) => {
+      const job = record(value);
       const needs = job?.needs;
       const matrix = (job?.strategy as Record<string, unknown> | undefined)?.matrix as
         Record<string, unknown> | undefined;
@@ -132,7 +136,7 @@ export function explain(text: string): Explanation {
         name: typeof job?.name === "string" ? job.name : id,
         runsOn: String(job?.["runs-on"] ?? "?"),
         needs: Array.isArray(needs) ? needs.map(String) : needs ? [String(needs)] : [],
-        steps: ((job?.steps ?? []) as Record<string, unknown>[]).map((s) =>
+        steps: (Array.isArray(job.steps) ? (job.steps as Record<string, unknown>[]) : []).map((s) =>
           String(s?.name ?? s?.uses ?? (typeof s?.run === "string" ? s.run.split("\n")[0] : "step")),
         ),
         matrix: matrix
