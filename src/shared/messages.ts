@@ -25,7 +25,8 @@ export type HostToWebview =
   | { type: "commitDetails"; details: CommitDetails }
   | { type: "fetching"; active: boolean }
   | { type: "config"; mainBranchColor: string }
-  | { type: "conflictDetails"; path: string; blocks: ConflictBlock[] };
+  /** binary: git leaves no markers in a binary file, so its conflict is one side or the other. */
+  | { type: "conflictDetails"; path: string; blocks: ConflictBlock[]; binary: boolean };
 
 export type WebviewToHost =
   | { type: "ready" }

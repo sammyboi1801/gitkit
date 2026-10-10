@@ -239,6 +239,44 @@ describe("conflicts", () => {
     expect(panel.posted("error").at(-1)?.error.command).toBe("git switch no-such-branch");
   });
 
+  it("asks keep or delete when one side deleted the file, instead of calling it resolved", async () => {
+    const dir = makeRepo();
+    commit(dir, "add old", { "old.js": "v1\n" });
+    git(dir, "switch", "-q", "-c", "feat/edit");
+    commit(dir, "edit old", { "old.js": "v2\n" });
+    git(dir, "switch", "-q", "main");
+    git(dir, "rm", "-q", "old.js");
+    git(dir, "commit", "-q", "-m", "drop old");
+    const panel = await openPanel(dir);
+    harness.answers.push("Merge into main");
+    await panel.send({ type: "action", request: { type: "mergeBranch", branch: "feat/edit" } });
+    expect(panel.repo().status.files.find((f) => f.path === "old.js")).toMatchObject({ conflict: "DU" });
+
+    harness.answers.push("Delete file");
+    await panel.send({ type: "action", request: { type: "resolveFile", path: "old.js", choice: "delete" } });
+    expect(existsSync(join(dir, "old.js"))).toBe(false);
+    expect(panel.repo().status.files.some((f) => f.conflicted)).toBe(false);
+  });
+
+  it("says a binary conflict is binary and keeps the chosen side", async () => {
+    const dir = makeRepo();
+    const png = (byte: number) => String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0, 0, byte);
+    commit(dir, "logo", { "logo.png": png(1) });
+    git(dir, "switch", "-q", "-c", "feat/logo");
+    commit(dir, "their logo", { "logo.png": png(2) });
+    git(dir, "switch", "-q", "main");
+    commit(dir, "our logo", { "logo.png": png(3) });
+    const panel = await openPanel(dir);
+    harness.answers.push("Merge into main");
+    await panel.send({ type: "action", request: { type: "mergeBranch", branch: "feat/logo" } });
+
+    await panel.send({ type: "conflictDetails", path: "logo.png" });
+    expect(panel.posted("conflictDetails").at(-1)).toMatchObject({ path: "logo.png", blocks: [], binary: true });
+    await panel.send({ type: "action", request: { type: "resolveFile", path: "logo.png", choice: "theirs" } });
+    expect(readFileSync(join(dir, "logo.png"), "utf8")).toBe(png(2));
+    expect(panel.repo().status.files.some((f) => f.conflicted)).toBe(false);
+  });
+
   it("aborts back to exactly how things were", async () => {
     const dir = conflicted();
     const panel = await openPanel(dir);

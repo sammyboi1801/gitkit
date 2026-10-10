@@ -113,6 +113,28 @@ describe("isValidBranchName", () => {
   });
 });
 
+describe("resolving a whole file", () => {
+  const conflicted = (conflict: string) =>
+    repo({ files: [file("logo.png", { index: "U", worktree: "U", conflicted: true, conflict })] });
+
+  it("keeps one side's version, or deletes the file, and stages the result", () => {
+    expect(steps(planAction({ type: "resolveFile", path: "logo.png", choice: "theirs" }, conflicted("UU")))).toEqual([
+      ["checkout", "--theirs", "--", "logo.png"],
+      ["add", "--", "logo.png"],
+    ]);
+    const deleted = planAction({ type: "resolveFile", path: "logo.png", choice: "delete" }, conflicted("UD"));
+    expect(steps(deleted)).toEqual([["rm", "-q", "--", "logo.png"]]);
+    expect(deleted.ok && deleted.plan.confirm).toMatch(/Delete logo.png\?/);
+  });
+
+  it("refuses a side that no longer has the file, or a file with no conflict", () => {
+    // DU: deleted by us, so only their version exists.
+    expect(planAction({ type: "resolveFile", path: "logo.png", choice: "ours" }, conflicted("DU")).ok).toBe(false);
+    expect(planAction({ type: "resolveFile", path: "logo.png", choice: "theirs" }, conflicted("UD")).ok).toBe(false);
+    expect(planAction({ type: "resolveFile", path: "other.png", choice: "ours" }, conflicted("UU")).ok).toBe(false);
+  });
+});
+
 describe("requests from the webview", () => {
   // The webview names branches, commits and stashes; git must never read one as an option.
   const sneaky = "--exec=calc.exe";

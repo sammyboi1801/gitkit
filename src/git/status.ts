@@ -30,7 +30,14 @@ export function parseStatus(output: string): StatusInfo {
       case "u": {
         // u XY sub m1 m2 m3 mW h1 h2 h3 path
         const fields = splitFields(record, 10);
-        info.files.push({ path: fields[10], index: "U", worktree: "U", untracked: false, conflicted: true });
+        info.files.push({
+          path: fields[10],
+          index: "U",
+          worktree: "U",
+          untracked: false,
+          conflicted: true,
+          conflict: fields[1],
+        });
         break;
       }
       case "?":

@@ -10,6 +10,11 @@ export interface FileChange {
   worktree: string | null;
   untracked: boolean;
   conflicted: boolean;
+  /**
+   * For a conflicted file, git's two letters for what each side did: UU both changed it, AA both
+   * added it, DU/UD deleted by us/them, AU/UA added only by us/them, DD deleted by both.
+   */
+  conflict?: string;
   /** Line counts for the staged side, from `git diff --cached --numstat`. */
   indexStats?: LineStats;
   /** Line counts for the working-tree side, from `git diff --numstat`. */

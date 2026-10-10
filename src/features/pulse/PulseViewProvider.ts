@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { isValidBranchName, planAction, type ActionRequest } from "../../git/actions";
@@ -492,8 +492,18 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const file = this.repoFile(relative);
     if (!file) return;
     try {
+      // Deleted on both sides, or on ours with nothing left here: no text to show, which is fine.
+      if (!existsSync(file)) {
+        this.post({ type: "conflictDetails", path: relative, blocks: [], binary: false });
+        return;
+      }
+      // Git's own test for binary: a NUL byte near the start. It never writes markers into those.
+      if ((await readFile(file)).subarray(0, 8000).includes(0)) {
+        this.post({ type: "conflictDetails", path: relative, blocks: [], binary: true });
+        return;
+      }
       const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
-      this.post({ type: "conflictDetails", path: relative, blocks: parseConflicts(document.getText()) });
+      this.post({ type: "conflictDetails", path: relative, blocks: parseConflicts(document.getText()), binary: false });
     } catch (error) {
       this.post({ type: "error", error: { command: "", message: `Couldn't read ${relative}: ${describe(error)}` } });
     }

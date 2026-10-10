@@ -150,6 +150,29 @@ describe("ConflictView", () => {
     await fireEvent.click(button(/Mark resolved/));
     expect(lastSent()).toEqual({ type: "action", request: { type: "stage", paths: ["a.ts"] } });
   });
+
+  const conflicting = (conflict: string) =>
+    repoState({
+      operation: "merge",
+      status: { files: [file("a.ts", { index: "U", worktree: "U", conflicted: true, conflict })] },
+    });
+
+  it("asks keep or delete when one side deleted the file, never 'no markers left'", async () => {
+    render(ConflictView, { props: { repo: conflicting("DU"), path: "a.ts", blocks: [], busy: null } });
+    expect(screen.getByText(/Deleted on your side, changed on the incoming side/)).toBeTruthy();
+    expect(screen.queryByText(/No conflict markers left/)).toBeNull();
+    expect(button(/Keep it/).getAttribute("title")).toBe("git checkout --theirs -- a.ts && git add -- a.ts");
+    await fireEvent.click(button(/Delete it/));
+    expect(lastSent()).toEqual({ type: "action", request: { type: "resolveFile", path: "a.ts", choice: "delete" } });
+  });
+
+  it("offers one side or the other for a binary file", async () => {
+    render(ConflictView, { props: { repo: conflicting("UU"), path: "a.ts", blocks: [], binary: true, busy: null } });
+    expect(screen.getByText(/binary file/i)).toBeTruthy();
+    expect(screen.queryByText(/No conflict markers left/)).toBeNull();
+    await fireEvent.click(button("Keep incoming"));
+    expect(lastSent()).toEqual({ type: "action", request: { type: "resolveFile", path: "a.ts", choice: "theirs" } });
+  });
 });
 
 describe("Worktrees", () => {

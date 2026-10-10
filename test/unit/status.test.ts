@@ -54,6 +54,12 @@ describe("parseStatus", () => {
 
   it("marks unmerged entries as conflicted", () => {
     const { files } = parseStatus(z("u UU N... 100644 100644 100644 100644 a b c app.py"));
-    expect(files[0]).toMatchObject({ path: "app.py", conflicted: true });
+    expect(files[0]).toMatchObject({ path: "app.py", conflicted: true, conflict: "UU" });
+  });
+
+  it("keeps which side deleted or added a conflicted file", () => {
+    // From a real modify/delete merge: deleted on main (ours), changed on the branch (theirs).
+    const { files } = parseStatus(z("u DU N... 100644 000000 100644 100644 a 0000 c src/old.js"));
+    expect(files[0]).toMatchObject({ path: "src/old.js", conflicted: true, conflict: "DU" });
   });
 });

@@ -41,7 +41,9 @@ export type ActionRequest =
   | { type: "pruneWorktrees" }
   | { type: "lockWorktree"; path: string; reason?: string }
   | { type: "unlockWorktree"; path: string }
-  | { type: "restoreCheckpoint"; hash: string };
+  | { type: "restoreCheckpoint"; hash: string }
+  /** A conflicted file as a whole: one side's version (binary files, deleted on one side), or gone. */
+  | { type: "resolveFile"; path: string; choice: "ours" | "theirs" | "delete" };
 
 export interface Plan {
   label: string;
@@ -384,6 +386,24 @@ export function planAction(request: ActionRequest, repo: RepoState): PlanResult 
       );
     }
 
+    case "resolveFile": {
+      const conflicted = status.files.find((f) => f.path === request.path && f.conflicted);
+      if (!conflicted) return fail(`${request.path} has no conflict to resolve.`);
+      if (request.choice === "delete") {
+        return ok(
+          "Delete file",
+          [["rm", "-q", "--", request.path]],
+          `Delete ${request.path}? This resolves the conflict by removing the file; Abort still undoes the whole ${repo.operation ?? "merge"}.`,
+        );
+      }
+      if (!sideHasFile(conflicted.conflict, request.choice))
+        return fail(`That side deleted ${request.path}, so there's no version of it to keep.`);
+      return ok("Keep version", [
+        ["checkout", `--${request.choice}`, "--", request.path],
+        ["add", "--", request.path],
+      ]);
+    }
+
     case "abortOperation": {
       const op = repo.operation;
       if (!op) return fail("Nothing is in progress.");
@@ -461,6 +481,12 @@ function planUpdateFromBase(repo: RepoState): PlanResult {
     [backup, ["rebase", "--autostash", base.ref]],
     `Replay your ${base.ahead} commit${base.ahead === 1 ? "" : "s"} on top of ${n} from ${base.name}? Your branch isn't published yet, so this keeps history linear.${conflictNote}${backupNote}`,
   );
+}
+
+/** Whether git still has that side's version of a conflicted file, from its two-letter code. */
+export function sideHasFile(conflict: string | undefined, side: "ours" | "theirs"): boolean {
+  const missing = side === "ours" ? ["DU", "DD", "UA"] : ["UD", "DD", "AU"];
+  return !missing.includes(conflict ?? "UU");
 }
 
 /** The branches and commits a request names, which git receives as arguments. */

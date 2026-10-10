@@ -20,6 +20,8 @@
   let details: CommitDetails | null = $state(null);
   let fetching = $state(false);
   let conflictBlocks: Record<string, ConflictBlock[]> = $state({});
+  /** Conflicted files that are binary, which have no markers to show. */
+  let conflictBinary: Record<string, boolean> = $state({});
 
   onMount(() => {
     const onMessage = (event: MessageEvent<HostToWebview>) => {
@@ -32,8 +34,10 @@
       else if (message.type === "commitDetails") details = message.details;
       else if (message.type === "fetching") fetching = message.active;
       else if (message.type === "config") applyMainColor(message.mainBranchColor);
-      else if (message.type === "conflictDetails")
+      else if (message.type === "conflictDetails") {
         conflictBlocks = { ...conflictBlocks, [message.path]: message.blocks };
+        conflictBinary = { ...conflictBinary, [message.path]: message.binary };
+      }
     };
     window.addEventListener("message", onMessage);
     send({ type: "ready" });
@@ -121,11 +125,11 @@
     {#key view.repo.root}
       <!-- Mid-merge, the conflicts are the job at hand: they come first, right under the banner. -->
       {#if view.repo.operation}
-        <Changes repo={view.repo} {busy} {conflictBlocks} />
+        <Changes repo={view.repo} {busy} {conflictBlocks} {conflictBinary} />
         <Remote repo={view.repo} {busy} {fetching} />
       {:else}
         <Remote repo={view.repo} {busy} {fetching} />
-        <Changes repo={view.repo} {busy} {conflictBlocks} />
+        <Changes repo={view.repo} {busy} {conflictBlocks} {conflictBinary} />
       {/if}
       <Worktrees repo={view.repo} {busy} />
       <Stashes repo={view.repo} {busy} />

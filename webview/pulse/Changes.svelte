@@ -9,7 +9,13 @@
     repo,
     busy,
     conflictBlocks,
-  }: { repo: RepoState; busy: string | null; conflictBlocks: Record<string, ConflictBlock[]> } = $props();
+    conflictBinary = {},
+  }: {
+    repo: RepoState;
+    busy: string | null;
+    conflictBlocks: Record<string, ConflictBlock[]>;
+    conflictBinary?: Record<string, boolean>;
+  } = $props();
 
   // Conflicted files open their conflict viewer in place; the first one opens by itself.
   let openConflicts: Set<string> = $state(new Set());
@@ -169,7 +175,15 @@
       {#each conflicts as file (file.path)}
         {@render fileRow(file, "conflict")}
         {#if openConflicts.has(file.path)}
-          <li><ConflictView {repo} path={file.path} blocks={conflictBlocks[file.path]} {busy} /></li>
+          <li>
+            <ConflictView
+              {repo}
+              path={file.path}
+              blocks={conflictBlocks[file.path]}
+              binary={conflictBinary[file.path] ?? false}
+              {busy}
+            />
+          </li>
         {/if}
       {/each}
     </ul>
