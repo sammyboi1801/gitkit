@@ -1,6 +1,7 @@
 **
-!dist/**
-dist/**/*.map
+!dist/**/*.js
+!dist/**/*.css
+!dist/**/*.ttf
 !media/gitkit.svg
 !media/tab.svg
 !media/icon.png

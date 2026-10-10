@@ -1,11 +1,45 @@
 import { readFileSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { schemaProblems } from "../../src/workflow/schema";
+import { tempDir, write } from "../fixtures/repos";
 
 const root = join(__dirname, "../..");
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+
+describe("what goes into the .vsix", () => {
+  it("ships the built code, but never sourcemaps or sources, even from a development build", async () => {
+    // vsce's own file list, over a copy of the repo's layout with a development build in dist/.
+    const dir = tempDir();
+    for (const file of ["package.json", ".vscodeignore", "README.md", "CHANGELOG.md", "LICENSE"]) {
+      write(dir, file, readFileSync(join(root, file), "utf8"));
+    }
+    for (const file of [
+      "dist/extension.js",
+      "dist/extension.js.map",
+      "dist/webview/pulse.js",
+      "dist/webview/pulse.js.map",
+      "dist/webview/pulse.css",
+      "dist/webview/pulse.css.map",
+      "dist/webview/codicon-AB12.ttf",
+      "media/icon.png",
+      "src/extension.ts",
+    ]) {
+      write(dir, file, "x");
+    }
+    const vsce = createRequire(__filename)("@vscode/vsce");
+    const files: string[] = await vsce.listFiles({ cwd: dir, packageManager: vsce.PackageManager.None });
+    expect(files.filter((f) => f.startsWith("dist/")).sort()).toEqual([
+      "dist/extension.js",
+      "dist/webview/codicon-AB12.ttf",
+      "dist/webview/pulse.css",
+      "dist/webview/pulse.js",
+    ]);
+    expect(files).not.toContain("src/extension.ts");
+  });
+});
 
 describe("the repo's own CI", () => {
   const dir = join(root, ".github", "workflows");
