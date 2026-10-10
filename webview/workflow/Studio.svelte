@@ -75,7 +75,7 @@
       } else if (message.type === "opened") {
         savedNote = null;
         importedNote = message.imported
-          ? `Opened ${message.file} from the file itself. Saving edits only what you change, so its comments and formatting stay.`
+          ? `Opened ${message.file} from the file itself. Saving edits only what you change and keeps its comments.`
           : null;
         if (message.model) {
           model = message.model;

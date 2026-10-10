@@ -735,7 +735,7 @@ describe("Workflow Studio", () => {
     const model = importWorkflow(text, "docs.yml");
     await post({ type: "opened", file: "docs.yml", model, imported: true, explanation: explain(text) });
 
-    expect(screen.getByRole("note").textContent).toMatch(/its comments and formatting stay/);
+    expect(screen.getByRole("note").textContent).toMatch(/keeps its comments\.$/);
     // Every trigger opens as a chip with its own options, even ones the old chips couldn't show.
     expect(screen.getByRole("button", { name: "on pushes that change docs/**" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "when a release is published" })).toBeTruthy();

@@ -125,7 +125,7 @@ Worktrees let you have several branches open at the same time, each in its own f
 - **When it runs** reads as a sentence, like _"runs on pushes to main and on pull requests"_. Add any of GitHub's events (releases, issues, comments, another workflow finishing, a call from another workflow…) and each one opens with its own options: which branches, tags or files, which kinds of activity, several schedules in your timezone, or the inputs people fill in when they press Run.
 - **Jobs are cards**, left to right in the order they run. Each card says when the job runs, like _"only on main"_, picked from a list of common choices. Pick the operating system and versions to test with checkboxes, add combinations to run or skip, or run another (reusable) workflow as a job.
 - **It warns you before it bites:** a deploy that would run on every pull request gets a warning and a one-click fix.
-- **Your own files stay yours.** Open any workflow, change it with the controls, and save: only what you changed is edited, so your comments and formatting stay.
+- **Your own files stay yours.** Open any workflow, change it with the controls, and save: only what you changed is edited, and your comments stay. Spacing may be tidied: extra blank lines become one, and lined-up comments lose their alignment.
 - Workflows get only the permissions they need, and GitKit checks your workflow against GitHub's rules before saving, so mistakes show up in VS Code instead of on GitHub.
 
 ### Fits right in

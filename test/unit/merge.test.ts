@@ -94,6 +94,23 @@ describe("updateYaml", () => {
     );
   });
 
+  it("tidies only spacing it can't keep, as the save dialog says", () => {
+    const spaced = [
+      "on: push",
+      "jobs:",
+      "  a:",
+      "    runs-on: ubuntu-latest   # the cheapest runner",
+      "",
+      "",
+      "    steps:",
+      "      - run: echo a",
+      "",
+    ].join("\n");
+    const saved = edit((m) => (m.name = "Checks"), spaced);
+    expect(saved).toContain("runs-on: ubuntu-latest # the cheapest runner\n\n    steps:");
+    expect(saved).not.toContain("\n\n\n");
+  });
+
   it("refuses only what isn't YAML at all, so the caller rewrites it instead", () => {
     expect(updateYaml("jobs: [unclosed", { jobs: {} })).toBeNull();
   });

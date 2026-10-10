@@ -442,7 +442,7 @@ describe("Workflow Studio", () => {
     harness.answers.push(undefined); // Look, then don't save.
     await studio.webview.send({ type: "save", model });
     expect(harness.shown.at(-1)?.message).toBe(
-      "Update release.yml? Only what you changed is edited: its comments and formatting are kept.",
+      "Update release.yml? Only what you changed is edited and its comments are kept. Spacing may be tidied: extra blank lines and lined-up comments.",
     );
     expect(readFileSync(file, "utf8")).toBe(original);
 

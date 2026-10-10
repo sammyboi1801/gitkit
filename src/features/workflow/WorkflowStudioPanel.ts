@@ -192,12 +192,13 @@ export class WorkflowStudioPanel {
     if (existing !== null) {
       const embedded = readModel(existing);
       const handWritten = !embedded || embedded.editedByHand;
-      // A file someone wrote keeps their comments and layout: only what changed is edited.
+      // A file someone wrote keeps their comments and layout: only what changed is edited, though
+      // the YAML printer tidies spacing (runs of blank lines, lined-up comments).
       const merged = handWritten ? updateYaml(existing, workflowObject(model)) : null;
       if (merged !== null) text = merged;
       const choice = await vscode.window.showWarningMessage(
         merged !== null
-          ? `Update ${model.file}? Only what you changed is edited: its comments and formatting are kept.`
+          ? `Update ${model.file}? Only what you changed is edited and its comments are kept. Spacing may be tidied: extra blank lines and lined-up comments.`
           : handWritten
             ? `${model.file} on disk isn't valid YAML any more, so it can't be edited in place. Saving replaces it with what Studio shows. Replace it?`
             : `Update ${model.file}?`,
