@@ -12,7 +12,7 @@ import type { RepoState } from "../../src/shared/types";
 // the webview sends), checks the result in git, and screenshots the window. Dialogs are answered
 // by a script and recorded, since a modal can't be clicked from here. Results go to report.json.
 
-const EXTENSION_ID = "sammyboi1801.gitkit";
+const EXTENSION_ID = "sammyboi1801.gitkit-vscode";
 const env = process.env as Record<string, string>;
 const repo = env.TOUR_REPO;
 const shots = env.TOUR_SHOTS;

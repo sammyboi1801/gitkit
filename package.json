@@ -1,5 +1,5 @@
 {
-  "name": "gitkit",
+  "name": "gitkit-vscode",
   "displayName": "GitKit",
   "description": "Everyday git and GitHub, made visual and safe: status at a glance, branch lanes, conflict forecasts, undo, and a visual GitHub Actions builder.",
   "version": "0.2.0",

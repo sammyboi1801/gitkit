@@ -5,7 +5,7 @@ import * as vscode from "vscode";
 // Proves what unit tests can't: the packaged extension activates, contributes what package.json
 // promises, and its views and tabs open without errors.
 
-const EXTENSION_ID = "sammyboi1801.gitkit";
+const EXTENSION_ID = "sammyboi1801.gitkit-vscode";
 
 async function waitFor<T>(check: () => T | undefined | Promise<T | undefined>, what: string, ms = 20_000): Promise<T> {
   const deadline = Date.now() + ms;
