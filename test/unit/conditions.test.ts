@@ -116,6 +116,38 @@ describe("warnings", () => {
     expect(warnings(workflow([risky], { pull_request: null }))).toEqual([]);
   });
 
+  it("flags text anyone can write going straight into a script", () => {
+    const greet = stepsJob("greet", undefined, [
+      { name: "Say hi", run: 'echo "Thanks for ${{ github.event.pull_request.title }}"' },
+      { name: "Branch", run: "git log ${{ github.head_ref }}" },
+      { uses: "actions/github-script@v8", with: { script: "core.info('${{ github.event.issue.body }}')" } },
+    ]);
+    const found = warnings(workflow([greet], { pull_request: null }));
+    expect(found.map((w) => w.message)).toEqual([
+      expect.stringMatching(/Say hi.*github\.event\.pull_request\.title.*env:/),
+      expect.stringMatching(/Branch.*github\.head_ref/),
+      expect.stringMatching(/step 3.*github\.event\.issue\.body/),
+    ]);
+    // Numbers and hashes can't carry commands, and the same text through env: is safe.
+    const safe = stepsJob("safe", undefined, [
+      { run: 'gh pr comment "${{ github.event.pull_request.number }}" --body hi' },
+      { run: "git checkout ${{ github.event.pull_request.head.sha }}" },
+      { run: 'echo "$TITLE"', env: { TITLE: "${{ github.event.pull_request.title }}" } },
+    ]);
+    expect(warnings(workflow([safe], { pull_request: null }))).toEqual([]);
+  });
+
+  it("flags running a pull request's code from a script on pull_request_target or workflow_run", () => {
+    const viaGh = stepsJob("review", undefined, [{ run: 'gh pr checkout "${{ github.event.number }}"' }]);
+    expect(warnings(workflow([viaGh], { pull_request_target: null }))[0].message).toMatch(/pull_request_target/);
+    const afterCi = stepsJob("report", undefined, [
+      { uses: "actions/checkout@v7", with: { ref: "${{ github.event.workflow_run.head_sha }}" } },
+    ]);
+    const found = warnings(workflow([afterCi], { workflow_run: { workflows: ["CI"] } }));
+    expect(found).toHaveLength(1);
+    expect(found[0].message).toMatch(/workflow_run/);
+  });
+
   it("reads the events however on: is written", () => {
     expect(workflowEvents(workflow([], "push"))).toEqual(["push"]);
     expect(workflowEvents(workflow([], ["push", "pull_request"]))).toEqual(["push", "pull_request"]);
