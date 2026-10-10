@@ -29,6 +29,8 @@ Press **F5** to launch GitKit against a throwaway sandbox repository with its ow
 
 A bug fix comes with a test that fails without the fix.
 
+After adding or updating a dependency, run `npm run notices` to refresh `ThirdPartyNotices.txt`; a test fails until it lists every bundled package.
+
 ## Commits
 
 [Conventional Commits](https://www.conventionalcommits.org/), one logical change per commit, for example `fix(pulse): keep the commit draft when switching repos`.

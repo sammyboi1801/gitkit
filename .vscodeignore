@@ -8,3 +8,4 @@ dist/**/*.map
 !README.md
 !CHANGELOG.md
 !LICENSE
+!ThirdPartyNotices.txt

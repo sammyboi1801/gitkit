@@ -310,7 +310,8 @@
     "sandbox": "node scripts/sandbox.mjs",
     "package": "vsce package --no-dependencies",
     "test:integration": "node scripts/integration.mjs",
-    "tour": "node scripts/tour.mjs"
+    "tour": "node scripts/tour.mjs",
+    "notices": "node scripts/notices.mjs"
   },
   "dependencies": {
     "ajv": "^8.20.0",
