@@ -244,8 +244,32 @@ async function readOverlaps(root: string, worktrees: readonly WorktreeInfo[]): P
   );
 }
 
+/**
+ * Forecasts by the commits merged: the same pair always merges the same way, so a refresh costs a
+ * rev-parse instead of a test merge. Bounded, oldest dropped first.
+ */
+const forecasts = new Map<string, string[] | null>();
+const MAX_CACHED_FORECASTS = 64;
+
 /** Test-merges in memory with merge-tree: no files, index or refs are touched. */
 export async function predictConflicts(root: string, theirs: string, ours = "HEAD"): Promise<string[] | null> {
+  const shas = await read(["rev-parse", `${ours}^{commit}`, `${theirs}^{commit}`], root)
+    .then((r) => {
+      const found = lines(r.stdout).filter((l) => /^[0-9a-f]{40,64}$/.test(l));
+      return found.length === 2 ? found.join("..") : null;
+    })
+    .catch(() => null);
+  const key = shas && `${pathKey(root)}\0${shas}`;
+  if (key && forecasts.has(key)) return forecasts.get(key)!;
+  const result = await testMerge(root, theirs, ours);
+  if (key) {
+    forecasts.set(key, result);
+    if (forecasts.size > MAX_CACHED_FORECASTS) forecasts.delete(forecasts.keys().next().value!);
+  }
+  return result;
+}
+
+async function testMerge(root: string, theirs: string, ours: string): Promise<string[] | null> {
   try {
     await read(["merge-tree", "--write-tree", "--name-only", "--no-messages", ours, theirs], root);
     return [];
