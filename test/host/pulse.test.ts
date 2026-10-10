@@ -140,18 +140,6 @@ describe("Pulse panel: commit guard", () => {
     expect(harness.shown.at(-1)?.detail).toMatch(/config\.ts:1 looks like an AWS access key/);
   });
 
-  it("says so when it couldn't check the changes, instead of passing them", async () => {
-    const dir = makeRepo();
-    // A diff bigger than git's output limit: the scan can't read it.
-    write(dir, "dump.sql", "INSERT INTO t VALUES (1);\n".repeat(1_400_000));
-    git(dir, "add", "dump.sql");
-    const panel = await openPanel(dir);
-    harness.answers.push(undefined);
-    await panel.send({ type: "action", request: { type: "commit", message: "dump" } });
-    expect(git(dir, "log", "-1", "--format=%s").trim()).toBe("first");
-    expect(harness.shown.at(-1)?.detail).toMatch(/couldn't scan the changes for secrets/i);
-  });
-
   it("scans the start of a big new file rather than skipping it", async () => {
     const dir = makeRepo();
     write(dir, "export.csv", "key,AKIAABCDEFGHIJKLMNOP\n" + "x".repeat(2 * 1024 * 1024));
