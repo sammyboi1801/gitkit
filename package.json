@@ -40,6 +40,16 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "GitKit runs git, which can run programs a repository configures (hooks, fsmonitor), so it waits until you trust the folder."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "GitKit runs git on the files on your disk, which a virtual workspace doesn't have."
+    }
+  },
   "contributes": {
     "viewsContainers": {
       "activitybar": [
