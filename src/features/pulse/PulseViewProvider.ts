@@ -359,6 +359,15 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
   /** Handles a message from the sidebar or the Branch Map; both speak the same protocol. */
   async receive(message: WebviewToHost): Promise<void> {
+    try {
+      await this.handle(message);
+    } catch (error) {
+      // Nothing a click starts may fail silently: whatever went wrong is shown in the panel.
+      this.post({ type: "error", error: { command: "", message: describe(error) } });
+    }
+  }
+
+  private async handle(message: WebviewToHost): Promise<void> {
     switch (message.type) {
       case "ready":
       case "refresh":

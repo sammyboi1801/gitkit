@@ -54,13 +54,24 @@ export async function findWorkspaceRepo(folder: string): Promise<string | null> 
   }
 }
 
+/**
+ * Like Promise.all, but a failure is reported only once every read has finished, so no git process
+ * is still running in the folder afterwards (Windows can't delete or move a folder one stands in).
+ */
+async function settled<T extends readonly unknown[]>(reads: { [K in keyof T]: Promise<T[K]> }): Promise<T> {
+  const results = await Promise.allSettled(reads);
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (failed) throw failed.reason;
+  return results.map((r) => (r as PromiseFulfilledResult<unknown>).value) as unknown as T;
+}
+
 // --no-optional-locks everywhere: reads would otherwise refresh the index, which trips our own file watcher.
 const read = (args: string[], root: string) => runGit(["--no-optional-locks", ...args], root);
 const lines = (text: string) => text.split("\n").filter(Boolean);
 
 /** worktreeMaxAgeMs: how old a reading of the other worktrees may be reused (0 always reads them). */
 export async function readRepo(root: string, options: { worktreeMaxAgeMs?: number } = {}): Promise<RepoState> {
-  const [statusOut, remotesOut, stashOut, unstagedOut, stagedOut] = await Promise.all([
+  const [statusOut, remotesOut, stashOut, unstagedOut, stagedOut] = await settled([
     read(["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"], root),
     read(["remote"], root),
     read(["stash", "list", `--format=${STASH_FORMAT}`], root),

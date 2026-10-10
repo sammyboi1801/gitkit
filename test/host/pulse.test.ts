@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { commit, git, initRepo, makeDivergedClone, makeRepo, tempDir, write } from "../fixtures/repos";
@@ -196,6 +196,15 @@ describe("Pulse panel: branches", () => {
       body: "second",
       files: [{ path: "b.txt", stats: { added: 2, removed: 0, binary: false } }],
     });
+  });
+
+  it("reports a failure instead of dropping it, e.g. when the repo vanished", async () => {
+    const dir = makeRepo();
+    write(dir, "b.txt", "b\n");
+    const panel = await openPanel(dir);
+    rmSync(join(dir, ".git"), { recursive: true, force: true });
+    await panel.send({ type: "action", request: { type: "stage", paths: ["b.txt"] } });
+    expect(panel.posted("error").at(-1)?.error.message).toMatch(/not a git repository/i);
   });
 
   it("never lets a message from the webview become a git option or reach outside the repo", async () => {
