@@ -27,7 +27,15 @@ import { agentCommand, createCheckpoint, type CheckpointOptions, type Checkpoint
 import type { HostToWebview, PulseState, WebviewToHost } from "../../shared/messages";
 import type { Branch, CiStatus, PrState, RepoState, RepoSummary } from "../../shared/types";
 import { COMMIT_LOG_FORMAT, parseCommitLog, prDraft } from "../../github/pr";
-import { createPullRequest, newPullRequestUrl, readCi, readPullRequest, rerunFailedJobs } from "../../github/client";
+import {
+  createPullRequest,
+  githubLimits,
+  newPullRequestUrl,
+  readCi,
+  readPullRequest,
+  rerunFailedJobs,
+} from "../../github/client";
+import { ciPollInterval } from "../../github/ci";
 import { CI_LOG_SCHEME, CiLogProvider, openCiError, openCiLog } from "../ci/ciLog";
 import { openMergeEditor } from "../conflicts/mergeEditor";
 import { guardCommit } from "../guards/commitGuard";
@@ -176,7 +184,7 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       try {
         this.postState(await this.readState());
         void this.maybeAutoFetch();
-        void this.maybeCheckCi();
+        this.track(this.maybeCheckCi());
       } finally {
         this.refreshing = undefined;
       }
@@ -251,7 +259,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     if (root) void this.select(root);
   }
 
-  /** Re-checks CI: every minute while checks run, every five minutes otherwise, only while focused. */
+  /**
+   * Re-checks CI only while focused: every minute while checks run and every five minutes
+   * otherwise, five times slower when signed out, and not at all while GitHub's rate limit is used up.
+   */
   private async maybeCheckCi(force = false, prompt = false): Promise<void> {
     if (this.ciInFlight) {
       if (!force) return;
@@ -261,7 +272,10 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     const repo = this.repo;
     if (!repo || !vscode.workspace.getConfiguration("gitkit").get<boolean>("ciStatus", true)) return;
     if (!force && (!vscode.window.state.focused || !this.view?.visible)) return;
-    const interval = this.ci?.state === "pending" ? 60_000 : 300_000;
+    // Once GitHub says the rate limit is used up, background checks wait for its reset.
+    const { limitedUntil, signedIn } = githubLimits();
+    if (!force && Date.now() < limitedUntil) return;
+    const interval = ciPollInterval(this.ci?.state, signedIn);
     // A push or fetch moved the remote branch: the old result is for an older commit.
     const upstreamSha = repo.graph.commits.find((c) =>
       c.refs.some((r) => r.kind === "remote" && r.name === repo.status.upstream),

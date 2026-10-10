@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ciPollInterval,
   annotationPath,
   describeFailures,
   errorsFrom,
@@ -219,5 +220,16 @@ describe("jobIdFrom", () => {
     expect(jobIdFrom("https://github.com/o/r/actions/runs/123/job/456")).toBe(456);
     expect(jobIdFrom("https://github.com/o/r/runs/456")).toBeNull();
     expect(jobIdFrom(null)).toBeNull();
+  });
+});
+
+describe("ciPollInterval", () => {
+  it("polls often only when signed in: 60 an hour is all GitHub allows without", () => {
+    expect(ciPollInterval("pending", true)).toBe(60_000);
+    expect(ciPollInterval("success", true)).toBe(300_000);
+    expect(ciPollInterval("pending", false)).toBe(300_000);
+    expect(ciPollInterval("failure", false)).toBe(900_000);
+    // At up to four requests a check, a window signed out stays under GitHub's 60 an hour.
+    expect((3_600_000 / ciPollInterval("pending", false)) * 4).toBeLessThanOrEqual(60);
   });
 });

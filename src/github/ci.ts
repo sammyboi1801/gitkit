@@ -61,6 +61,15 @@ const FAILED = new Set(["failure", "timed_out", "cancelled", "action_required", 
 
 export const isFailed = (run: CheckRun) => run.status === "completed" && FAILED.has(run.conclusion ?? "");
 
+/**
+ * How long background CI checks wait between tries. Signed out, GitHub allows 60 requests an
+ * hour from one address and a check costs up to four, so it waits longer.
+ */
+export function ciPollInterval(state: CiStatus["state"] | undefined, signedIn: boolean): number {
+  if (signedIn) return state === "pending" ? 60_000 : 300_000;
+  return state === "pending" ? 300_000 : 900_000;
+}
+
 export function summarizeChecks(sha: string, runs: readonly CheckRun[], actionsUrl: string): CiStatus {
   const status = { sha, failed: [] as string[], runId: null, failures: [] };
   if (runs.length === 0) {

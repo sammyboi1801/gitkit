@@ -21,6 +21,14 @@ import { PR_QUERY, compareUrl, pullFromGraphql, pullFromRest, type RestPull, typ
 const API = "https://api.github.com";
 const SCOPES = ["repo"];
 
+/** Until when GitHub said its rate limit is used up (ms), and whether the last call was signed in. */
+const limits = { until: 0, signedIn: false };
+
+/** What background checks need to stay within GitHub's rate limit. */
+export function githubLimits(): { limitedUntil: number; signedIn: boolean } {
+  return { limitedUntil: limits.until, signedIn: limits.signedIn };
+}
+
 async function token(prompt: boolean): Promise<string | undefined> {
   try {
     const session = await vscode.authentication.getSession(
@@ -28,6 +36,7 @@ async function token(prompt: boolean): Promise<string | undefined> {
       SCOPES,
       prompt ? { createIfNone: true } : { silent: true },
     );
+    limits.signedIn = !!session;
     return session?.accessToken;
   } catch {
     return undefined; // The user dismissed sign-in.
@@ -35,7 +44,7 @@ async function token(prompt: boolean): Promise<string | undefined> {
 }
 
 async function github(path: string, init: RequestInit = {}, auth?: string): Promise<Response> {
-  return fetch(`${API}${path}`, {
+  const response = await fetch(`${API}${path}`, {
     ...init,
     headers: {
       Accept: "application/vnd.github+json",
@@ -45,6 +54,15 @@ async function github(path: string, init: RequestInit = {}, auth?: string): Prom
       ...init.headers,
     },
   });
+  // GitHub says when the hourly allowance runs out and when it comes back.
+  const remaining = response.headers.get("x-ratelimit-remaining");
+  if (remaining === "0") {
+    const reset = Number(response.headers.get("x-ratelimit-reset")) * 1000;
+    limits.until = reset > 0 ? reset : Date.now() + 15 * 60_000;
+  } else if (remaining !== null) {
+    limits.until = 0;
+  }
+  return response;
 }
 
 type GitHubRepo = { owner: string; repo: string };

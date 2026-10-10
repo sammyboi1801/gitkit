@@ -563,15 +563,53 @@ describe("CI status", () => {
     return work;
   }
 
-  function stubGitHub(handler: (url: string, init?: RequestInit) => { status: number; body?: unknown }) {
+  function stubGitHub(
+    handler: (url: string, init?: RequestInit) => { status: number; body?: unknown; headers?: Record<string, string> },
+  ) {
     const calls: { url: string; init?: RequestInit }[] = [];
     vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
-      const { status, body } = handler(url, init);
-      return new Response(body === undefined ? null : JSON.stringify(body), { status });
+      const { status, body, headers } = handler(url, init);
+      return new Response(body === undefined ? null : JSON.stringify(body), { status, headers });
     });
     return calls;
   }
+
+  it("stops asking GitHub once its rate limit is used up, until the limit resets", async () => {
+    const work = githubClone();
+    harness.config["gitkit.ciStatus"] = true;
+    const start = Date.now();
+    const resetAt = Math.floor(start / 1000) + 3600;
+    let used = true;
+    const calls = stubGitHub((): { status: number; body?: unknown; headers: Record<string, string> } =>
+      used
+        ? { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(resetAt) } }
+        : { status: 200, body: { check_runs: [] }, headers: { "x-ratelimit-remaining": "59" } },
+    );
+    const now = vi.spyOn(Date, "now").mockReturnValue(start);
+    try {
+      const panel = await openPanel(work);
+      await vi.waitFor(() => expect(panel.repo().ci?.state).toBe("signin"));
+      const asked = calls.length;
+      expect(asked).toBeGreaterThan(0);
+
+      // Well past any polling interval, but before GitHub's reset: no more requests.
+      now.mockReturnValue(start + 30 * 60_000);
+      await panel.send({ type: "refresh" });
+      await panel.provider.whenIdle();
+      expect(calls.length).toBe(asked);
+
+      // After the reset, checks resume, and an answer with requests left lifts the limit.
+      used = false;
+      now.mockReturnValue(resetAt * 1000 + 1000);
+      await panel.send({ type: "refresh" });
+      await panel.provider.whenIdle();
+      expect(calls.length).toBeGreaterThan(asked);
+      expect(panel.repo().ci?.state).toBe("none");
+    } finally {
+      now.mockRestore();
+    }
+  });
 
   it("summarizes the checks on the latest pushed commit", async () => {
     const work = githubClone();
