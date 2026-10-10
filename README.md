@@ -20,7 +20,7 @@
 
 GitKit adds a panel to VS Code that tells you, in plain words, what's going on in your project: what you've changed, what's waiting to be pushed, what your teammates did, and whether merging will go smoothly. The everyday actions are one click away, and the scary ones come with a safety net.
 
-**Nothing happens behind your back.** Hover any button to see exactly what it will do. Anything that rewrites history asks first, and work you throw away is kept so you can get it back.
+**Nothing happens behind your back.** Hover any button to see exactly what it will do. Anything that could rewrite pushed history or lose work asks first, and work you throw away is kept so you can get it back.
 
 <table>
   <tr>
@@ -83,7 +83,7 @@ When a merge stops on a conflict, GitKit shows each one as **your version** next
 
 One menu for the problems people search for most:
 
-- Undo the last commit but keep the changes (safely, even if you already pushed it)
+- Undo the last commit and keep its changes, or, once it's pushed, undo it safely with a new commit
 - Fix the last commit's message, or add a file you forgot
 - Move commits you made on the wrong branch
 - Bring back a deleted branch or changes you discarded
@@ -173,7 +173,7 @@ For example, to use your university email for one GitHub organization and your w
 
 - GitKit works with the `git` already on your computer. It only goes online when you push or pull, to check for new commits, and, if you leave GitHub checks on, to read your checks and pull request from GitHub.
 - There is no telemetry: nothing about you or your code is collected.
-- GitHub sign-in uses the account VS Code already knows, and GitKit only asks when you click **Sign in** or open a check's log.
+- GitHub sign-in uses the account VS Code already knows, and GitKit only asks when you click **Sign in**, open a check's log, open a pull request or re-run failed jobs.
 - Signing in grants GitKit GitHub's `repo` permission, the one that covers private repositories: GitKit uses it to read checks and pull requests, open pull requests and re-run failed jobs. The token is only ever sent to GitHub's API, and is never logged or shown.
 - Checkpoints stay on your computer and are never pushed.
 

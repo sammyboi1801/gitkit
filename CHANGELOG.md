@@ -20,7 +20,7 @@
 - **Removing a worktree** closes the terminals open in it first (Windows can't delete a folder in use), and no longer reports an error when only the emptied folder is still briefly in use.
 - A merge or rebase that **stops on conflicts** is shown as paused, not as a failed command.
 - **Readability:** incoming-work colors readable in every theme, ↑/↓ counts drawn as icons, Pull/Push/Sync fit a narrow sidebar, commit subjects keep their space next to branch badges (extra badges fold into "+N" when narrow).
-- **Tested on real VS Code:** an end-to-end tour (`npm run tour`) performs every action in a real window and screenshots it; CI now also runs on macOS.
+- **Tested on real VS Code:** every action is now also performed and checked in a real VS Code window, and tests run on macOS as well as Linux and Windows.
 - **Faster refreshes with many worktrees:** other worktrees' details are reused for a few seconds, so a refresh with five worktrees costs the same as with none.
 - Job cards in Workflow Studio get icons from what the job does (lint, test, build, deploy, release).
 - **Worktrees:** every worktree listed with its branch, uncommitted files, distance from main and last activity; create (with a setup command and copied files), open in a new window or this one, lock, remove and clean up. Branches open in another worktree are labelled everywhere, and switching or deleting them says where they're open.
