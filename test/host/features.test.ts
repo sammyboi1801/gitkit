@@ -1376,6 +1376,27 @@ describe("auto-fetch", () => {
     await vi.waitFor(() => expect(panel.repo().status.behind).toBe(2), { timeout: 20_000 });
   });
 
+  it("lets a background fetch finish before your own Pull talks to the remote", async () => {
+    const { work } = makeDivergedClone();
+    git(work, "stash", "-q", "--include-untracked");
+    git(work, "reset", "-q", "--hard", "origin/main");
+    // Every conversation with the remote logs its start, then takes two seconds.
+    const log = join(work, "..", "remote.log").replace(/\\/g, "/");
+    git(
+      work,
+      "config",
+      "remote.origin.uploadpack",
+      `sh -c 'echo start >> "${log}"; sleep 2; echo end >> "${log}"; exec git-upload-pack "$@"' --`,
+    );
+    harness.config["gitkit.autoFetchMinutes"] = 5;
+    const panel = await openPanel(work);
+    // The background fetch is under way now; Pull right away, as someone clicking it would.
+    await panel.send({ type: "action", request: { type: "pull" } });
+    await vi.waitFor(() => expect(panel.repo().lastFetch).not.toBeNull(), { timeout: 20_000 });
+    expect(readFileSync(log, "utf8").trim().split(/\r?\n/)).toEqual(["start", "end", "start", "end"]);
+    expect(panel.posted("error")).toEqual([]);
+  });
+
   describe("telling you about new commits", () => {
     /** A clone on main, then teammates' commits pushed to the remote behind its back. */
     function teammatesPushed(...authors: [string, string][]) {

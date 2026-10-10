@@ -57,6 +57,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
   private refreshQueued?: Promise<void>;
   private busy = false;
   private fetching = false;
+  /** Settles when the background fetch running now is done; commands wait for it, so two never collide. */
+  private fetchDone?: Promise<void>;
   private fetchError?: string;
   private ci: CiStatus | null = null;
   /** The branch's pull request, refreshed with CI. */
@@ -311,12 +313,14 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
 
     this.lastFetchAttempt = now;
     this.fetching = true;
+    let fetched!: () => void;
+    this.fetchDone = new Promise((resolve) => (fetched = resolve));
     this.post({ type: "fetching", active: true });
     // Your branch's remote branch and main: where other people's commits matter to you.
     const watched = [repo.status.upstream, repo.base?.ref].filter((r): r is string => !!r);
-    const before = await remoteTips(repo.root, watched);
     let arrivals: Arrival[] = [];
     try {
+      const before = await remoteTips(repo.root, watched);
       await runGit(["fetch", "--all", "--prune", "--quiet"], repo.root, { env: { GCM_INTERACTIVE: "never" } });
       this.fetchError = undefined;
       arrivals = await readArrivals(repo.root, before, repo.status.upstream);
@@ -324,6 +328,8 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
       this.fetchError = describe(error).split("\n")[0];
     } finally {
       this.fetching = false;
+      this.fetchDone = undefined;
+      fetched();
       this.post({ type: "fetching", active: false });
       await this.refresh();
     }
@@ -1008,6 +1014,9 @@ export class PulseViewProvider implements vscode.WebviewViewProvider, vscode.Dis
     this.post({ type: "busy", label });
     let failure: { args: string[]; error: unknown } | undefined;
     try {
+      // A background fetch in progress would race this for the same refs ("cannot lock ref").
+      // Busy is set, so no new one starts; wait for the one already running.
+      await this.fetchDone;
       for (const args of steps) {
         try {
           await runGit(args, cwd);
