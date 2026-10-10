@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activate, workflowFile } from "../../src/extension";
+import { activate, warnAboutGit, workflowFile } from "../../src/extension";
 import { readCi, readPullRequest, rerunFailedJobs } from "../../src/github/client";
 import { readRepo } from "../../src/git/repo";
 import type { HostToStudio } from "../../src/shared/messages";
@@ -56,6 +56,20 @@ describe("activation", () => {
       "gitkit.refresh",
     ]);
     expect(harness.contentProviders.has("gitkit-stage")).toBe(true);
+  });
+
+  it("warns once at start-up when git is too old or missing, and is quiet otherwise", async () => {
+    await warnAboutGit(async () => "git version 2.34.1");
+    expect(harness.shown.at(-1)).toMatchObject({ kind: "warning", message: expect.stringMatching(/2\.38 or newer/) });
+
+    await warnAboutGit(async () => {
+      throw new Error("spawn git ENOENT");
+    });
+    expect(harness.shown.at(-1)).toMatchObject({ kind: "error", message: expect.stringMatching(/couldn't run git/) });
+
+    const shown = harness.shown.length;
+    await warnAboutGit(async () => "git version 2.47.0");
+    expect(harness.shown.length).toBe(shown);
   });
 });
 

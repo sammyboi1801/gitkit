@@ -1,3 +1,4 @@
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { STAGE_SCHEME, StageContentProvider } from "./features/conflicts/mergeEditor";
@@ -5,6 +6,8 @@ import { BranchMapPanel } from "./features/map/BranchMapPanel";
 import { WorkflowStudioPanel } from "./features/workflow/WorkflowStudioPanel";
 import { PulseViewProvider } from "./features/pulse/PulseViewProvider";
 import { pathKey } from "./git/paths";
+import { runGit } from "./git/runner";
+import { gitVersionProblem } from "./git/version";
 
 /**
  * Returns the sidebar provider so the end-to-end tour (scripts/tour.mjs) can drive actions the way
@@ -41,7 +44,26 @@ export function activate(context: vscode.ExtensionContext): { pulse: PulseViewPr
     vscode.commands.registerCommand("gitkit.newWorktree", () => pulse.newWorktree()),
     vscode.commands.registerCommand("gitkit.checkpoint", () => pulse.checkpoint()),
   );
+  void warnAboutGit();
   return { pulse };
+}
+
+/** Once at start-up: a git too old for some features, or none at all, is said plainly. */
+export async function warnAboutGit(
+  version: () => Promise<string> = async () => (await runGit(["version"], os.homedir())).stdout,
+): Promise<void> {
+  let output: string;
+  try {
+    output = await version();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(
+      `GitKit couldn't run git (${detail}). Install git from git-scm.com, or add it to your PATH, then restart VS Code.`,
+    );
+    return;
+  }
+  const problem = gitVersionProblem(output);
+  if (problem) void vscode.window.showWarningMessage(problem);
 }
 
 export function deactivate(): void {}
