@@ -40,7 +40,40 @@ describe("scanForSecrets", () => {
   });
 });
 
+describe("scanForSecrets, more providers", () => {
+  // Built from pieces so this file never holds anything shaped like a real token.
+  const fake = (prefix: string, length: number, alphabet = "aB3") =>
+    prefix + alphabet.repeat(Math.ceil(length / alphabet.length)).slice(0, length);
+
+  it.each([
+    ["an npm token", `//registry.npmjs.org/:_authToken=${fake("npm_", 36)}`],
+    ["a private key", "-----BEGIN PGP PRIVATE KEY BLOCK-----"],
+    ["an AWS access key", `aws_access_key_id = ${fake("ASIA", 16, "QZ7")}`],
+    ["a Stripe live key", fake("rk_live_", 24)],
+    ["a SendGrid API key", `${fake("SG.", 22)}.${fake("", 43)}`],
+  ])("finds %s", (what, text) => {
+    expect(scanForSecrets(new Map([["f", [{ line: 1, text }]]]))).toEqual([
+      { path: "f", line: 1, kind: "secret", detail: `looks like ${what}` },
+    ]);
+  });
+});
+
 describe("checkFiles", () => {
+  it("flags credential files git hosts and cloud tools write", () => {
+    const issues = checkFiles(
+      [".aws/credentials", ".git-credentials", "infra/prod.tfvars", "infra/prod.auto.tfvars", "src/credentials.ts"].map(
+        (path) => ({ path, size: 10 }),
+      ),
+      10 * 1024 * 1024,
+    );
+    expect(issues.map((i) => i.path)).toEqual([
+      ".aws/credentials",
+      ".git-credentials",
+      "infra/prod.tfvars",
+      "infra/prod.auto.tfvars",
+    ]);
+  });
+
   it("flags secrets files and big files, but not templates", () => {
     const issues = checkFiles(
       [

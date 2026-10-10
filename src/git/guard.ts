@@ -10,12 +10,16 @@ export interface GuardIssue {
 
 const SECRET_PATTERNS: [RegExp, string][] = [
   [/-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/, "a private key"],
-  [/\bAKIA[0-9A-Z]{16}\b/, "an AWS access key"],
+  [/-----BEGIN PGP PRIVATE KEY BLOCK-----/, "a private key"],
+  // AKIA: a long-lived key; ASIA: a temporary one from STS, just as usable until it expires.
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/, "an AWS access key"],
+  [/\bnpm_[A-Za-z0-9]{36}\b/, "an npm token"],
   [/\bgh[pousr]_[A-Za-z0-9]{36,}\b/, "a GitHub token"],
   [/\bgithub_pat_[A-Za-z0-9_]{40,}\b/, "a GitHub token"],
   [/\bxox[abposr]-[A-Za-z0-9-]{10,}\b/, "a Slack token"],
   [/\bAIza[0-9A-Za-z_-]{35}\b/, "a Google API key"],
-  [/\bsk_live_[0-9A-Za-z]{24,}\b/, "a Stripe live key"],
+  [/\b[sr]k_live_[0-9A-Za-z]{24,}\b/, "a Stripe live key"],
+  [/\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b/, "a SendGrid API key"],
   [/\bsk-ant-[A-Za-z0-9_-]{20,}/, "an Anthropic API key"],
   [/\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}/, "an OpenAI-style API key"],
 ];
@@ -29,6 +33,9 @@ const SENSITIVE_FILES: [RegExp, string][] = [
   [/(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/, "an SSH private key"],
   [/(^|\/)(credentials|service[-_]?account[^/]*)\.json$/i, "a credentials file"],
   [/(^|\/)\.(npmrc|pypirc|netrc)$/, "a config file that often holds tokens"],
+  [/(^|\/)\.git-credentials$/, "git's saved passwords and tokens"],
+  [/(^|\/)\.aws\/credentials$/, "AWS credentials"],
+  [/\.tfvars$/, "Terraform variables, which often hold secrets"],
 ];
 
 /** Lines a commit would add, per file, from `git diff -U0` output. */

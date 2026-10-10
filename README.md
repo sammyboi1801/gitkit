@@ -94,7 +94,7 @@ One menu for the problems people search for most:
 
 Before each commit, GitKit checks what you're about to save and warns you about:
 
-- **Keys and tokens** that look real: private keys, and AWS, GitHub, Slack, Google, Stripe, OpenAI and Anthropic keys, with a jump to the exact line
+- **Keys and tokens** that look real: private keys, and AWS, GitHub, npm, Slack, Google, Stripe, SendGrid, OpenAI and Anthropic keys, with a jump to the exact line
 - **Files that usually shouldn't be shared,** like `.env` files and very large files
 - **The wrong email address,** if you use different ones for work, school and personal projects
 
